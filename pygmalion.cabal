@@ -6,7 +6,7 @@ license:             BSD3
 license-file:        LICENSE
 author:              Seth Fowler <mark.seth.fowler@gmail.com>
 maintainer:          Seth Fowler <mark.seth.fowler@gmail.com>
-copyright:           Copyright 2013 Seth Fowler
+copyright:           Copyright (C) 2013 Seth Fowler
 category:            Development
 build-type:          Simple
 cabal-version:       >=1.8
