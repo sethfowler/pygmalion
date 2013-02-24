@@ -6,13 +6,14 @@ import System.Environment
 import System.Exit
 import System.Process
 
-import Metadata
-import SourceDB
+import Pygmalion.Metadata
+import Pygmalion.SourceDB
 
 main = getArgs
    >>= parseArgs
    >>= runCmd
    >>= analyzeCmd
+   >>= analyzeCode
    >>= updateDB
 
 scanExecutable = "pygscan"
@@ -57,6 +58,10 @@ filterArgs ("-MF" : a : as) = as
 filterArgs (a : as) | "-W" `isPrefixOf` a && "-MD" `isInfixOf` a = as
 filterArgs (a : as) = a : filterArgs as
 filterArgs [] = []
+
+-- XXX: Just passthrough for now.
+analyzeCode :: CommandInfo -> IO CommandInfo
+analyzeCode = return
 
 updateDB :: CommandInfo -> IO ()
 updateDB cmdInfo = withDB $ \handle -> do

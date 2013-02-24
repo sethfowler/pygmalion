@@ -1,4 +1,4 @@
-name:                Pygmalion
+name:                pygmalion
 version:             0.1.0.0
 synopsis:            A code analysis tool based on libclang
 homepage:            http://github.com/sfowler/pygmalion
@@ -11,27 +11,34 @@ category:            Development
 build-type:          Simple
 cabal-version:       >=1.8
 
+library
+  build-depends:   base >= 4,
+                   sqlite,
+                   json,
+                   LibClang
+  exposed-modules: Pygmalion.JSON,
+                   Pygmalion.Metadata,
+                   Pygmalion.SourceDB
+  hs-source-dirs:  src
+
 executable pygmalion
   main-is:        Pygmalion.hs 
-  other-modules:  SourceDB, Metadata
   build-depends:  base >= 4,
-                  sqlite,
-                  json
-  hs-source-dirs: Pygmalion
+                  pygmalion
+  hs-source-dirs: tools
 
 executable pygmake
   main-is:        Pygmake.hs 
   build-depends:  base >= 4,
-                  process
-  hs-source-dirs: Pygmalion
+                  process,
+                  pygmalion
+  hs-source-dirs: tools
 
 executable pygscan
   main-is:        Pygscan.hs 
-  other-modules:  SourceDB, Metadata
   build-depends:  base >= 4,
-                  sqlite,
-                  process,
                   directory,
-                  time,
-                  LibClang
-  hs-source-dirs: Pygmalion
+                  process,
+                  pygmalion,
+                  time
+  hs-source-dirs: tools

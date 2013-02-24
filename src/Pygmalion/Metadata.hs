@@ -1,4 +1,4 @@
-module Metadata
+module Pygmalion.Metadata
 ( CommandInfo (..)
 , SourceFile
 , WorkingDirectory
