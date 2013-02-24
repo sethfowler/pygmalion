@@ -20,7 +20,7 @@ scanExecutable = "pygscan"
 usage = putStrLn $ "Usage: " ++ scanExecutable ++ " [command]"
 die c = putStrLn "Command failed" >> exitWith c
 
-parseArgs :: [String] -> IO [String]
+parseArgs :: [String] -> IO Command
 parseArgs ["--help"] = usage >> exitSuccess
 parseArgs ["-h"]     = usage >> exitSuccess
 parseArgs []         = usage >> exitSuccess

@@ -35,5 +35,3 @@ dumpJSON :: IO ()
 dumpJSON = withDB $ \handle -> do
   records <- getAllRecords handle
   putStrLn . encodeStrict $ map toJSObject records
-  -- forM_ records $ \r -> do
-    -- putStrLn . encodeStrict $ toJSObject r
