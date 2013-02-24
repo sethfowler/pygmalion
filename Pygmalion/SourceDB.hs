@@ -1,6 +1,7 @@
 module SourceDB
 ( withDB
 , updateRecord
+, getAllRecords
 , DBHandle
 ) where
 
@@ -21,12 +22,8 @@ dbString = SQLVarChar 2048
 dbPath = SQLVarChar 2048
 
 dbToolName = "pygmalion"
-
-dbMajorVersion :: Int64
-dbMajorVersion = 0
-
-dbMinorVersion :: Int64
-dbMinorVersion = 1
+dbMajorVersion = 0 :: Int64
+dbMinorVersion = 1 :: Int64
 
 metadataTable :: SQLTable
 metadataTable = Table "Metadata"
@@ -54,8 +51,8 @@ sourceFileTable = Table "SourceFiles"
                     Column "Command" dbString [],
                     Column "LastBuilt" dbInt []
                   ] []
-execSourceFileUpdate h (CommandInfo file wd cmd time) =
-  execParamStatement_ h sql params
+execUpdateSourceFile h (CommandInfo file wd cmd time) =
+    execParamStatement_ h sql params
   where sql =  "replace into SourceFiles "
             ++ "(File, WorkingDirectory, Command, LastBuilt) "
             ++ "values (:file, :wd, :cmd, :time)"
@@ -63,6 +60,8 @@ execSourceFileUpdate h (CommandInfo file wd cmd time) =
                   (":wd",   Text wd),
                   (":cmd",  Text $ intercalate " " cmd),
                   (":time", Int time)]
+execGetAllSourceFiles h = execStatement h sql
+  where sql =  "select File, WorkingDirectory, Command from SourceFiles"
 
 schema = [metadataTable, sourceFileTable]
 
@@ -81,7 +80,10 @@ closeDB :: DBHandle -> IO ()
 closeDB = closeConnection
 
 updateRecord :: DBHandle -> CommandInfo -> IO ()
-updateRecord h ci = execSourceFileUpdate h ci >>= ensureNothing
+updateRecord h ci = execUpdateSourceFile h ci >>= ensureNothing
+
+getAllRecords :: DBHandle -> IO [Row Value]
+getAllRecords h = execGetAllSourceFiles h >>= ensureRight >>= return . concat
 
 -- Checks that the database has the correct schema and sets it up if needed.
 ensureSchema :: DBHandle -> IO ()
