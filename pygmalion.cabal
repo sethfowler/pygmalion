@@ -32,5 +32,6 @@ executable pygscan
                   sqlite,
                   process,
                   directory,
-                  time
+                  time,
+                  LibClang
   hs-source-dirs: Pygmalion
