@@ -21,5 +21,7 @@ parseArgs as         = return as
 
 runMake :: [String] -> IO ()
 runMake as = do
-  (_, _, _, handle) <- createProcess (proc "make" as)
-  exitWith =<< waitForProcess handle
+    (_, _, _, handle) <- createProcess (proc "make" newArgs)
+    exitWith =<< waitForProcess handle
+  where
+    newArgs = ["CC=pygscan clang", "CXX=pygscan clang++"] ++ as

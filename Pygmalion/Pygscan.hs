@@ -17,8 +17,8 @@ main = getArgs
 
 scanExecutable = "pygscan"
 
-usage = putStrLn $ "Usage: " ++ scanExecutable ++ " [command]"
-die c = putStrLn "Command failed" >> exitWith c
+usage   = putStrLn $ "Usage: " ++ scanExecutable ++ " [command]"
+die s c = putStrLn (scanExecutable ++ ": " ++ s) >> exitWith c
 
 parseArgs :: [String] -> IO Command
 parseArgs ["--help"] = usage >> exitSuccess
@@ -32,7 +32,7 @@ runCmd cmd@(c : as) = do
   code <- waitForProcess handle
   case code of
     ExitSuccess -> return cmd
-    _           -> die code
+    _           -> die "Command failed" code
 
 analyzeCmd :: Command -> IO CommandInfo
 analyzeCmd cmd@(c : as) = do
@@ -40,7 +40,7 @@ analyzeCmd cmd@(c : as) = do
     time <- getPOSIXTime
     case sourceFile of
       Just sf -> return $ CommandInfo sf wd (c : filteredArgs) (floor time)
-      _       -> error "Couldn't identify source file name"
+      _       -> die "Couldn't identify source filename" ExitSuccess
   where sourceFile   = find hasSourceExtension filteredArgs
         filteredArgs = filterArgs as
 
