@@ -21,10 +21,8 @@ executable pygmalion
 
 executable pygmake
   main-is:        Pygmake.hs 
-  other-modules:  SourceDB, Metadata
   build-depends:  base >= 4,
-                  process,
-                  sqlite
+                  process
   hs-source-dirs: Pygmalion
 
 executable pygscan

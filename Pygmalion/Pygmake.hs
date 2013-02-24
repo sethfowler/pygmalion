@@ -3,9 +3,6 @@ import System.Environment
 import System.Exit
 import System.Process
 
-import Metadata
-import SourceDB
-
 main = getArgs
    >>= parseArgs
    >>= runMake
