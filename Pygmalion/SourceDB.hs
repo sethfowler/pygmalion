@@ -61,7 +61,10 @@ execUpdateSourceFile h (CommandInfo file wd cmd time) =
                   (":cmd",  Text $ intercalate " " cmd),
                   (":time", Int time)]
 execGetAllSourceFiles h = execStatement h sql
-  where sql =  "select File, WorkingDirectory, Command from SourceFiles"
+  where sql =  "select File as file, "
+            ++ "WorkingDirectory as directory, "
+            ++ "Command as command "
+            ++ "from SourceFiles"
 
 schema = [metadataTable, sourceFileTable]
 
