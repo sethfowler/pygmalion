@@ -1,0 +1,23 @@
+name:                Pygmalion
+version:             0.1.0.0
+synopsis:            A code analysis tool based on libclang
+homepage:            http://github.com/sfowler/pygmalion
+license:             BSD3
+license-file:        LICENSE
+author:              Seth Fowler <mark.seth.fowler@gmail.com>
+maintainer:          Seth Fowler <mark.seth.fowler@gmail.com>
+copyright:           Copyright 2013 Seth Fowler
+category:            Development
+build-type:          Simple
+cabal-version:       >=1.8
+
+
+executable pygscan
+  main-is:        Pygscan.hs 
+  other-modules:  SourceDB, Metadata
+  build-depends:  base >= 4,
+                  sqlite,
+                  process,
+                  directory,
+                  time
+  hs-source-dirs: Pygmalion
