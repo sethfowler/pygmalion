@@ -21,4 +21,5 @@ parseArgs ["-h"]     = usage >> exitSuccess
 parseArgs _          = usage >> exitSuccess
 
 dumpJSON :: IO ()
-dumpJSON = withDB $ \h -> getAllRecords h >>= putStrLn . sourceRecordsToJSON
+dumpJSON = withDB dbFilename $ \h ->
+  getAllRecords h >>= putStrLn . sourceRecordsToJSON

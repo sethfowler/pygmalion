@@ -1,8 +1,10 @@
 module Pygmalion.SourceDB
-( withDB
+( ensureDB
+, withDB
 , updateRecord
 , getAllRecords
 , DBHandle
+, dbFilename
 ) where
 
 import Control.Exception
@@ -71,13 +73,17 @@ schema = [metadataTable, sourceFileTable]
 -- Database manipulation functions.
 type DBHandle = SQLiteHandle
 
-withDB :: (DBHandle -> IO a) -> IO a
-withDB = bracket openDB closeDB
+ensureDB :: FilePath -> IO ()
+ensureDB dbPath = withDB dbPath (const . return $ ())
 
-openDB :: IO DBHandle
-openDB = do handle <- openConnection dbFilename
-            ensureSchema handle
-            return handle
+withDB :: FilePath -> (DBHandle -> IO a) -> IO a
+withDB dbPath f = bracket (openDB dbPath) closeDB f
+
+openDB :: FilePath -> IO DBHandle
+openDB dbPath = do
+  handle <- openConnection dbPath
+  ensureSchema handle
+  return handle
 
 closeDB :: DBHandle -> IO ()
 closeDB = closeConnection

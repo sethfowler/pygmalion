@@ -1,6 +1,8 @@
 import Control.Monad
+import System.Directory
 import System.Environment
 import System.Exit
+import System.FilePath.Posix
 import System.Process
 
 import Pygmalion.JSON
@@ -12,7 +14,11 @@ main = getArgs
    >>= ensureSuccess
    >>  writeCompileCommands
 
+-- TODO: Put these somewhere more central.
+scanExecutable = "pygscan"
 makeExecutable = "pygmake"
+clangExecutable = "clang"
+clangppExecutable = "clang++"
 
 usage = putStrLn $ "Usage: " ++ makeExecutable ++ " [make arguments]"
 
@@ -23,17 +29,24 @@ parseArgs as         = return as
 
 runMake :: [String] -> IO ExitCode
 runMake as = do
-    (_, _, _, handle) <- createProcess (proc "make" newArgs)
+    -- Ensure that the database exists.
+    ensureDB dbFilename
+    wd <- getCurrentDirectory
+    let dbPath = combine wd dbFilename
+    -- Run make.
+    (_, _, _, handle) <- createProcess (proc "make" (newArgs dbPath))
     waitForProcess handle
   where
-    newArgs = ["CC=pygscan clang", "CXX=pygscan clang++"] ++ as
+    newArgs d = [cc d, cxx d] ++ as
+    cc d = "CC=" ++ scanExecutable ++ " " ++ d ++ " " ++ clangExecutable
+    cxx d = "CXX=" ++ scanExecutable ++ " " ++ d ++ " " ++ clangppExecutable
 
 ensureSuccess :: ExitCode -> IO ()
 ensureSuccess code@(ExitFailure _) = exitWith code
-ensureSuccess _ = return ()
+ensureSuccess _                    = return ()
 
 compileCommandsFile = "compile_commands.json"
 
 writeCompileCommands :: IO ()
-writeCompileCommands = withDB $ \h -> do
+writeCompileCommands = withDB dbFilename $ \h -> do
   getAllRecords h >>= (writeFile compileCommandsFile) . sourceRecordsToJSON

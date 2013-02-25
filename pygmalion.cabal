@@ -35,6 +35,8 @@ executable pygmalion
 executable pygmake
   main-is:        Pygmake.hs 
   build-depends:  base >= 4,
+                  directory,
+                  filepath,
                   process,
                   pygmalion
   hs-source-dirs: tools

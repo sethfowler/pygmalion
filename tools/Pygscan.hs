@@ -18,38 +18,38 @@ main = getArgs
 
 scanExecutable = "pygscan"
 
-usage   = putStrLn $ "Usage: " ++ scanExecutable ++ " [command]"
+usage   = putStrLn $ "Usage: " ++ scanExecutable ++ " [database directory] [command]"
 die s c = putStrLn (scanExecutable ++ ": " ++ s) >> exitWith c
 
-parseArgs :: [String] -> IO Command
-parseArgs ["--help"] = usage >> exitSuccess
-parseArgs ["-h"]     = usage >> exitSuccess
-parseArgs []         = usage >> exitSuccess
-parseArgs as         = return as
+parseArgs :: [String] -> IO (FilePath, Command)
+parseArgs ["--help"]    = usage >> exitSuccess
+parseArgs ["-h"]        = usage >> exitSuccess
+parseArgs (dbPath : as) = return (dbPath, as)
+parseArgs _             = usage >> exitSuccess
 
-runCmd :: Command -> IO Command
-runCmd cmd@(c : as) = do
+runCmd :: (FilePath, Command) -> IO (FilePath, Command)
+runCmd (dbPath, cmd@(c : as)) = do
   (_, _, _, handle) <- createProcess (proc c as)
   code <- waitForProcess handle
   case code of
-    ExitSuccess -> return cmd
+    ExitSuccess -> return (dbPath, cmd)
     _           -> die "Command failed" code
 
-analyzeCmd :: Command -> IO CommandInfo
-analyzeCmd cmd = do
+analyzeCmd :: (FilePath, Command) -> IO (FilePath, CommandInfo)
+analyzeCmd (dbPath, cmd) = do
   mci <- getCommandInfo cmd
   case mci of
-    Just ci -> return ci
+    Just ci -> return (dbPath, ci)
     _       -> exitSuccess
 
-analyzeCode :: CommandInfo -> IO (CommandInfo, [FilePath])
-analyzeCode ci = do
+analyzeCode :: (FilePath, CommandInfo) -> IO (FilePath, CommandInfo, [FilePath])
+analyzeCode (dbPath, ci) = do
   includedFiles <- clangGetIncludes ci
   let localHeaders = filter isLocalHeader includedFiles
-  return (ci, map normalise localHeaders)
+  return (dbPath, ci, map normalise localHeaders)
 
-updateDB :: (CommandInfo, [FilePath]) -> IO ()
-updateDB (ci, headers) = withDB $ \handle -> do
+updateDB :: (FilePath, CommandInfo, [FilePath]) -> IO ()
+updateDB (dbPath, ci, headers) = withDB dbPath $ \handle -> do
   updateRecord handle ci
   -- Add entries for all included non-system headers, using the same metadata.
   forM_ headers $ \header -> do
