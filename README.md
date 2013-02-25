@@ -14,9 +14,16 @@ the `pygmalion` utility to make a number of queries useful for code analysis and
 navigation; right now the only thing you can do with `pygmalion` is manually
 generate the `compile_commands.json` database.
 
-Requirements:
+Requirements
+============
 
 - Up-to-date libclang. Use `brew install --with-clang --all-targets --rtti
   --universal --jit llvm` on OS X.
 - Up-to-date Haskell LibClang bindings. Check out the `llvm3.2` branch at
   `https://github.com/chetant/LibClang/tree/llvm3.2`.
+
+Build Instructions
+==================
+
+Since this project is in the very early stages, no effort has been made to make
+it easy to install. You can try `cabal install` if you dare.
