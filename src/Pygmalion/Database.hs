@@ -7,6 +7,7 @@ module Pygmalion.Database
 , dbFilename
 ) where
 
+import Control.Concurrent
 import Control.Exception
 import Control.Monad
 import Data.List
@@ -70,6 +71,12 @@ execGetAllSourceFiles h = execStatement h sql
 
 schema = [metadataTable, sourceFileTable]
 
+-- Debugging functions.
+withCatch :: String -> IO a -> IO a
+withCatch lbl f = Control.Exception.catch f printAndRethrow
+  where printAndRethrow :: SomeException -> IO a
+        printAndRethrow e = error $ lbl ++ ": " ++ (show e)
+
 -- Database manipulation functions.
 type DBHandle = SQLiteHandle
 
@@ -77,11 +84,11 @@ ensureDB :: FilePath -> IO ()
 ensureDB dbPath = withDB dbPath (const . return $ ())
 
 withDB :: FilePath -> (DBHandle -> IO a) -> IO a
-withDB dbPath f = bracket (openDB dbPath) closeDB f
+withDB dbPath f = bracket (withCatch "open" (openDB dbPath)) closeDB f
 
 openDB :: FilePath -> IO DBHandle
 openDB dbPath = do
-  handle <- openConnection dbPath
+  handle <- (retry 100 500 $ openConnection dbPath)
   ensureSchema handle
   return handle
 
@@ -89,10 +96,10 @@ closeDB :: DBHandle -> IO ()
 closeDB = closeConnection
 
 updateRecord :: DBHandle -> CommandInfo -> IO ()
-updateRecord h ci = execUpdateSourceFile h ci >>= ensureNothing
+updateRecord h ci = withCatch "updateRecord" $ execUpdateSourceFile h ci >>= ensureNothing
 
 getAllRecords :: DBHandle -> IO [Row Value]
-getAllRecords h = execGetAllSourceFiles h >>= ensureRight >>= return . concat
+getAllRecords h = withCatch "getAllRecords" $ execGetAllSourceFiles h >>= ensureRight >>= return . concat
 
 -- Checks that the database has the correct schema and sets it up if needed.
 ensureSchema :: DBHandle -> IO ()
@@ -122,3 +129,9 @@ ensureNothing _        = return ()
 ensureRight :: Either String a -> IO a
 ensureRight (Left s)  = error s
 ensureRight (Right a) = return a
+
+retry :: Int -> Int -> IO a -> IO a
+retry 0 _ action     = action
+retry n delay action = Control.Exception.catch action (delayAndRetry action)
+  where delayAndRetry :: IO a -> SomeException -> IO a
+        delayAndRetry f _ = (threadDelay delay) >> retry (n - 1) delay f
