@@ -6,8 +6,8 @@ import System.Process
 
 import Pygmalion.Analyze.Command
 import Pygmalion.Analyze.Source
-import Pygmalion.Metadata
-import Pygmalion.SourceDB
+import Pygmalion.Core
+import Pygmalion.Database
 
 main = getArgs
    >>= parseArgs
@@ -15,8 +15,6 @@ main = getArgs
    >>= analyzeCmd
    >>= analyzeCode
    >>= updateDB
-
-scanExecutable = "pygscan"
 
 usage   = putStrLn $ "Usage: " ++ scanExecutable ++ " [database directory] [command]"
 die s c = putStrLn (scanExecutable ++ ": " ++ s) >> exitWith c

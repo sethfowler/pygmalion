@@ -1,4 +1,4 @@
-module Pygmalion.SourceDB
+module Pygmalion.Database
 ( ensureDB
 , withDB
 , updateRecord
@@ -13,7 +13,7 @@ import Data.List
 import Data.Int
 import Database.SQLite
 
-import Pygmalion.Metadata
+import Pygmalion.Core
 
 -- Configuration.
 dbFilename = ".pygmalion.sqlite"

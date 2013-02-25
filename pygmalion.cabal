@@ -21,9 +21,9 @@ library
                    LibClang
   exposed-modules: Pygmalion.Analyze.Command,
                    Pygmalion.Analyze.Source,
-                   Pygmalion.JSON,
-                   Pygmalion.Metadata,
-                   Pygmalion.SourceDB
+                   Pygmalion.Core,
+                   Pygmalion.Database,
+                   Pygmalion.JSON
   hs-source-dirs:  src
 
 executable pygmalion

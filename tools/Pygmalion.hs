@@ -2,15 +2,13 @@ import Control.Monad
 import System.Environment
 import System.Exit
 
+import Pygmalion.Core
+import Pygmalion.Database
 import Pygmalion.JSON
-import Pygmalion.Metadata
-import Pygmalion.SourceDB
 
 main = getArgs
    >>= parseArgs
    >>  dumpJSON
-
-queryExecutable = "pygmalion"
 
 usage = putStrLn $ "Usage: " ++ queryExecutable ++ " --compile-commands"
 

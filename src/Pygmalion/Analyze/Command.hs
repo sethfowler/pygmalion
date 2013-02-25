@@ -10,7 +10,7 @@ import Data.Time.Clock.POSIX
 import System.Directory
 import System.FilePath.Posix
 
-import Pygmalion.Metadata
+import Pygmalion.Core
 
 sourceExtensions = [".c", ".cc", ".cpp", ".C"]
 headerExtensions = [".h", ".hh", ".hpp", ".H"]

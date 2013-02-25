@@ -5,20 +5,15 @@ import System.Exit
 import System.FilePath.Posix
 import System.Process
 
+import Pygmalion.Core
+import Pygmalion.Database
 import Pygmalion.JSON
-import Pygmalion.SourceDB
 
 main = getArgs
    >>= parseArgs
    >>= runMake
    >>= ensureSuccess
    >>  writeCompileCommands
-
--- TODO: Put these somewhere more central.
-scanExecutable = "pygscan"
-makeExecutable = "pygmake"
-clangExecutable = "clang"
-clangppExecutable = "clang++"
 
 usage = putStrLn $ "Usage: " ++ makeExecutable ++ " [make arguments]"
 

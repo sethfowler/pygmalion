@@ -13,7 +13,7 @@ import Data.IORef
 import Data.Maybe
 import Foreign.StablePtr
 
-import Pygmalion.Metadata
+import Pygmalion.Core
 
 withStablePtr :: a -> (StablePtr a -> IO b) -> IO b
 withStablePtr v = bracket (newStablePtr v) (freeStablePtr)
