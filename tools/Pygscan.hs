@@ -1,11 +1,11 @@
 import Control.Monad
-import Data.List
-import Data.Time.Clock.POSIX
-import System.Directory
 import System.Environment
 import System.Exit
+import System.FilePath.Posix
 import System.Process
 
+import Pygmalion.Analyze.Command
+import Pygmalion.Analyze.Source
 import Pygmalion.Metadata
 import Pygmalion.SourceDB
 
@@ -36,33 +36,21 @@ runCmd cmd@(c : as) = do
     _           -> die "Command failed" code
 
 analyzeCmd :: Command -> IO CommandInfo
-analyzeCmd cmd@(c : as) = do
-    wd <- getCurrentDirectory
-    time <- getPOSIXTime
-    case sourceFile of
-      Just sf -> return $ CommandInfo sf wd (c : filteredArgs) (floor time)
-      _       -> die "Couldn't identify source filename" ExitSuccess
-  where sourceFile   = find hasSourceExtension filteredArgs
-        filteredArgs = filterArgs as
+analyzeCmd cmd = do
+  mci <- getCommandInfo cmd
+  case mci of
+    Just ci -> return ci
+    _       -> exitSuccess
 
-sourceExtensions = [".c", ".cc", ".cpp", ".C"]
+analyzeCode :: CommandInfo -> IO (CommandInfo, [FilePath])
+analyzeCode ci = do
+  includedFiles <- clangGetIncludes ci
+  let localHeaders = filter isLocalHeader includedFiles
+  return (ci, map normalise localHeaders)
 
-hasSourceExtension :: String -> Bool
-hasSourceExtension a = any (`isSuffixOf` a) sourceExtensions
-
--- We need to filter arguments that cause dependency files to be generated,
--- as they'll gum up the works when we use libclang to analyze files later.
-filterArgs :: [String] -> [String]
-filterArgs ("-MD" : as) = as
-filterArgs ("-MF" : a : as) = as
-filterArgs (a : as) | "-W" `isPrefixOf` a && "-MD" `isInfixOf` a = as
-filterArgs (a : as) = a : filterArgs as
-filterArgs [] = []
-
--- XXX: Just passthrough for now.
-analyzeCode :: CommandInfo -> IO CommandInfo
-analyzeCode = return
-
-updateDB :: CommandInfo -> IO ()
-updateDB cmdInfo = withDB $ \handle -> do
-  updateRecord handle cmdInfo
+updateDB :: (CommandInfo, [FilePath]) -> IO ()
+updateDB (ci, headers) = withDB $ \handle -> do
+  updateRecord handle ci
+  -- Add entries for all included non-system headers, using the same metadata.
+  forM_ headers $ \header -> do
+    updateRecord handle $ updateSourceFile ci header

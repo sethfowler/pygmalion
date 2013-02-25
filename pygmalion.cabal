@@ -13,10 +13,15 @@ cabal-version:       >=1.8
 
 library
   build-depends:   base >= 4,
-                   sqlite,
+                   directory,
+                   filepath,
                    json,
+                   sqlite,
+                   time,
                    LibClang
-  exposed-modules: Pygmalion.JSON,
+  exposed-modules: Pygmalion.Analyze.Command,
+                   Pygmalion.Analyze.Source,
+                   Pygmalion.JSON,
                    Pygmalion.Metadata,
                    Pygmalion.SourceDB
   hs-source-dirs:  src
@@ -37,8 +42,8 @@ executable pygmake
 executable pygscan
   main-is:        Pygscan.hs 
   build-depends:  base >= 4,
-                  directory,
+                  filepath,
                   process,
                   pygmalion,
-                  time
+                  LibClang
   hs-source-dirs: tools

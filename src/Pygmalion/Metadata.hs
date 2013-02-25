@@ -3,6 +3,7 @@ module Pygmalion.Metadata
 , SourceFile
 , WorkingDirectory
 , Command
+, updateSourceFile
 ) where
 
 import Data.Int
@@ -13,3 +14,6 @@ type SourceFile = String
 type WorkingDirectory = String
 type Command = [String]
 type Time = Int64
+
+updateSourceFile :: CommandInfo -> SourceFile -> CommandInfo
+updateSourceFile (CommandInfo sf wd cmd t) sf' = CommandInfo sf' wd cmd t
