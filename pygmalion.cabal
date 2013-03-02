@@ -21,12 +21,12 @@ library
                    sqlite,
                    time,
                    LibClang
-  exposed-modules: Data.Bool.Predicate,
-                   Pygmalion.Analyze.Command,
+  exposed-modules: Pygmalion.Analyze.Command,
                    Pygmalion.Analyze.Source,
                    Pygmalion.Core,
                    Pygmalion.Database,
                    Pygmalion.JSON
+  other-modules:   Data.Bool.Predicate
   hs-source-dirs:  src
 
 executable pygmalion
@@ -56,12 +56,14 @@ executable pygscan
                   LibClang
   hs-source-dirs: tools
 
-test-suite test-pygmalion-quickcheck
+test-suite pygmalion-quickcheck
   type:           exitcode-stdio-1.0
   main-is:        QuickCheck.hs
-  hs-source-dirs: tests
   build-depends:  base >= 4,
                   pygmalion,
                   QuickCheck,
                   test-framework,
                   test-framework-quickcheck2
+  other-modules:  Data.Bool.Predicate
+  hs-source-dirs: src,
+                  tests
