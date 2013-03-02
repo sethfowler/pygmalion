@@ -9,12 +9,14 @@ import Pygmalion.Core
 import Pygmalion.Database
 import Pygmalion.JSON
 
+main :: IO ()
 main = getArgs
    >>= parseArgs
    >>= runMake
    >>= ensureSuccess
    >>  writeCompileCommands
 
+usage :: IO ()
 usage = putStrLn $ "Usage: " ++ makeExecutable ++ " [make arguments]"
 
 parseArgs :: [String] -> IO [String]
@@ -40,6 +42,7 @@ ensureSuccess :: ExitCode -> IO ()
 ensureSuccess code@(ExitFailure _) = exitWith code
 ensureSuccess _                    = return ()
 
+compileCommandsFile :: String
 compileCommandsFile = "compile_commands.json"
 
 writeCompileCommands :: IO ()

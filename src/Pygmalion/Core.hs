@@ -21,11 +21,15 @@ type Command = [String]
 type Time = Int64
 
 updateSourceFile :: CommandInfo -> SourceFile -> CommandInfo
-updateSourceFile (CommandInfo sf wd cmd t) sf' = CommandInfo sf' wd cmd t
+updateSourceFile (CommandInfo _ wd cmd t) sf' = CommandInfo sf' wd cmd t
 
--- Executable names.
+-- Tool names.
+queryExecutable, scanExecutable, makeExecutable :: String
 queryExecutable = "pygmalion"
 scanExecutable = "pygscan"
 makeExecutable = "pygmake"
+
+-- External command names.
+clangExecutable, clangppExecutable :: String
 clangExecutable = "clang"
 clangppExecutable = "clang++"

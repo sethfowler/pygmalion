@@ -9,6 +9,7 @@ import Pygmalion.Analyze.Source
 import Pygmalion.Core
 import Pygmalion.Database
 
+main :: IO ()
 main = getArgs
    >>= parseArgs
    >>= runCmd
@@ -16,7 +17,10 @@ main = getArgs
    >>= analyzeCode
    >>= updateDB
 
+usage :: IO ()
 usage   = putStrLn $ "Usage: " ++ scanExecutable ++ " [database directory] [command]"
+
+die :: String -> ExitCode -> IO a
 die s c = putStrLn (scanExecutable ++ ": " ++ s) >> exitWith c
 
 parseArgs :: [String] -> IO (FilePath, Command)
@@ -26,6 +30,7 @@ parseArgs (dbPath : as) = return (dbPath, as)
 parseArgs _             = usage >> exitSuccess
 
 runCmd :: (FilePath, Command) -> IO (FilePath, Command)
+runCmd (_, []) = error "No command"
 runCmd (dbPath, cmd@(c : as)) = do
   (_, _, _, handle) <- createProcess (proc c as)
   code <- waitForProcess handle

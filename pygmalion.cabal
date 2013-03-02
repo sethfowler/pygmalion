@@ -12,6 +12,7 @@ build-type:          Simple
 cabal-version:       >=1.8
 
 library
+  ghc-options:     -Wall
   build-depends:   base >= 4,
                    directory,
                    filepath,
@@ -27,12 +28,14 @@ library
   hs-source-dirs:  src
 
 executable pygmalion
+  ghc-options:    -Wall
   main-is:        Pygmalion.hs 
   build-depends:  base >= 4,
                   pygmalion
   hs-source-dirs: tools
 
 executable pygmake
+  ghc-options:    -Wall
   main-is:        Pygmake.hs 
   build-depends:  base >= 4,
                   directory,
@@ -42,6 +45,7 @@ executable pygmake
   hs-source-dirs: tools
 
 executable pygscan
+  ghc-options:    -Wall
   main-is:        Pygscan.hs 
   build-depends:  base >= 4,
                   filepath,

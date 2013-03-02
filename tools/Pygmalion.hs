@@ -6,10 +6,12 @@ import Pygmalion.Core
 import Pygmalion.Database
 import Pygmalion.JSON
 
+main :: IO ()
 main = getArgs
    >>= parseArgs
    >>  dumpJSON
 
+usage :: IO ()
 usage = putStrLn $ "Usage: " ++ queryExecutable ++ " --compile-commands"
 
 parseArgs :: [String] -> IO ()

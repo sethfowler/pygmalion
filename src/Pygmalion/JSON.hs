@@ -5,14 +5,18 @@ module Pygmalion.JSON
 import Database.SQLite
 import Text.JSON
 
-instance JSON Value where
-  showJSON (Double d) = showJSON d
-  showJSON (Int i)    = showJSON i
-  showJSON (Text t)   = showJSON t
-  showJSON (Blob b)   = showJSON b
-  showJSON (Null)     = JSNull
+newtype DBJSONVal = DBJSONVal Value
+
+instance JSON DBJSONVal where
+  showJSON (DBJSONVal (Double d)) = showJSON d
+  showJSON (DBJSONVal (Int i))    = showJSON i
+  showJSON (DBJSONVal (Text t))   = showJSON t
+  showJSON (DBJSONVal (Blob b))   = showJSON b
+  showJSON (DBJSONVal (Null))     = JSNull
 
   -- Don't need to read.
   readJSON _ = Error "Not implemented"
 
-sourceRecordsToJSON rs = encodeStrict $ map toJSObject rs
+sourceRecordsToJSON :: [[(String, Value)]] -> String
+sourceRecordsToJSON rs = encodeStrict $ map (toJSObject . wrap) rs
+  where wrap = map $ \(s,v) -> (s, DBJSONVal v)

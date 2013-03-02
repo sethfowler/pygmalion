@@ -8,7 +8,7 @@ module Pygmalion.Database
 ) where
 
 import Control.Concurrent
-import Control.Exception
+import Control.Exception(bracket, catch, SomeException)
 import Control.Monad
 import Data.List
 import Data.Int
@@ -17,16 +17,21 @@ import Database.SQLite
 import Pygmalion.Core
 
 -- Configuration.
+dbFilename :: String
 dbFilename = ".pygmalion.sqlite"
 
 -- Schema for the database.
+dbInt, dbString, dbPath :: SQLType
 dbInt = SQLInt NORMAL True True
 dbString = SQLVarChar 2048
 dbPath = SQLVarChar 2048
 
+dbToolName :: String
 dbToolName = "pygmalion"
-dbMajorVersion = 0 :: Int64
-dbMinorVersion = 1 :: Int64
+
+dbMajorVersion, dbMinorVersion :: Int64
+dbMajorVersion = 0
+dbMinorVersion = 1
 
 metadataTable :: SQLTable
 metadataTable = Table "Metadata"
@@ -35,10 +40,14 @@ metadataTable = Table "Metadata"
                   Column "MajorVersion" dbInt [],
                   Column "MinorVersion" dbInt []
                 ] []
+
+execGetDBVersion :: SQLiteResult a => SQLiteHandle -> IO (Either String [[Row a]])
 execGetDBVersion h = execParamStatement h sql params
   where sql = "select MajorVersion, MinorVersion from Metadata " ++
               "where Tool = :tool"
         params = [(":tool", Text dbToolName)]
+
+execSetDBVersion :: SQLiteHandle -> IO (Maybe String)
 execSetDBVersion h = execParamStatement_ h sql params
   where sql = "insert into Metadata (Tool, MajorVersion, MinorVersion) " ++
               "values (:tool, :major, :minor)"
@@ -54,6 +63,8 @@ sourceFileTable = Table "SourceFiles"
                     Column "Command" dbString [],
                     Column "LastBuilt" dbInt []
                   ] []
+
+execUpdateSourceFile :: SQLiteHandle -> CommandInfo -> IO (Maybe String)
 execUpdateSourceFile h (CommandInfo file wd cmd time) =
     execParamStatement_ h sql params
   where sql =  "replace into SourceFiles "
@@ -63,12 +74,16 @@ execUpdateSourceFile h (CommandInfo file wd cmd time) =
                   (":wd",   Text wd),
                   (":cmd",  Text $ intercalate " " cmd),
                   (":time", Int time)]
+
+execGetAllSourceFiles :: SQLiteResult a => SQLiteHandle
+                                        -> IO (Either String [[Row a]])
 execGetAllSourceFiles h = execStatement h sql
   where sql =  "select File as file, "
             ++ "WorkingDirectory as directory, "
             ++ "Command as command "
             ++ "from SourceFiles"
 
+schema :: [SQLTable]
 schema = [metadataTable, sourceFileTable]
 
 -- Debugging functions.
@@ -81,14 +96,14 @@ withCatch lbl f = Control.Exception.catch f printAndRethrow
 type DBHandle = SQLiteHandle
 
 ensureDB :: FilePath -> IO ()
-ensureDB dbPath = withDB dbPath (const . return $ ())
+ensureDB db = withDB db (const . return $ ())
 
 withDB :: FilePath -> (DBHandle -> IO a) -> IO a
-withDB dbPath f = bracket (withCatch "open" (openDB dbPath)) closeDB f
+withDB db f = bracket (withCatch "open" (openDB db)) closeDB f
 
 openDB :: FilePath -> IO DBHandle
-openDB dbPath = do
-  handle <- (retry 100 500 $ openConnection dbPath)
+openDB db = do
+  handle <- (retry 100 500 $ openConnection db)
   ensureSchema handle
   return handle
 
@@ -103,15 +118,18 @@ getAllRecords h = withCatch "getAllRecords" $ execGetAllSourceFiles h >>= ensure
 
 -- Checks that the database has the correct schema and sets it up if needed.
 ensureSchema :: DBHandle -> IO ()
-ensureSchema h = forM_ schema $ \table -> defineTableOpt h True table
-                                      >>= ensureNothing
-                                      >>  ensureVersion h
+ensureSchema h = forM_ schema $ \table ->
+      defineTableOpt h True table
+  >>= ensureNothing
+  >>  ensureVersion h
 
 ensureVersion :: DBHandle -> IO ()
 ensureVersion h = execGetDBVersion h >>= ensureRight >>= checkVersion
   where
-    checkVersion [[[("MajorVersion", Int dbMajorVersion),
-                    ("MinorVersion", Int dbMinorVersion)]]] = return ()
+    checkVersion [[[("MajorVersion", Int major),
+                    ("MinorVersion", Int minor)]]]
+                 | (major, minor) == (dbMajorVersion, dbMinorVersion)
+                 = return ()
     checkVersion [[]] = execSetDBVersion h >>= ensureNothing
     checkVersion rs = throwDBVersionError rs
 
