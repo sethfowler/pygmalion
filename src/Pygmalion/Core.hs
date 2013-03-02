@@ -2,7 +2,7 @@ module Pygmalion.Core
 ( CommandInfo (..)
 , SourceFile
 , WorkingDirectory
-, Command
+, Command (..)
 , updateSourceFile
 , queryExecutable
 , scanExecutable
@@ -17,7 +17,7 @@ import Data.Int
 data CommandInfo = CommandInfo SourceFile WorkingDirectory Command Time
 type SourceFile = String
 type WorkingDirectory = String
-type Command = [String]
+data Command = Command String [String]
 type Time = Int64
 
 updateSourceFile :: CommandInfo -> SourceFile -> CommandInfo

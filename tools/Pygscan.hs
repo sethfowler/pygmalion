@@ -18,41 +18,41 @@ main = getArgs
    >>= updateDB
 
 usage :: IO ()
-usage   = putStrLn $ "Usage: " ++ scanExecutable ++ " [database directory] [command]"
+usage = putStrLn $ "Usage: " ++ scanExecutable ++ " [database directory] [command]"
 
 die :: String -> ExitCode -> IO a
 die s c = putStrLn (scanExecutable ++ ": " ++ s) >> exitWith c
 
 parseArgs :: [String] -> IO (FilePath, Command)
-parseArgs ["--help"]    = usage >> exitSuccess
-parseArgs ["-h"]        = usage >> exitSuccess
-parseArgs (dbPath : as) = return (dbPath, as)
-parseArgs _             = usage >> exitSuccess
+parseArgs ["--help"]      = usage >> exitSuccess
+parseArgs ["-h"]          = usage >> exitSuccess
+parseArgs (db : cmd : as) = return (db, Command cmd as)
+parseArgs (_ : [])        = die "No command specified" (ExitFailure (-1))
+parseArgs _               = usage >> exitSuccess
 
 runCmd :: (FilePath, Command) -> IO (FilePath, Command)
-runCmd (_, []) = error "No command"
-runCmd (dbPath, cmd@(c : as)) = do
+runCmd (db, cmd@(Command c as)) = do
   (_, _, _, handle) <- createProcess (proc c as)
   code <- waitForProcess handle
   case code of
-    ExitSuccess -> return (dbPath, cmd)
+    ExitSuccess -> return (db, cmd)
     _           -> die "Command failed" code
 
 analyzeCmd :: (FilePath, Command) -> IO (FilePath, CommandInfo)
-analyzeCmd (dbPath, cmd) = do
+analyzeCmd (db, cmd) = do
   mci <- getCommandInfo cmd
   case mci of
-    Just ci -> return (dbPath, ci)
+    Just ci -> return (db, ci)
     _       -> exitSuccess
 
 analyzeCode :: (FilePath, CommandInfo) -> IO (FilePath, CommandInfo, [FilePath])
-analyzeCode (dbPath, ci) = do
+analyzeCode (db, ci) = do
   includedFiles <- clangGetIncludes ci
   let localHeaders = filter isLocalHeader includedFiles
-  return (dbPath, ci, map normalise localHeaders)
+  return (db, ci, map normalise localHeaders)
 
 updateDB :: (FilePath, CommandInfo, [FilePath]) -> IO ()
-updateDB (dbPath, ci, headers) = withDB dbPath $ \handle -> do
+updateDB (db, ci, headers) = withDB db $ \handle -> do
   updateRecord handle ci
   -- Add entries for all included non-system headers, using the same metadata.
   forM_ headers $ \header -> do

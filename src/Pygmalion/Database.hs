@@ -65,14 +65,14 @@ sourceFileTable = Table "SourceFiles"
                   ] []
 
 execUpdateSourceFile :: SQLiteHandle -> CommandInfo -> IO (Maybe String)
-execUpdateSourceFile h (CommandInfo file wd cmd time) =
+execUpdateSourceFile h (CommandInfo file wd (Command cmd args) time) =
     execParamStatement_ h sql params
   where sql =  "replace into SourceFiles "
             ++ "(File, WorkingDirectory, Command, LastBuilt) "
             ++ "values (:file, :wd, :cmd, :time)"
         params = [(":file", Text file),
                   (":wd",   Text wd),
-                  (":cmd",  Text $ intercalate " " cmd),
+                  (":cmd",  Text $ intercalate " " (cmd : args)),
                   (":time", Int time)]
 
 execGetAllSourceFiles :: SQLiteResult a => SQLiteHandle

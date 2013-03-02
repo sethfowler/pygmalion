@@ -17,8 +17,7 @@ withStablePtr :: a -> (StablePtr a -> IO b) -> IO b
 withStablePtr v = bracket (newStablePtr v) (freeStablePtr)
 
 clangAnalyze :: CommandInfo -> (TranslationUnit -> IO ()) -> IO ()
-clangAnalyze (CommandInfo sf _ [] _) _ = error $ "No command for " ++ sf
-clangAnalyze (CommandInfo sf _ (_ : args) _) f = do
+clangAnalyze (CommandInfo sf _ (Command _ args) _) f = do
     withCreateIndex False False $ \index -> do
       withParse index (Just sf) args [] [TranslationUnit_None] f bail
   where

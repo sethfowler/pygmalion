@@ -22,15 +22,14 @@ hasHeaderExtension a = any (`isSuffixOf` a) headerExtensions
 isLocalHeader = isRelative .&&. isValid .&&. hasHeaderExtension
 
 getCommandInfo :: Command -> IO (Maybe CommandInfo)
-getCommandInfo [] = error "No command"
-getCommandInfo (c : as) = do
+getCommandInfo (Command c as) = do
     wd <- getCurrentDirectory
     time <- getPOSIXTime
     case sourceFile of
-      Just sf -> return . Just $ CommandInfo sf wd (c : filteredArgs) (floor time)
+      Just sf -> return . Just $ CommandInfo sf wd (Command c fas) (floor time)
       _       -> return Nothing
-  where sourceFile   = find hasSourceExtension as
-        filteredArgs = filterArgs as
+  where sourceFile = find hasSourceExtension as
+        fas        = filterArgs as
 
 -- We need to filter arguments that cause dependency files to be generated,
 -- as they'll gum up the works when we use libclang to analyze files later.
