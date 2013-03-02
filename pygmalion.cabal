@@ -12,7 +12,7 @@ build-type:          Simple
 cabal-version:       >=1.8
 
 library
-  ghc-options:     -Wall
+  ghc-options:     -Wall -Werror
   build-depends:   base >= 4,
                    directory,
                    filepath,
@@ -21,23 +21,23 @@ library
                    sqlite,
                    time,
                    LibClang
-  exposed-modules: Pygmalion.Analyze.Command,
+  exposed-modules: Data.Bool.Predicate,
+                   Pygmalion.Analyze.Command,
                    Pygmalion.Analyze.Source,
                    Pygmalion.Core,
                    Pygmalion.Database,
                    Pygmalion.JSON
-  other-modules:   Data.Bool.Predicate
   hs-source-dirs:  src
 
 executable pygmalion
-  ghc-options:    -Wall
+  ghc-options:    -Wall -Werror
   main-is:        Pygmalion.hs 
   build-depends:  base >= 4,
                   pygmalion
   hs-source-dirs: tools
 
 executable pygmake
-  ghc-options:    -Wall
+  ghc-options:    -Wall -Werror
   main-is:        Pygmake.hs 
   build-depends:  base >= 4,
                   directory,
@@ -47,7 +47,7 @@ executable pygmake
   hs-source-dirs: tools
 
 executable pygscan
-  ghc-options:    -Wall
+  ghc-options:    -Wall -Werror
   main-is:        Pygscan.hs 
   build-depends:  base >= 4,
                   filepath,
@@ -55,3 +55,13 @@ executable pygscan
                   pygmalion,
                   LibClang
   hs-source-dirs: tools
+
+test-suite test-pygmalion-quickcheck
+  type:           exitcode-stdio-1.0
+  main-is:        QuickCheck.hs
+  hs-source-dirs: tests
+  build-depends:  base >= 4,
+                  pygmalion,
+                  QuickCheck,
+                  test-framework,
+                  test-framework-quickcheck2
