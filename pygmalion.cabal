@@ -25,6 +25,7 @@ library
                    Pygmalion.Core,
                    Pygmalion.Database,
                    Pygmalion.JSON
+  other-modules:   Data.Bool.Predicate
   hs-source-dirs:  src
 
 executable pygmalion

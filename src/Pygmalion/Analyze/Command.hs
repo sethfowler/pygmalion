@@ -10,6 +10,7 @@ import Data.Time.Clock.POSIX
 import System.Directory
 import System.FilePath.Posix
 
+import Data.Bool.Predicate
 import Pygmalion.Core
 
 sourceExtensions, headerExtensions :: [String]
@@ -41,6 +42,3 @@ filterArgs (a : as) | "-W" `isPrefixOf` a && "-MD" `isInfixOf` a = filterArgs as
 filterArgs (a : as) | hasSourceExtension a = filterArgs as
 filterArgs (a : as) = a : filterArgs as
 filterArgs [] = []
-
-(.&&.) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
-(.&&.) f g v = f v && g v
