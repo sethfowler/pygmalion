@@ -17,6 +17,7 @@ library
                    directory,
                    filepath,
                    json,
+                   msgpack,
                    sqlite,
                    time,
                    LibClang
