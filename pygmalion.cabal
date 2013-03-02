@@ -51,6 +51,7 @@ executable pygscan
   main-is:        Pygscan.hs 
   build-depends:  base >= 4,
                   filepath,
+                  mtl,
                   process,
                   pygmalion,
                   LibClang
