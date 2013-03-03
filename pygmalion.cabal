@@ -68,3 +68,14 @@ test-suite pygmalion-quickcheck
   other-modules:  Data.Bool.Predicate
   hs-source-dirs: src,
                   tests
+
+test-suite pygmalion-functional
+  type:           exitcode-stdio-1.0
+  main-is:        Functional.hs
+  build-depends:  base >= 4,
+                  directory,
+                  process,
+                  pygmalion,
+                  test-framework,
+                  test-framework-golden
+  hs-source-dirs: tests

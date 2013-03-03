@@ -9,6 +9,8 @@ module Pygmalion.Core
 , makeExecutable
 , clangExecutable
 , clangppExecutable
+, dbFile
+, compileCommandsFile
 ) where
 
 import Data.Int
@@ -26,10 +28,15 @@ updateSourceFile (CommandInfo _ wd cmd t) sf' = CommandInfo sf' wd cmd t
 -- Tool names.
 queryExecutable, scanExecutable, makeExecutable :: String
 queryExecutable = "pygmalion"
-scanExecutable = "pygscan"
-makeExecutable = "pygmake"
+scanExecutable  = "pygscan"
+makeExecutable  = "pygmake"
 
 -- External command names.
 clangExecutable, clangppExecutable :: String
-clangExecutable = "clang"
+clangExecutable   = "clang"
 clangppExecutable = "clang++"
+
+-- Data files.
+dbFile, compileCommandsFile :: String
+dbFile              = ".pygmalion.sqlite"
+compileCommandsFile = "compile_commands.json"

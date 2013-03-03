@@ -4,9 +4,9 @@ module Pygmalion.Database
 , updateRecord
 , getAllRecords
 , DBHandle
-, dbFilename
 ) where
 
+import Prelude hiding (catch)
 import Control.Concurrent
 import Control.Exception(bracket, catch, SomeException)
 import Control.Monad
@@ -15,10 +15,6 @@ import Data.Int
 import Database.SQLite
 
 import Pygmalion.Core
-
--- Configuration.
-dbFilename :: String
-dbFilename = ".pygmalion.sqlite"
 
 -- Schema for the database.
 dbInt, dbString, dbPath :: SQLType
@@ -88,7 +84,7 @@ schema = [metadataTable, sourceFileTable]
 
 -- Debugging functions.
 withCatch :: String -> IO a -> IO a
-withCatch lbl f = Control.Exception.catch f printAndRethrow
+withCatch lbl f = catch f printAndRethrow
   where printAndRethrow :: SomeException -> IO a
         printAndRethrow e = error $ lbl ++ ": " ++ (show e)
 
@@ -150,6 +146,6 @@ ensureRight (Right a) = return a
 
 retry :: Int -> Int -> IO a -> IO a
 retry 0 _ action     = action
-retry n delay action = Control.Exception.catch action (delayAndRetry action)
+retry n delay action = catch action (delayAndRetry action)
   where delayAndRetry :: IO a -> SomeException -> IO a
         delayAndRetry f _ = (threadDelay delay) >> retry (n - 1) delay f

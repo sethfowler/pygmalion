@@ -27,9 +27,9 @@ parseArgs as         = return as
 runMake :: [String] -> IO ExitCode
 runMake as = do
     -- Ensure that the database exists.
-    ensureDB dbFilename
+    ensureDB dbFile
     wd <- getCurrentDirectory
-    let dbPath = combine wd dbFilename
+    let dbPath = combine wd dbFile
     -- Run make.
     (_, _, _, handle) <- createProcess (proc "make" (newArgs dbPath))
     waitForProcess handle
@@ -42,9 +42,6 @@ ensureSuccess :: ExitCode -> IO ()
 ensureSuccess code@(ExitFailure _) = exitWith code
 ensureSuccess _                    = return ()
 
-compileCommandsFile :: String
-compileCommandsFile = "compile_commands.json"
-
 writeCompileCommands :: IO ()
-writeCompileCommands = withDB dbFilename $ \h -> do
+writeCompileCommands = withDB dbFile $ \h -> do
   getAllRecords h >>= (writeFile compileCommandsFile) . sourceRecordsToJSON
