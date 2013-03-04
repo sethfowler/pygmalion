@@ -15,12 +15,15 @@ module Pygmalion.Core
 
 import Data.Int
 
--- The information we collect about a compilation command.
-data CommandInfo = CommandInfo SourceFile WorkingDirectory Command Time
 type SourceFile = String
 type WorkingDirectory = String
-data Command = Command String [String]
 type Time = Int64
+
+-- The information we collect about a compilation command.
+data CommandInfo = CommandInfo SourceFile WorkingDirectory Command Time
+  deriving (Eq, Show)
+data Command = Command String [String]
+  deriving (Eq, Show)
 
 updateSourceFile :: CommandInfo -> SourceFile -> CommandInfo
 updateSourceFile (CommandInfo _ wd cmd t) sf' = CommandInfo sf' wd cmd t

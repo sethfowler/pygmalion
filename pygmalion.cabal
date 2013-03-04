@@ -18,14 +18,18 @@ library
                    filepath,
                    json,
                    msgpack,
+                   msgpack-rpc,
+                   mtl,
                    sqlite,
                    time,
                    LibClang
-  exposed-modules: Pygmalion.Analyze.Command,
+  exposed-modules: Pygmalion.Analyze,
+                   Pygmalion.Analyze.Command,
                    Pygmalion.Analyze.Source,
                    Pygmalion.Core,
                    Pygmalion.Database,
-                   Pygmalion.JSON
+                   Pygmalion.JSON,
+                   Pygmalion.RPC.Server
   other-modules:   Data.Bool.Predicate
   hs-source-dirs:  src
 

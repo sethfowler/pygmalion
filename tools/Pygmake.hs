@@ -5,6 +5,7 @@ import System.Exit
 import System.FilePath.Posix
 import System.Process
 
+import Pygmalion.RPC.Server
 import Pygmalion.Core
 import Pygmalion.Database
 import Pygmalion.JSON
@@ -12,8 +13,8 @@ import Pygmalion.JSON
 main :: IO ()
 main = getArgs
    >>= parseArgs
-   >>= runMake
-   >>= ensureSuccess
+   >>= runServer (\args -> executeMake args
+                       >>= ensureSuccess)
    >>  writeCompileCommands
 
 usage :: IO ()
@@ -24,9 +25,9 @@ parseArgs ["--help"] = usage >> exitSuccess
 parseArgs ["-h"]     = usage >> exitSuccess
 parseArgs as         = return as
 
-runMake :: [String] -> IO ExitCode
-runMake as = do
-    -- Ensure that the database exists.
+executeMake:: [String] -> IO ExitCode
+executeMake as = do
+    -- Ensure that the database exists. TODO: Do this before runServer.
     ensureDB dbFile
     wd <- getCurrentDirectory
     let dbPath = combine wd dbFile
