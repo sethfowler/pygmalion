@@ -49,7 +49,7 @@ ensureSuccess _                            = error "RPC server terminated early"
 
 ensureNoException :: Exception a => Either a b -> IO b
 ensureNoException (Right v) = return v
-ensureNoException (Left e)  = putStrLn "Analysis thread threw" >> throw e
+ensureNoException (Left e)  = putStrLn "Analysis thread threw an exception" >> throw e
 
 writeCompileCommands :: IO ()
 writeCompileCommands = withDB dbFile $ \h -> do
