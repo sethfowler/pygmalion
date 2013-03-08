@@ -1,31 +1,39 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Pygmalion.RPC.Server
-( runServer
+( runRPCServer
 ) where
 
-import Prelude hiding (catch)
-import Control.Concurrent
-import Control.Exception
+import Control.Concurrent.Chan
+import Control.Concurrent.MVar
 import Control.Monad.Trans
-import Network.MessagePackRpc.Server
+import Data.ByteString.Char8 ()
+import Data.Conduit
+import Data.Conduit.Network
+import Data.Serialize
+import Network.Socket
 
---import Pygmalion.Analyze
---import Pygmalion.Core
+import Pygmalion.Core
 
-pretendToScan :: (FilePath, [String]) -> Method ()
-pretendToScan (f, c) = liftIO $ putStrLn $ "Got db path [" ++ f ++
-                                           "] and command [" ++ (show c) ++ "]"
+runRPCServer :: MVar Int -> Chan (Maybe CommandInfo) -> IO ()
+runRPCServer port chan = runTCPServer settings (serverApp chan)
+  where settings = baseSettings { serverAfterBind = notifyPort }
+        baseSettings = (serverSettings 0 "127.0.0.1") :: ServerSettings IO
+        notifyPort s = socketPort s >>= (putMVar port) . fromIntegral
 
-runServer :: (a -> IO b) -> a -> IO b
-runServer f v = do
-  thread <- forkIO serverMain
-  ret <- (f v) `catch` (\e ->
-                 error $ "runServer: IO action threw" ++ (show (e :: SomeException)))
-  killThread thread
-  return ret
+serverApp :: Chan (Maybe CommandInfo) -> Application IO
+serverApp chan ad = (appSource ad) $$ conduit =$ (appSink ad)
+  where conduit = do
+          result <- await
+          case result of
+            Just serialized -> processCmd (decode serialized)
+            _               -> error "Client never sent anything"
 
-serverMain :: IO ()
-serverMain = do
-  serve 8081
-    [
-      ("scan", toMethod pretendToScan)
-    ]
+        processCmd (Right tup) = do
+          liftIO $ putStrLn $ "Server got: " ++ (show tup)
+          case tupleToCommandInfo tup of
+            Just cmdInfo -> do
+                    liftIO $ writeChan chan (Just cmdInfo)
+                    yield "OK"
+            _            -> yield "ERROR"
+        processCmd _ = yield "ERROR"

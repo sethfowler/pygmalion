@@ -14,14 +14,19 @@ cabal-version:       >=1.8
 library
   ghc-options:     -Wall -Werror -threaded
   build-depends:   base >= 4,
+                   async,
+                   bytestring,
+                   cereal,
+                   conduit,
                    directory,
                    filepath,
                    json,
-                   msgpack,
-                   msgpack-rpc,
                    mtl,
+                   network,
+                   network-conduit,
                    sqlite,
                    time,
+                   transformers,
                    LibClang
   exposed-modules: Pygmalion.Analyze,
                    Pygmalion.Analyze.Command,
@@ -29,6 +34,7 @@ library
                    Pygmalion.Core,
                    Pygmalion.Database,
                    Pygmalion.JSON,
+                   Pygmalion.RPC.Client,
                    Pygmalion.RPC.Server
   other-modules:   Data.Bool.Predicate
   hs-source-dirs:  src
@@ -44,6 +50,7 @@ executable pygmake
   ghc-options:    -Wall -Werror -threaded -rtsopts -with-rtsopts=-N
   main-is:        Pygmake.hs 
   build-depends:  base >= 4,
+                  async,
                   directory,
                   filepath,
                   process,
@@ -54,6 +61,7 @@ executable pygscan
   ghc-options:    -Wall -Werror -threaded -rtsopts -with-rtsopts=-N
   main-is:        Pygscan.hs 
   build-depends:  base >= 4,
+                  async,
                   filepath,
                   mtl,
                   process,

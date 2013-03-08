@@ -1,21 +1,27 @@
-import Control.Monad
-import System.Directory
+import Control.Concurrent
+import Control.Concurrent.Async
+import Control.Exception (Exception, throw)
 import System.Environment
 import System.Exit
-import System.FilePath.Posix
 import System.Process
 
-import Pygmalion.RPC.Server
+import Pygmalion.Analyze
 import Pygmalion.Core
 import Pygmalion.Database
 import Pygmalion.JSON
+import Pygmalion.RPC.Server
 
 main :: IO ()
-main = getArgs
-   >>= parseArgs
-   >>= runServer (\args -> executeMake args
-                       >>= ensureSuccess)
-   >>  writeCompileCommands
+main = do
+  args <- (getArgs >>= parseArgs)
+  ensureDB dbFile
+  port <- newEmptyMVar
+  chan <- newChan
+  withAsync (runAnalysisThread chan) $ \analysis -> do
+    ensureSuccess =<< (race (runRPCServer port chan) (executeMake port args))
+    writeChan chan Nothing  -- Signifies end of data.
+    ensureNoException =<< waitCatch analysis
+  writeCompileCommands
 
 usage :: IO ()
 usage = putStrLn $ "Usage: " ++ makeExecutable ++ " [make arguments]"
@@ -25,23 +31,25 @@ parseArgs ["--help"] = usage >> exitSuccess
 parseArgs ["-h"]     = usage >> exitSuccess
 parseArgs as         = return as
 
-executeMake:: [String] -> IO ExitCode
-executeMake as = do
-    -- Ensure that the database exists. TODO: Do this before runServer.
-    ensureDB dbFile
-    wd <- getCurrentDirectory
-    let dbPath = combine wd dbFile
-    -- Run make.
-    (_, _, _, handle) <- createProcess (proc "make" (newArgs dbPath))
+executeMake:: MVar Int -> [String] -> IO ExitCode
+executeMake port as = do
+    portNumber <- readMVar port
+    (_, _, _, handle) <- createProcess $ proc "make" (newArgs (show portNumber))
     waitForProcess handle
   where
-    newArgs d = [cc d, cxx d] ++ as
-    cc d = "CC=" ++ scanExecutable ++ " " ++ d ++ " " ++ clangExecutable
-    cxx d = "CXX=" ++ scanExecutable ++ " " ++ d ++ " " ++ clangppExecutable
+    newArgs p = [cc p, cxx p] ++ as
+    cc p = "CC=" ++ (callPygscan p) ++ clangExecutable
+    cxx p = "CXX=" ++ (callPygscan p) ++ clangppExecutable
+    callPygscan p = scanExecutable ++ " --make " ++ p ++ " "
 
-ensureSuccess :: ExitCode -> IO ()
-ensureSuccess code@(ExitFailure _) = exitWith code
-ensureSuccess _                    = return ()
+ensureSuccess :: Either () ExitCode -> IO ()
+ensureSuccess (Right code@(ExitFailure _)) = exitWith code
+ensureSuccess (Right _)                    = return ()
+ensureSuccess _                            = error "RPC server terminated early"
+
+ensureNoException :: Exception a => Either a b -> IO b
+ensureNoException (Right v) = return v
+ensureNoException (Left e)  = putStrLn "Analysis thread threw" >> throw e
 
 writeCompileCommands :: IO ()
 writeCompileCommands = withDB dbFile $ \h -> do

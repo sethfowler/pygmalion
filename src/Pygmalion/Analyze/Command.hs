@@ -34,8 +34,11 @@ getCommandInfo (Command c as) = do
 
 -- We need to filter arguments that cause dependency files to be generated,
 -- as they'll gum up the works when we use libclang to analyze files later.
--- We also need to remove the source file itself as libclang doesn't like it. 
+-- We also need to remove the source file itself as libclang doesn't like it,
+-- and any '-c' and '-o' flags.
 filterArgs :: [String] -> [String]
+filterArgs ("-c" : as) = filterArgs as
+filterArgs ("-o" : _ : as) = filterArgs as
 filterArgs ("-MD" : as) = filterArgs as
 filterArgs ("-MF" : _ : as) = filterArgs as
 filterArgs (a : as) | "-W" `isPrefixOf` a && "-MD" `isInfixOf` a = filterArgs as
