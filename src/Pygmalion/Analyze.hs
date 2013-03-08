@@ -30,15 +30,9 @@ type Scanner a = MaybeT IO a
 runScanner :: Scanner a -> IO (Maybe a)
 runScanner a = runMaybeT a
 
-{-
-analyzeCmd :: Command -> Scanner CommandInfo
-analyzeCmd cmd = do
-  MaybeT $ liftIO $ getCommandInfo cmd
--}
-
 analyzeCode :: CommandInfo -> Scanner (CommandInfo, [FilePath])
 analyzeCode ci = do
-  liftIO $ putStrLn $ "Analyzing " ++ (show ci)
+  -- liftIO $ putStrLn $ "Analyzing " ++ (show ci)
   includedFiles <- liftIO $ clangGetIncludes ci
   let localHeaders = filter isLocalHeader includedFiles
   return (ci, map normalise localHeaders)

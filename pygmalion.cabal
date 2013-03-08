@@ -51,8 +51,6 @@ executable pygmake
   main-is:        Pygmake.hs 
   build-depends:  base >= 4,
                   async,
-                  directory,
-                  filepath,
                   process,
                   pygmalion
   hs-source-dirs: tools
@@ -62,11 +60,9 @@ executable pygscan
   main-is:        Pygscan.hs 
   build-depends:  base >= 4,
                   async,
-                  filepath,
                   mtl,
                   process,
-                  pygmalion,
-                  LibClang
+                  pygmalion
   hs-source-dirs: tools
 
 test-suite pygmalion-quickcheck

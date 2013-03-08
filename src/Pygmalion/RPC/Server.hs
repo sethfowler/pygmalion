@@ -30,7 +30,7 @@ serverApp chan ad = (appSource ad) $$ conduit =$ (appSink ad)
             _               -> error "Client never sent anything"
 
         processCmd (Right tup) = do
-          liftIO $ putStrLn $ "Server got: " ++ (show tup)
+          -- liftIO $ putStrLn $ "Server got: " ++ (show tup)
           case tupleToCommandInfo tup of
             Just cmdInfo -> do
                     liftIO $ writeChan chan (Just cmdInfo)
