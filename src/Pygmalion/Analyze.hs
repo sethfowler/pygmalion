@@ -16,14 +16,13 @@ import Pygmalion.Core
 import Pygmalion.Database
 
 runAnalysisThread :: Chan (Maybe CommandInfo) -> IO ()
-runAnalysisThread chan = do
+runAnalysisThread chan = withDB dbFile $ \h -> do
     commandStream <- getChanContents chan
-    mapM_ analyze $ takeWhile isJust commandStream
-  where analyze cmd = scanCommandAndUpdateDB (fromJust cmd)
+    mapM_ (scanCommandAndUpdateDB h . fromJust) $ takeWhile isJust commandStream
 
-scanCommandAndUpdateDB :: CommandInfo -> IO (Maybe ())
-scanCommandAndUpdateDB cmdInfo = runScanner (    analyzeCode cmdInfo
-                                             >>= updateDB)
+scanCommandAndUpdateDB :: DBHandle -> CommandInfo -> IO (Maybe ())
+scanCommandAndUpdateDB h cmdInfo = runScanner (    analyzeCode cmdInfo
+                                               >>= updateDB h)
 
 type Scanner a = MaybeT IO a
 
@@ -37,9 +36,9 @@ analyzeCode ci = do
   let localHeaders = filter isLocalHeader includedFiles
   return (ci, map normalise localHeaders)
 
-updateDB :: (CommandInfo, [FilePath]) -> Scanner ()
-updateDB (ci, headers) = liftIO $ withDB dbFile $ \handle -> do
-    updateRecord handle ci
+updateDB :: DBHandle -> (CommandInfo, [FilePath]) -> Scanner ()
+updateDB h (ci, headers) = liftIO $ do
+    updateRecord h ci
     -- Add entries for all included non-system headers, using the same metadata.
     forM_ headers $ \header -> do
-      updateRecord handle $ updateSourceFile ci header
+      updateRecord h $ updateSourceFile ci header

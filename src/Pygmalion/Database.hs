@@ -7,7 +7,6 @@ module Pygmalion.Database
 ) where
 
 import Prelude hiding (catch)
-import Control.Concurrent
 import Control.Exception(bracket, catch, SomeException)
 import Control.Monad
 import Data.List
@@ -99,7 +98,7 @@ withDB db f = bracket (withCatch "open" (openDB db)) closeDB f
 
 openDB :: FilePath -> IO DBHandle
 openDB db = do
-  handle <- (retry 100 500 $ openConnection db)
+  handle <- openConnection db
   ensureSchema handle
   return handle
 
@@ -143,9 +142,3 @@ ensureNothing _        = return ()
 ensureRight :: Either String a -> IO a
 ensureRight (Left s)  = error s
 ensureRight (Right a) = return a
-
-retry :: Int -> Int -> IO a -> IO a
-retry 0 _ action     = action
-retry n delay action = catch action (delayAndRetry action)
-  where delayAndRetry :: IO a -> SomeException -> IO a
-        delayAndRetry f _ = (threadDelay delay) >> retry (n - 1) delay f
