@@ -7,6 +7,7 @@ import System.Process
 
 import Pygmalion.Analyze
 import Pygmalion.Core
+import Pygmalion.Config
 import Pygmalion.Database
 import Pygmalion.JSON
 import Pygmalion.RPC.Server
@@ -15,10 +16,11 @@ main :: IO ()
 main = do
   args <- (getArgs >>= parseArgs)
   ensureDB dbFile
+  cf <- getConfiguration
   port <- newEmptyMVar
   chan <- newChan
   withAsync (runAnalysisThread chan) $ \analysis -> do
-    ensureSuccess =<< (race (runRPCServer port chan) (executeMake port args))
+    ensureSuccess =<< (race (runRPCServer cf port chan) (executeMake cf port args))
     writeChan chan Nothing  -- Signifies end of data.
     ensureNoException =<< waitCatch analysis
   writeCompileCommands
@@ -31,15 +33,15 @@ parseArgs ["--help"] = usage >> exitSuccess
 parseArgs ["-h"]     = usage >> exitSuccess
 parseArgs as         = return as
 
-executeMake:: MVar Int -> [String] -> IO ExitCode
-executeMake port as = do
+executeMake:: Config -> MVar Int -> [String] -> IO ExitCode
+executeMake cf port as = do
     portNumber <- readMVar port
-    (_, _, _, handle) <- createProcess $ proc "make" (newArgs (show portNumber))
+    (_, _, _, handle) <- createProcess $ proc (make cf) (newArgs (show portNumber))
     waitForProcess handle
   where
-    newArgs p = [cc p, cxx p] ++ as
-    cc p = "CC=" ++ (callPygscan p) ++ clangExecutable
-    cxx p = "CXX=" ++ (callPygscan p) ++ clangppExecutable
+    newArgs p = [setCC p, setCXX p] ++ as
+    setCC p = "CC=" ++ (callPygscan p) ++ (cc cf)
+    setCXX p = "CXX=" ++ (callPygscan p) ++ (cpp cf)
     callPygscan p = scanExecutable ++ " --make " ++ p ++ " "
 
 ensureSuccess :: Either () ExitCode -> IO ()

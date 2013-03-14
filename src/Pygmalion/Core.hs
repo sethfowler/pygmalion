@@ -10,9 +10,8 @@ module Pygmalion.Core
 , queryExecutable
 , scanExecutable
 , makeExecutable
-, clangExecutable
-, clangppExecutable
 , dbFile
+, configFile
 , compileCommandsFile
 ) where
 
@@ -45,12 +44,8 @@ queryExecutable = "pygmalion"
 scanExecutable  = "pygscan"
 makeExecutable  = "pygmake"
 
--- External command names.
-clangExecutable, clangppExecutable :: String
-clangExecutable   = "clang"
-clangppExecutable = "clang++"
-
 -- Data files.
-dbFile, compileCommandsFile :: String
+dbFile, configFile, compileCommandsFile :: String
 dbFile              = ".pygmalion.sqlite"
+configFile          = ".pygmalion.conf"
 compileCommandsFile = "compile_commands.json"

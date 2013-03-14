@@ -12,14 +12,18 @@ import Data.Conduit
 import Data.Conduit.Cereal
 import Data.Conduit.Network
 import Data.Serialize
+import Data.String
 import Network.Socket
 
+import Pygmalion.Config
 import Pygmalion.Core
 
-runRPCServer :: MVar Int -> Chan (Maybe CommandInfo) -> IO ()
-runRPCServer port chan = runTCPServer settings (serverApp chan)
+runRPCServer :: Config -> MVar Int -> Chan (Maybe CommandInfo) -> IO ()
+runRPCServer cf port chan = runTCPServer settings (serverApp chan)
   where settings = baseSettings { serverAfterBind = notifyPort }
-        baseSettings = (serverSettings 0 "127.0.0.1") :: ServerSettings IO
+        baseSettings = (serverSettings confPort confAddr) :: ServerSettings IO
+        confPort = ifPort cf
+        confAddr = fromString (ifAddr cf)
         notifyPort s = socketPort s >>= (putMVar port) . fromIntegral
 
 serverApp :: Chan (Maybe CommandInfo) -> Application IO
