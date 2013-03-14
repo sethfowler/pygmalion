@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveDataTypeable #-}
+
 module Pygmalion.Analyze.Source
 ( clangGetIncludes
 ) where
@@ -9,9 +11,14 @@ import Clang.TranslationUnit
 import Control.Exception
 import Data.IORef
 import Data.Maybe
+import Data.Typeable
 import Foreign.StablePtr
 
 import Pygmalion.Core
+
+data ClangException = ClangException String
+  deriving (Show, Typeable)
+instance Exception ClangException
 
 withStablePtr :: a -> (StablePtr a -> IO b) -> IO b
 withStablePtr v = bracket (newStablePtr v) (freeStablePtr)
@@ -21,13 +28,15 @@ clangAnalyze (CommandInfo sf _ (Command _ args) _) f = do
     withCreateIndex False False $ \index -> do
       withParse index (Just sf) args [] [TranslationUnit_None] f bail
   where
-    bail = error $ "Couldn't parse " ++ sf
+    bail = throw . ClangException $ "Libclang couldn't parse " ++ sf
 
-clangGetIncludes :: CommandInfo -> IO [FilePath]
+clangGetIncludes :: CommandInfo -> IO (Maybe [FilePath])
 clangGetIncludes ci = do
     headersRef <- newIORef []
-    clangAnalyze ci (getHeaders headersRef)
-    readIORef headersRef
+    result <- try $ clangAnalyze ci (getHeaders headersRef)
+    case result of
+      Right _                 -> readIORef headersRef >>= return . Just
+      Left (ClangException _) -> return Nothing
   where
     getHeaders hsRef tu = withStablePtr hsRef $ \hsRefPtr ->
       getInclusions tu visitInclusions (Just hsRefPtr)

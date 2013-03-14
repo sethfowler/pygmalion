@@ -33,8 +33,9 @@ analyzeCode :: CommandInfo -> Scanner (CommandInfo, [FilePath])
 analyzeCode ci = do
   -- liftIO $ putStrLn $ "Analyzing " ++ (show ci)
   includedFiles <- liftIO $ clangGetIncludes ci
-  let localHeaders = filter isLocalHeader includedFiles
-  return (ci, map normalise localHeaders)
+  case includedFiles of
+    Just fs -> return (ci, (map normalise) . (filter isLocalHeader) $ fs)
+    Nothing -> MaybeT $ return Nothing
 
 updateDB :: DBHandle -> (CommandInfo, [FilePath]) -> Scanner ()
 updateDB h (ci, headers) = liftIO $ do
