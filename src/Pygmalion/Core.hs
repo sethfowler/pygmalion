@@ -1,11 +1,11 @@
+{-# LANGUAGE DeriveGeneric #-}
+
 module Pygmalion.Core
 ( CommandInfo (..)
 , SourceFile
 , WorkingDirectory
 , Command (..)
 , Port
-, commandInfoToTuple
-, tupleToCommandInfo
 , updateSourceFile
 , queryExecutable
 , scanExecutable
@@ -16,7 +16,10 @@ module Pygmalion.Core
 , compileCommandsFile
 ) where
 
+--import Control.Monad
 import Data.Int
+import Data.Serialize
+import GHC.Generics
 
 type Port = Int
 
@@ -26,16 +29,12 @@ type Time = Int64
 
 -- The information we collect about a compilation command.
 data CommandInfo = CommandInfo SourceFile WorkingDirectory Command Time
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
+instance Serialize CommandInfo
+
 data Command = Command String [String]
-  deriving (Eq, Show)
-
-commandInfoToTuple :: CommandInfo -> (String, String, [String], Int64)
-commandInfoToTuple (CommandInfo sf wd (Command c as) t) = (sf, wd, (c : as), t)
-
-tupleToCommandInfo :: (String, String, [String], Int64) -> Maybe CommandInfo
-tupleToCommandInfo (sf, wd, (c : as), t) = Just $ CommandInfo sf wd (Command c as) t
-tupleToCommandInfo _ = Nothing
+  deriving (Eq, Show, Generic)
+instance Serialize Command
 
 updateSourceFile :: CommandInfo -> SourceFile -> CommandInfo
 updateSourceFile (CommandInfo _ wd cmd t) sf' = CommandInfo sf' wd cmd t

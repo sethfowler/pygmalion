@@ -9,6 +9,7 @@ import Control.Concurrent.MVar
 import Control.Monad.Trans
 import Data.ByteString.Char8 ()
 import Data.Conduit
+import Data.Conduit.Cereal
 import Data.Conduit.Network
 import Data.Serialize
 import Network.Socket
@@ -22,18 +23,11 @@ runRPCServer port chan = runTCPServer settings (serverApp chan)
         notifyPort s = socketPort s >>= (putMVar port) . fromIntegral
 
 serverApp :: Chan (Maybe CommandInfo) -> Application IO
-serverApp chan ad = (appSource ad) $$ conduit =$ (appSink ad)
-  where conduit = do
+serverApp chan ad = (appSource ad) $= conduitGet getCI =$= process $$ (appSink ad)
+  where getCI = get :: Get CommandInfo
+        process = do
           result <- await
+          -- liftIO $ putStrLn $ "Server got: " ++ (show result)
           case result of
-            Just serialized -> processCmd (decode serialized)
-            _               -> error "Client never sent anything"
-
-        processCmd (Right tup) = do
-          -- liftIO $ putStrLn $ "Server got: " ++ (show tup)
-          case tupleToCommandInfo tup of
-            Just cmdInfo -> do
-                    liftIO $ writeChan chan (Just cmdInfo)
-                    yield "OK"
-            _            -> yield "ERROR"
-        processCmd _ = yield "ERROR"
+            ci@(Just _) -> liftIO (writeChan chan ci) >> yield "OK"
+            _           -> yield "ERROR"
