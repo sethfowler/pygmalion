@@ -39,7 +39,15 @@ getCommandInfo (Command c as) = do
 filterArgs :: [String] -> [String]
 filterArgs ("-c" : as) = filterArgs as
 filterArgs ("-o" : _ : as) = filterArgs as
+filterArgs ("-M" : as) = filterArgs as
+filterArgs ("-MM" : as) = filterArgs as
+filterArgs ("-MG" : as) = filterArgs as
+filterArgs ("-MP" : as) = filterArgs as
+filterArgs ("-fpch-deps" : as) = filterArgs as
+filterArgs ("-MT" : _ : as) = filterArgs as
+filterArgs ("-MQ" : _ : as) = filterArgs as
 filterArgs ("-MD" : as) = filterArgs as
+filterArgs ("-MMD" : as) = filterArgs as
 filterArgs ("-MF" : _ : as) = filterArgs as
 filterArgs (a : as) | "-W" `isPrefixOf` a && "-MD" `isInfixOf` a = filterArgs as
 filterArgs (a : as) | hasSourceExtension a = filterArgs as
