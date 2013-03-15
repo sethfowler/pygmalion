@@ -20,6 +20,7 @@ library
                    cereal,
                    cereal-conduit,
                    conduit,
+                   deepseq,
                    directory,
                    filepath,
                    ghc-prim,

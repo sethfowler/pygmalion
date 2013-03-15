@@ -19,7 +19,7 @@ main = do
   cf <- getConfiguration
   port <- newEmptyMVar
   chan <- newChan
-  withAsync (runAnalysisThread chan) $ \analysis -> do
+  withAsyncBound (runAnalysisThread chan) $ \analysis -> do
     ensureSuccess =<< (race (runRPCServer cf port chan) (executeMake cf port args))
     writeChan chan Nothing  -- Signifies end of data.
     ensureNoException =<< waitCatch analysis

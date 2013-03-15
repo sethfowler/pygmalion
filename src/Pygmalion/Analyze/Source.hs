@@ -8,9 +8,9 @@ import Clang.Alloc.Storable()
 import Clang.File
 import Clang.FFI
 import Clang.TranslationUnit
+import Control.DeepSeq
 import Control.Exception
 import Data.IORef
-import Data.Maybe
 import Data.Typeable
 import Foreign.StablePtr
 
@@ -32,20 +32,20 @@ clangAnalyze (CommandInfo sf _ (Command _ args) _) f = do
 
 clangGetIncludes :: CommandInfo -> IO (Maybe [FilePath])
 clangGetIncludes ci = do
-    headersRef <- newIORef []
+    headersRef <- newIORef (force [])
     result <- try $ clangAnalyze ci (getHeaders headersRef)
     case result of
-      Right _                 -> readIORef headersRef >>= return . Just
+      Right _                 -> readIORef headersRef >>= return . Just . force
       Left (ClangException _) -> return Nothing
   where
     getHeaders hsRef tu = withStablePtr hsRef $ \hsRefPtr ->
-      getInclusions tu visitInclusions (Just hsRefPtr)
-    visitInclusions :: InclusionVisitor (StablePtr (IORef [String]))
-    visitInclusions file _ hsRefPtr = do
+      getInclusions tu (visitInclusions hsRefPtr) (Just True)
+    visitInclusions :: StablePtr (IORef [String]) -> InclusionVisitor Bool
+    visitInclusions hsRefPtr file _ _ = do
       let name = getName file
       case null name of
         True -> putStrLn "Got null filename"
         False -> do
-          hsRef <- deRefStablePtr . fromJust $ hsRefPtr
-          modifyIORef hsRef $ \hs -> name : hs
-      return hsRefPtr
+          hsRef <- deRefStablePtr hsRefPtr
+          modifyIORef hsRef $ \hs -> force (name : hs)
+      return $ Just True
