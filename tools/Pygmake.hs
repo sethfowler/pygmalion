@@ -1,6 +1,7 @@
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception (Exception, throw)
+import Data.List
 import System.Environment
 import System.Exit
 import System.Process
@@ -34,15 +35,18 @@ parseArgs ["-h"]     = usage >> exitSuccess
 parseArgs as         = return as
 
 executeMake:: Config -> MVar Int -> [String] -> IO ExitCode
-executeMake cf port as = do
+executeMake cf port args = do
     portNumber <- readMVar port
     (_, _, _, handle) <- createProcess $ proc (make cf) (newArgs (show portNumber))
     waitForProcess handle
   where
-    newArgs p = [setCC p, setCXX p] ++ as
-    setCC p = "CC=" ++ (callPygscan p) ++ (cc cf)
-    setCXX p = "CXX=" ++ (callPygscan p) ++ (cpp cf)
+    newArgs p = [setCC p, setCXX p] ++ (makeArgs cf) ++ args
+    setCC p = "CC=" ++ (callPygscan p) ++ (cc cf) ++ (stringifyArgs ccArgs)
+    setCXX p = "CXX=" ++ (callPygscan p) ++ (cpp cf) ++ (stringifyArgs cppArgs)
     callPygscan p = scanExecutable ++ " --make " ++ p ++ " "
+    stringifyArgs f = case (intercalate " " (f cf)) of
+                         [] -> []
+                         s  -> " " ++ s
 
 ensureSuccess :: Either () ExitCode -> IO ()
 ensureSuccess (Right code@(ExitFailure _)) = exitWith code

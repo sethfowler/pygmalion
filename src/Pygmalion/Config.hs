@@ -17,11 +17,11 @@ data Config = Config
     ifAddr :: String,     -- Address of interface to bind to.
     ifPort :: Port,       -- Port to bind to.
     make :: String,       -- Make executable to use.
-    makeArgs :: [String], -- Extra make args, if any. (TODO)
+    makeArgs :: [String], -- Extra make args, if any.
     cc :: String,         -- C compiler executable to use.
-    ccArgs :: [String],   -- Extra C compiler args, if any. (TOD)
+    ccArgs :: [String],   -- Extra C compiler args, if any.
     cpp :: String,        -- C++ compiler executable to use.
-    cppArgs :: [String],  -- Extra C++ compiler args, if any. (TODO)
+    cppArgs :: [String],  -- Extra C++ compiler args, if any.
     relativeCDB :: Bool   -- Use relative paths in compilation database? (TODO)
   } deriving (Eq, Show)
 
