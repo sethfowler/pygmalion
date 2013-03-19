@@ -1,3 +1,4 @@
+import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception (Exception, throw)
@@ -35,18 +36,16 @@ parseArgs ["-h"]     = usage >> exitSuccess
 parseArgs as         = return as
 
 executeMake:: Config -> MVar Int -> [String] -> IO ExitCode
-executeMake cf port args = do
-    portNumber <- readMVar port
-    (_, _, _, handle) <- createProcess $ proc (make cf) (newArgs (show portNumber))
+executeMake cf portVar args = do
+    combinedArgs <- newArgs . show <$> readMVar portVar
+    (_, _, _, handle) <- createProcess $ proc (make cf) combinedArgs
     waitForProcess handle
   where
-    newArgs p = [setCC p, setCXX p] ++ (makeArgs cf) ++ args
-    setCC p = "CC=" ++ (callPygscan p) ++ (cc cf) ++ (stringifyArgs ccArgs)
-    setCXX p = "CXX=" ++ (callPygscan p) ++ (cpp cf) ++ (stringifyArgs cppArgs)
-    callPygscan p = scanExecutable ++ " --make " ++ p ++ " "
-    stringifyArgs f = case (intercalate " " (f cf)) of
-                         [] -> []
-                         s  -> " " ++ s
+    newArgs port = [compilerEnvVar "CC" port cc ccArgs,
+                    compilerEnvVar "CXX" port cpp cppArgs]
+                   ++ (makeArgs cf) ++ args
+    compilerEnvVar var port cmd cmdArgs = intercalate " " $
+      [(var ++ "=" ++ scanExecutable), "--make", port, cmd cf] ++ (cmdArgs cf)
 
 ensureSuccess :: Either () ExitCode -> IO ()
 ensureSuccess (Right code@(ExitFailure _)) = exitWith code

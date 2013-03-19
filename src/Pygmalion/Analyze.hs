@@ -21,8 +21,8 @@ runAnalysisThread chan = withDB dbFile $ \h -> do
     mapM_ (scanCommandAndUpdateDB h . fromJust) $ takeWhile isJust commandStream
 
 scanCommandAndUpdateDB :: DBHandle -> CommandInfo -> IO (Maybe ())
-scanCommandAndUpdateDB h cmdInfo = runScanner (    analyzeCode cmdInfo
-                                               >>= updateDB h)
+scanCommandAndUpdateDB h cmdInfo = runScanner $    analyzeCode cmdInfo
+                                               >>= updateDB h
 
 type Scanner a = MaybeT IO a
 
