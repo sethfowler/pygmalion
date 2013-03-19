@@ -28,7 +28,7 @@ library
                    mtl,
                    network,
                    network-conduit,
-                   sqlite,
+                   sqlite-simple,
                    text,
                    time,
                    transformers,
@@ -42,7 +42,8 @@ library
                    Pygmalion.JSON,
                    Pygmalion.RPC.Client,
                    Pygmalion.RPC.Server
-  other-modules:   Data.Bool.Predicate
+  other-modules:   Control.Exception.Labeled,
+                   Data.Bool.Predicate
   hs-source-dirs:  src
 
 executable pygmalion

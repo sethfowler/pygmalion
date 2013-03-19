@@ -39,7 +39,7 @@ analyzeCode ci = do
 
 updateDB :: DBHandle -> (CommandInfo, [FilePath]) -> Scanner ()
 updateDB h (ci, headers) = liftIO $ do
-    updateRecord h ci
+    updateSourceFile h ci
     -- Add entries for all included non-system headers, using the same metadata.
     forM_ headers $ \header -> do
-      updateRecord h $ updateSourceFile ci header
+      updateSourceFile h $ withSourceFile ci header

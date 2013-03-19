@@ -2,21 +2,12 @@ module Pygmalion.JSON
 ( sourceRecordsToJSON
 ) where
 
-import Database.SQLite
+import Data.List
 import Text.JSON
 
-newtype DBJSONVal = DBJSONVal Value
+import Pygmalion.Core
 
-instance JSON DBJSONVal where
-  showJSON (DBJSONVal (Double d)) = showJSON d
-  showJSON (DBJSONVal (Int i))    = showJSON i
-  showJSON (DBJSONVal (Text t))   = showJSON t
-  showJSON (DBJSONVal (Blob b))   = showJSON b
-  showJSON (DBJSONVal (Null))     = JSNull
-
-  -- Don't need to read.
-  readJSON _ = Error "Not implemented"
-
-sourceRecordsToJSON :: [[(String, Value)]] -> String
-sourceRecordsToJSON rs = encodeStrict $ map (toJSObject . wrap) rs
-  where wrap = map $ \(s,v) -> (s, DBJSONVal v)
+sourceRecordsToJSON :: [CommandInfo] -> String
+sourceRecordsToJSON cis = encodeStrict $ map (toJSObject . toKeyValue) cis
+  where toKeyValue (CommandInfo sf wd (Command cmd args) _) =
+          [("file", sf), ("directory", wd), ("command", intercalate " " (cmd : args))]

@@ -58,4 +58,4 @@ ensureNoException (Left e)  = putStrLn "Analysis thread threw an exception" >> t
 
 writeCompileCommands :: IO ()
 writeCompileCommands = withDB dbFile $ \h -> do
-  getAllRecords h >>= (writeFile compileCommandsFile) . sourceRecordsToJSON
+  getAllSourceFiles h >>= (writeFile compileCommandsFile) . sourceRecordsToJSON
