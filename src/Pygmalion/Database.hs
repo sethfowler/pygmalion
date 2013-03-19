@@ -8,32 +8,35 @@ module Pygmalion.Database
 
 import Prelude hiding (catch)
 import Control.Exception(bracket, catch, SomeException)
-import Control.Monad
 import Data.List
 import Data.Int
 import Database.SQLite
+import System.FilePath.Posix -- TODO: Remove this dependency.
 
 import Pygmalion.Core
 
+-- TODO: Switch to direct-sqlite and simple-simple. Database.SQLite is garbage.
+-- I could eliminate a great deal of this code by switching.
+
 -- Schema for the database.
-dbInt, dbString, dbPath :: SQLType
+dbInt, dbString {-, dbPath -} :: SQLType
 dbInt = SQLInt NORMAL True True
 dbString = SQLVarChar 2048
-dbPath = SQLVarChar 2048
+{- dbPath = SQLVarChar 2048 -}
 
 dbToolName :: String
 dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int64
 dbMajorVersion = 0
-dbMinorVersion = 1
+dbMinorVersion = 2
 
 metadataTable :: SQLTable
 metadataTable = Table "Metadata"
                 [
-                  Column "Tool" dbString [Unique],
-                  Column "MajorVersion" dbInt [],
-                  Column "MinorVersion" dbInt []
+                  Column "Tool" dbString [PrimaryKey False, IsNullable False],
+                  Column "MajorVersion" dbInt [IsNullable False],
+                  Column "MinorVersion" dbInt [IsNullable False]
                 ] []
 
 execGetDBVersion :: SQLiteResult a => SQLiteHandle -> IO (Either String [[Row a]])
@@ -50,22 +53,38 @@ execSetDBVersion h = execParamStatement_ h sql params
                   (":major", Int dbMajorVersion),
                   (":minor", Int dbMinorVersion)]
 
+{-
 sourceFileTable :: SQLTable
 sourceFileTable = Table "SourceFiles"
                   [
-                    Column "File" dbPath [Unique],
-                    Column "WorkingDirectory" dbPath [],
-                    Column "Command" dbString [],
-                    Column "LastBuilt" dbInt []
-                  ] []
+                    Column "File" dbPath [IsNullable False],
+                    Column "Directory" dbPath [IsNullable False],
+                    Column "WorkingDirectory" dbPath [IsNullable False],
+                    Column "Command" dbString [IsNullable False],
+                    Column "LastBuilt" dbInt [IsNullable False]
+                  ] [TablePrimaryKey ["File", "Directory"]]
+-}
+
+-- We need to define SourceFiles manually because Database.SQLite doesn't
+-- support table constraints.
+defineSourceFiles :: SQLiteHandle -> IO (Maybe String)
+defineSourceFiles h = execStatement_ h sql
+  where sql =  "create table if not exists SourceFiles("
+            ++ "File varchar(2048) not null,"
+            ++ "Directory varchar(2048) not null,"
+            ++ "WorkingDirectory varchar(2048) not null,"
+            ++ "Command varchar(2048) not null,"
+            ++ "LastBuilt integer zerofill unsigned not null,"
+            ++ "primary key(File, Directory))"
 
 execUpdateSourceFile :: SQLiteHandle -> CommandInfo -> IO (Maybe String)
 execUpdateSourceFile h (CommandInfo file wd (Command cmd args) time) =
     execParamStatement_ h sql params
   where sql =  "replace into SourceFiles "
-            ++ "(File, WorkingDirectory, Command, LastBuilt) "
-            ++ "values (:file, :wd, :cmd, :time)"
-        params = [(":file", Text file),
+            ++ "(File, Directory, WorkingDirectory, Command, LastBuilt) "
+            ++ "values (:file, :dir, :wd, :cmd, :time)"
+        params = [(":file", Text (takeFileName file)),
+                  (":dir",  Text (takeDirectory file)),
                   (":wd",   Text wd),
                   (":cmd",  Text $ intercalate " " (cmd : args)),
                   (":time", Int time)]
@@ -73,13 +92,13 @@ execUpdateSourceFile h (CommandInfo file wd (Command cmd args) time) =
 execGetAllSourceFiles :: SQLiteResult a => SQLiteHandle
                                         -> IO (Either String [[Row a]])
 execGetAllSourceFiles h = execStatement h sql
-  where sql =  "select File as file, "
+  where sql =  "select ((case when Directory == '.' "
+                          ++ "then '' "
+                          ++ "else Directory || '/' "
+                     ++ "end) || File) as file, "
             ++ "WorkingDirectory as directory, "
             ++ "Command as command "
             ++ "from SourceFiles"
-
-schema :: [SQLTable]
-schema = [metadataTable, sourceFileTable]
 
 -- Debugging functions.
 withCatch :: String -> IO a -> IO a
@@ -113,26 +132,29 @@ getAllRecords h = withCatch "getAllRecords" $ execGetAllSourceFiles h >>= ensure
 
 -- Checks that the database has the correct schema and sets it up if needed.
 ensureSchema :: DBHandle -> IO ()
-ensureSchema h = forM_ schema $ \table ->
-      defineTableOpt h True table
-  >>= ensureNothing
-  >>  ensureVersion h
+ensureSchema h = do
+      defineTableOpt h True metadataTable >>= ensureNothing
+      -- We need to define SourceFiles manually because Database.SQLite doesn't
+      -- support table constraints.
+      defineSourceFiles h >>= ensureNothing
+      ensureVersion h
 
 ensureVersion :: DBHandle -> IO ()
 ensureVersion h = execGetDBVersion h >>= ensureRight >>= checkVersion
   where
     checkVersion [[[("MajorVersion", Int major),
                     ("MinorVersion", Int minor)]]]
-                 | (major, minor) == (dbMajorVersion, dbMinorVersion)
-                 = return ()
+                 | (major, minor) == (dbMajorVersion, dbMinorVersion) = return ()
+                 | otherwise = throwDBVersionError major minor
     checkVersion [[]] = execSetDBVersion h >>= ensureNothing
-    checkVersion rs = throwDBVersionError rs
+    checkVersion _    = error $ "Couldn't read database version"
 
-throwDBVersionError :: Show a => [[Row a]] -> IO ()
-throwDBVersionError rs = error $ "Database version must be "
-                             ++ (show dbMajorVersion) ++ "."
-                             ++ (show dbMinorVersion) ++ " but I got "
-                             ++ (show rs)
+throwDBVersionError :: Int64 -> Int64 -> IO ()
+throwDBVersionError major minor  =  error $ "Database version "
+                                 ++ (show major) ++ "." ++ (show minor)
+                                 ++ " is different than required version "
+                                 ++ (show dbMajorVersion) ++ "."
+                                 ++ (show dbMinorVersion)
 
 -- Utility functions.
 ensureNothing :: Maybe String -> IO ()
