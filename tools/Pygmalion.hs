@@ -1,4 +1,5 @@
 import Control.Monad
+import Data.List
 import System.Environment
 import System.Exit
 
@@ -9,17 +10,43 @@ import Pygmalion.JSON
 main :: IO ()
 main = getArgs
    >>= parseArgs
-   >>  dumpJSON
 
 usage :: IO ()
-usage = putStrLn $ "Usage: " ++ queryExecutable ++ " --compile-commands"
+usage = do
+  putStrLn $ "Usage: " ++ queryExecutable ++ " [command]"
+  putStrLn   "where [command] is one of the following:"
+  putStrLn   " --help                  Prints this message."
+  putStrLn   " --compile-commands      Prints a clang compilation database."
+  putStrLn   " --flags-for-file [file] Prints the compilation flags for the"
+  putStrLn   "                         given file, or nothing on failure. If"
+  putStrLn   "                         the file isn't in the database, a guess"
+  putStrLn   "                         will be printed if possible."
+  exitWith (ExitFailure (-1))
 
 parseArgs :: [String] -> IO ()
-parseArgs ["--compile-commands"] = return ()
-parseArgs ["--help"] = usage >> exitSuccess
-parseArgs ["-h"]     = usage >> exitSuccess
-parseArgs _          = usage >> exitSuccess
+parseArgs ["--compile-commands"] = printCDB
+parseArgs ["--flags-for-file", path] = printFlags path
+parseArgs ["--help"] = usage
+parseArgs ["-h"]     = usage
+parseArgs _          = usage
 
-dumpJSON :: IO ()
-dumpJSON = withDB dbFile $ \h ->
+printCDB :: IO ()
+printCDB = withDB dbFile $ \h ->
   getAllSourceFiles h >>= putStrLn . sourceRecordsToJSON
+
+printFlags :: FilePath -> IO ()
+printFlags f = withDB dbFile $ \h -> do
+  preciseCmd <- getSourceFile h f
+  case preciseCmd of
+    Just (CommandInfo _ _ cmd _) -> putFlags cmd
+    _                            -> printSimilarFlags h f
+
+printSimilarFlags :: DBHandle -> FilePath -> IO ()
+printSimilarFlags h f = do
+  similarCmd <- getSimilarSourceFile h f
+  case similarCmd of
+    Just (CommandInfo _ _ cmd _) -> putFlags cmd
+    _                            -> exitWith (ExitFailure (-1))
+
+putFlags :: Command -> IO ()
+putFlags (Command _ args) = putStrLn . intercalate " " $ args

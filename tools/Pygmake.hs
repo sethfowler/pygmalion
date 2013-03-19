@@ -27,12 +27,13 @@ main = do
     ensureNoException =<< waitCatch analysis
   writeCompileCommands
 
-usage :: IO ()
-usage = putStrLn $ "Usage: " ++ makeExecutable ++ " [make arguments]"
+usage :: IO a
+usage = putStrLn ("Usage: " ++ makeExecutable ++ " [make arguments]")
+     >> exitWith (ExitFailure (-1))
 
 parseArgs :: [String] -> IO [String]
-parseArgs ["--help"] = usage >> exitSuccess
-parseArgs ["-h"]     = usage >> exitSuccess
+parseArgs ["--help"] = usage
+parseArgs ["-h"]     = usage
 parseArgs as         = return as
 
 executeMake:: Config -> MVar Int -> [String] -> IO ExitCode

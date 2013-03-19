@@ -14,8 +14,9 @@ main = do
   (port, cmd) <- (getArgs >>= parseArgs)
   void $ concurrently (runCmd cmd) (sendScanMessageIfValid port cmd)
 
-usage :: IO ()
-usage = putStrLn $ "Usage: " ++ scanExecutable ++ " --make [port] [command]"
+usage :: IO a
+usage = putStrLn ("Usage: " ++ scanExecutable ++ " --make [port] [command]")
+     >> exitWith (ExitFailure (-1))
 
 die :: String -> ExitCode -> IO a
 die s c = putStrLn (scanExecutable ++ ": " ++ s) >> exitWith c
@@ -24,12 +25,12 @@ needArg :: String -> IO a
 needArg s = die ("No " ++ s ++ " specified") (ExitFailure (-1))
 
 parseArgs :: [String] -> IO (Port, Command)
-parseArgs ["--help"]                   = usage >> exitSuccess
-parseArgs ["-h"]                       = usage >> exitSuccess
+parseArgs ["--help"]                   = usage
+parseArgs ["-h"]                       = usage
 parseArgs ("--make" : port : cmd : as) = return (read port, Command cmd as)
 parseArgs ("--make" : _ : [])          = needArg "command"
 parseArgs ("--make" : [])              = needArg "port"
-parseArgs _                            = usage >> exitSuccess
+parseArgs _                            = usage
 
 runCmd :: Command -> IO ()
 runCmd (Command c as) = do
