@@ -2,6 +2,7 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception (Exception, throw)
+import Control.Monad
 import Data.List
 import System.Environment
 import System.Exit
@@ -25,7 +26,7 @@ main = do
     ensureSuccess =<< (race (runRPCServer cf port chan) (executeMake cf port args))
     writeChan chan Nothing  -- Signifies end of data.
     ensureNoException =<< waitCatch analysis
-  writeCompileCommands
+  when (makeCDB cf) writeCompileCommands
 
 usage :: IO a
 usage = putStrLn ("Usage: " ++ makeExecutable ++ " [make arguments]")

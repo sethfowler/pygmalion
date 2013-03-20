@@ -18,25 +18,25 @@ data Config = Config
     ifPort :: Port,       -- Port to bind to.
     make :: String,       -- Make executable to use.
     makeArgs :: [String], -- Extra make args, if any.
+    makeCDB :: Bool,      -- If true, pygmake generates a CDB automatically.
     cc :: String,         -- C compiler executable to use.
     ccArgs :: [String],   -- Extra C compiler args, if any.
     cpp :: String,        -- C++ compiler executable to use.
-    cppArgs :: [String],  -- Extra C++ compiler args, if any.
-    relativeCDB :: Bool   -- Use relative paths in compilation database? (TODO)
+    cppArgs :: [String]   -- Extra C++ compiler args, if any.
   } deriving (Eq, Show)
 
 defaultConfig :: Config
 defaultConfig = Config
   {
-    ifAddr = "127.0.0.1",
-    ifPort = 0, -- Meaning to use an arbitrary port.
-    make = "make",
+    ifAddr   = "127.0.0.1",
+    ifPort   = 0, -- Meaning to use an arbitrary port.
+    make     = "make",
     makeArgs = [],
-    cc = "clang",
-    ccArgs = [],
-    cpp = "clang++",
-    cppArgs = [],
-    relativeCDB = False
+    makeCDB  = False,
+    cc       = "clang",
+    ccArgs   = [],
+    cpp      = "clang++",
+    cppArgs  = []
   }
 
 instance CT.Configured [String] where
@@ -54,16 +54,15 @@ getConfiguration = do
     cfPort      <- confValue conf "network.port" ifPort
     cfMake      <- confValue conf "make.command" make
     cfMakeArgs  <- confValue conf "make.args" makeArgs
+    cfMakeCDB   <- confValue conf "make.compilation-database" makeCDB
     cfCC        <- confValue conf "c.compiler" cc
     cfCCArgs    <- confValue conf "c.args" ccArgs
     cfCPP       <- confValue conf "cpp.compiler" cpp
     cfCPPArgs   <- confValue conf "cpp.args" cppArgs
-    cfRelCDB    <- confValue conf "compilation-database.relative-paths" relativeCDB
 
     return $ Config cfInterface cfPort
-                    cfMake cfMakeArgs
+                    cfMake cfMakeArgs cfMakeCDB
                     cfCC cfCCArgs
                     cfCPP cfCPPArgs
-                    cfRelCDB
   where
     confValue conf name f = lookupDefault (f defaultConfig) conf name
