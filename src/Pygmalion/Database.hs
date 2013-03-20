@@ -125,8 +125,8 @@ updateSourceFile h (CommandInfo f wd (Command cmd args) t) = do
     wdId <- getIdForRow h "Paths" "Path" (normalise wd)
     cmdId <- getIdForRow h "BuildCommands" "Command" cmd
     argsId <- getIdForRow h "BuildArgs" "Args" (intercalate " " args)
-    execute_ h "commit"
     execute h sql (normalise . takeFileName $ f, pathId, wdId, cmdId, argsId, t)
+    execute_ h "commit"
   where
     sql =  "replace into SourceFiles                                           \
            \(File, Path, WorkingDirectory, BuildCommand, BuildArgs, LastBuilt) \
