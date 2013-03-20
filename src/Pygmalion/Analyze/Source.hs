@@ -5,9 +5,11 @@ module Pygmalion.Analyze.Source
 ) where
 
 import Clang.Alloc.Storable()
+import qualified Clang.Cursor as Cursor
 import Clang.File
-import Clang.FFI
+import Clang.FFI (TranslationUnit)
 import Clang.TranslationUnit
+import Clang.Traversal
 import Control.DeepSeq
 import Control.Exception
 import Data.IORef
@@ -33,11 +35,19 @@ clangAnalyze (CommandInfo sf _ (Command _ args) _) f = do
 clangGetIncludes :: CommandInfo -> IO (Maybe [FilePath])
 clangGetIncludes ci = do
     headersRef <- newIORef (force [])
-    result <- try $ clangAnalyze ci (getHeaders headersRef)
+    result <- try $ clangAnalyze ci (\tu -> getHeaders headersRef tu >> visitKids tu)
     case result of
       Right _                 -> readIORef headersRef >>= return . Just . force
       Left (ClangException _) -> return Nothing
   where
+    visitKids tu = visitChildren (getCursor tu) kidVisitor Nothing >> return ()
+    kidVisitor :: ChildVisitor Bool
+    kidVisitor cursor _ usrData = do
+      let cKind = Cursor.getKind cursor
+      let nameString = show (Cursor.getDisplayName cursor)
+      let kindString = show (Cursor.getCursorKindSpelling cKind)
+      putStrLn $ "Name: " ++ nameString ++ " Kind: " ++ kindString
+      return (usrData, ChildVisit_Continue)
     getHeaders hsRef tu = withStablePtr hsRef $ \hsRefPtr ->
       getInclusions tu (visitInclusions hsRefPtr) (Just True)
     visitInclusions :: StablePtr (IORef [String]) -> InclusionVisitor Bool
