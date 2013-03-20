@@ -15,6 +15,7 @@ module Pygmalion.Core
 , compileCommandsFile
 ) where
 
+import Control.Applicative
 import Data.Int
 import Data.List
 import Data.Serialize
@@ -44,15 +45,11 @@ instance ToRow CommandInfo where
 
 instance FromRow CommandInfo where
   fromRow = do
-    file <- field
-    directory <- field
-    wd <- field
-    cmdAndArgs <- field
-    cmd <- case words cmdAndArgs of
-      (c : as) -> return $ Command c as
-      _        -> error $ "Malformed row for file " ++ file
+    sf   <- (flip combine) <$> field <*> field
+    wd   <- field
+    cmd  <- Command <$> field <*> (words <$> field)
     time <- field
-    return $ CommandInfo (normalise $ combine directory file) wd cmd time
+    return $ CommandInfo (normalise sf) wd cmd time
 
 data Command = Command String [String]
   deriving (Eq, Show, Generic)
