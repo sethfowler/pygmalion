@@ -17,6 +17,7 @@ tests =
       goldenVsFile' "RemoveBadArguments"       runPygmake,
       goldenVsFile' "FoundLocalIncludes"       runPygmake,
       goldenVsFile' "FoundTransitiveIncludes"  runPygmake
+      -- goldenVsFile' "FoundDeclarations"        runPygmake
     ]
   ]
 
