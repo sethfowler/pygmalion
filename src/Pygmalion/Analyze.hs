@@ -32,6 +32,7 @@ runScanner a = runMaybeT a
 analyzeCode :: CommandInfo -> Scanner (CommandInfo, [FilePath])
 analyzeCode ci = do
   -- liftIO $ putStrLn $ "Analyzing " ++ (show ci)
+  _ <- liftIO $ getDefs ci
   includedFiles <- liftIO $ getIncludes ci
   case includedFiles of
     Just fs -> return (ci, (map normalise) . (filter isLocalHeader) $ fs)

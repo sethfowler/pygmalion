@@ -4,7 +4,7 @@ extern int b;
 
 void bfun();
 
-class BClass : public CClass
+class BClass : public ns::CClass
 {
   public:
     BClass();

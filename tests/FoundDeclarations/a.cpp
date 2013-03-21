@@ -1,5 +1,7 @@
 #include "b.h"
 
+using namespace ns;
+
 int main(int argc, char** argv)
 {
   BClass bInstance;

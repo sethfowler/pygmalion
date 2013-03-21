@@ -2,6 +2,8 @@
 
 #include "c.h"
 
+namespace ns {
+
 int c = 0;
 
 void cfun()
@@ -30,3 +32,5 @@ void CClass::DoCPrivate()
 {
   printf("c private\n");
 }
+
+} // namespace ns

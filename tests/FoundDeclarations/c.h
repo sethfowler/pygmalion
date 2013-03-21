@@ -1,7 +1,16 @@
 #pragma once
+
+namespace ns {
+
 extern int c;
 
 void cfun();
+
+enum CEnum
+{
+  CEnum_A,
+  CEnum_B
+};
 
 class CClass
 {
@@ -19,3 +28,5 @@ class CClass
 
     int mCPrivate;
 };
+
+} // namespace ns

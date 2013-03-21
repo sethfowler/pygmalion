@@ -12,12 +12,12 @@ tests =
   [
     testGroup "Compilation Database"
     [
-      goldenVsFile' "NoCommands"               runPygmake,
-      goldenVsFile' "Simple"                   runPygmake,
-      goldenVsFile' "RemoveBadArguments"       runPygmake,
-      goldenVsFile' "FoundLocalIncludes"       runPygmake,
-      goldenVsFile' "FoundTransitiveIncludes"  runPygmake
-      -- goldenVsFile' "FoundDeclarations"        runPygmake
+      -- goldenVsFile' "NoCommands"               runPygmake,
+      -- goldenVsFile' "Simple"                   runPygmake,
+      -- goldenVsFile' "RemoveBadArguments"       runPygmake,
+      -- goldenVsFile' "FoundLocalIncludes"       runPygmake,
+      -- goldenVsFile' "FoundTransitiveIncludes"  runPygmake
+      goldenVsFile' "FoundDeclarations"        runPygmake
     ]
   ]
 

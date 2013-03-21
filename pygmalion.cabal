@@ -12,7 +12,7 @@ build-type:          Simple
 cabal-version:       >=1.8
 
 library
-  ghc-options:     -Wall -Werror -threaded
+  ghc-options:     -Wall -threaded
   build-depends:   base >= 4,
                    async,
                    bytestring,
@@ -47,14 +47,14 @@ library
   hs-source-dirs:  src
 
 executable pygmalion
-  ghc-options:    -Wall -Werror -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:    -Wall -threaded -rtsopts -with-rtsopts=-N
   main-is:        Pygmalion.hs 
   build-depends:  base >= 4,
                   pygmalion
   hs-source-dirs: tools
 
 executable pygmake
-  ghc-options:    -Wall -Werror -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:    -Wall -threaded -rtsopts -with-rtsopts=-N
   main-is:        Pygmake.hs 
   build-depends:  base >= 4,
                   async,
@@ -63,7 +63,7 @@ executable pygmake
   hs-source-dirs: tools
 
 executable pygscan
-  ghc-options:    -Wall -Werror -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:    -Wall -threaded -rtsopts -with-rtsopts=-N
   main-is:        Pygscan.hs 
   build-depends:  base >= 4,
                   async,
