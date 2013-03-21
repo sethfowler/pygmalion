@@ -21,6 +21,7 @@ library
                    cereal-conduit,
                    conduit,
                    deepseq,
+                   deepseq-th,
                    directory,
                    filepath,
                    ghc-prim,
@@ -35,6 +36,7 @@ library
                    LibClang
   exposed-modules: Pygmalion.Analyze,
                    Pygmalion.Analyze.Command,
+                   Pygmalion.Analyze.Extension,
                    Pygmalion.Analyze.Source,
                    Pygmalion.Config,
                    Pygmalion.Core,

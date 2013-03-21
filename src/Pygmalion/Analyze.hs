@@ -8,9 +8,7 @@ import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
 import Data.Maybe
-import System.FilePath.Posix
 
-import Pygmalion.Analyze.Command
 import Pygmalion.Analyze.Source
 import Pygmalion.Core
 import Pygmalion.Database
@@ -29,18 +27,20 @@ type Scanner a = MaybeT IO a
 runScanner :: Scanner a -> IO (Maybe a)
 runScanner a = runMaybeT a
 
-analyzeCode :: CommandInfo -> Scanner (CommandInfo, [FilePath])
+analyzeCode :: CommandInfo -> Scanner (CommandInfo, [FilePath], [DefInfo])
 analyzeCode ci = do
-  -- liftIO $ putStrLn $ "Analyzing " ++ (show ci)
-  _ <- liftIO $ getDefs ci
-  includedFiles <- liftIO $ getIncludes ci
-  case includedFiles of
-    Just fs -> return (ci, (map normalise) . (filter isLocalHeader) $ fs)
+  liftIO $ putStrLn $ "Analyzing " ++ (show ci)
+  result <- liftIO $ runSourceAnalyses ci
+  case result of
+    Just (is, ds) -> return (ci, is, ds)
     Nothing -> MaybeT $ return Nothing
 
-updateDB :: DBHandle -> (CommandInfo, [FilePath]) -> Scanner ()
-updateDB h (ci, headers) = liftIO $ do
+updateDB :: DBHandle -> (CommandInfo, [FilePath], [DefInfo]) -> Scanner ()
+updateDB h (ci, includes, defs) = liftIO $ do
     updateSourceFile h ci
-    -- Add entries for all included non-system headers, using the same metadata.
-    forM_ headers $ \header -> do
-      updateSourceFile h $ withSourceFile ci header
+    -- Update entries for all non-system includes, using the same metadata.
+    forM_ includes $ \i -> do
+      updateSourceFile h $ withSourceFile ci i
+    -- Update entries for all definitions.
+    forM_ defs $ \d -> do
+      updateDef h d

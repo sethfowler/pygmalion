@@ -2,6 +2,9 @@
 
 using namespace ns;
 
+#define CINST_MACRO cInstance
+#define ADD(x, y) x + y
+
 int main(int argc, char** argv)
 {
   BClass bInstance;
@@ -16,5 +19,5 @@ int main(int argc, char** argv)
   cPtr->CVirtualMethod(false);
   bInCPtr->CVirtualMethod(false);
 
-  return b + c + bInstance.mB + cInstance.mC;
+  return ADD(b, c) + bInstance.mB + CINST_MACRO.mC;
 }

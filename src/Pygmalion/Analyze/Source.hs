@@ -1,94 +1,99 @@
-{-# LANGUAGE DeriveDataTypeable, BangPatterns #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 
 module Pygmalion.Analyze.Source
-( getIncludes
-, getDefs
+( getIncludes -- deprecated
+, getDefs     -- deprecated
+, runSourceAnalyses
 ) where
 
 import Clang.Alloc.Storable()
---import qualified Clang.CrossReference as XRef
-import qualified Clang.Cursor as Cursor
+import qualified Clang.CrossReference as XRef
+import qualified Clang.Cursor as C
 import Clang.File
 import Clang.FFI (TranslationUnit)
 import qualified Clang.Source as Source
 import Clang.TranslationUnit
 import Clang.Traversal
 import Control.Applicative
-import Control.DeepSeq
 import Control.Exception
 import Control.Monad
 import Data.List
 import Data.IORef
 import Data.Typeable
---import Foreign.StablePtr
---import System.IO
 import System.FilePath.Posix
 
+import Data.Bool.Predicate
+import Pygmalion.Analyze.Extension
 import Pygmalion.Core
 
 getIncludes :: CommandInfo -> IO (Maybe [FilePath])
-getIncludes = runAnalysis includesAnalysis ([] :: [FilePath])
+getIncludes ci = runSourceAnalyses ci >>= return . (fst <$>)
 
-getDefs :: CommandInfo -> IO (Maybe [String])
-getDefs = runAnalysis defsAnalysis ([] :: [String])
+getDefs :: CommandInfo -> IO (Maybe [DefInfo])
+getDefs ci = runSourceAnalyses ci >>= return . (snd <$>)
 
-type Analysis a = IORef a -> TranslationUnit -> IO ()
-runAnalysis :: NFData a => Analysis a -> a -> CommandInfo -> IO (Maybe a)
-runAnalysis f st ci = do
-  stRef <- newIORef (force st)
-  result <- try $ withTranslationUnit ci (f stRef)
+runSourceAnalyses :: CommandInfo -> IO (Maybe ([FilePath], [DefInfo]))
+runSourceAnalyses ci = do
+  includesRef <- newIORef []
+  defsRef <- newIORef []
+  result <- try $ withTranslationUnit ci $ \tu -> do
+                    includesAnalysis includesRef tu
+                    defsAnalysis defsRef tu
   case result of
-    Right _                 -> readIORef stRef >>= return . Just . force
+    Right _ -> (,) <$> readIORef includesRef <*> readIORef defsRef >>= return . Just
     Left (ClangException _) -> return Nothing
 
 includesAnalysis :: IORef [FilePath] -> TranslationUnit -> IO ()
-includesAnalysis hsRef tu = void $ getInclusions tu visitInclusions unused
+includesAnalysis isRef tu = void $ getInclusions tu visitInclusions unused
   where
     visitInclusions :: InclusionVisitor Bool
     visitInclusions file _ usrData = do
       let name = getName file
-      case null name of
-        True  -> putStrLn "Got null filename"
-        False -> modifyIORef hsRef $ \hs -> force (name : hs)
+      when (isLocalHeader name) $ modifyIORef isRef $! ((normalise name) :)
       return usrData
 
-defsAnalysis :: IORef [String] -> TranslationUnit -> IO ()
-defsAnalysis _ tu = void $ visitChildren (getCursor tu) kidVisitor unused
+isLocalHeader :: FilePath -> Bool
+isLocalHeader = isRelative .&&. isValid .&&. hasHeaderExtension .&&. (not . null)
+
+defsAnalysis :: IORef [DefInfo] -> TranslationUnit -> IO ()
+defsAnalysis dsRef tu = void $ visitChildren (getCursor tu) kidVisitor unused
   where
     kidVisitor :: ChildVisitor Bool
     kidVisitor cursor _ usrData = do
-      let cKind = Cursor.getKind cursor
-      let kind = show (Cursor.getCursorKindSpelling cKind)
-      let loc = Cursor.getLocation cursor
+      let cKind = C.getKind cursor
+      let loc = C.getLocation cursor
       let (f, ln, col, _) = Source.getSpellingLocation loc
       let file = case f of
-                   Nothing -> ""
-                   Just validF  -> show $ Source.getFilename validF
-      when (inProject file && isDef cursor cKind) $
-        putStrLn $ "Name: " ++ (fqn cursor) ++ " Kind: " ++ kind ++ " Loc: " ++
+                   Just validF -> show $ Source.getFilename validF
+                   Nothing     -> ""
+      when (inProject file && isDef cursor cKind) $ do
+        let usr = show $ XRef.getUSR cursor
+        let name = fqn cursor
+        let kind = show (C.getCursorKindSpelling cKind)
+        putStrLn $ "Name: " ++ name ++ " Kind: " ++ kind ++ " Loc: " ++
                    (normalise file) ++ ":" ++ (show ln) ++ ":" ++ (show col)
+                   ++ " Usr: " ++ usr
+        let def = DefInfo (Identifier name usr)
+                          (SourceLocation (normalise file) ln col)
+                          kind
+        modifyIORef dsRef $! (def :)
       let next = case cKind of
-                  Cursor.Cursor_FunctionDecl -> ChildVisit_Continue
-                  Cursor.Cursor_CXXMethod    -> ChildVisit_Continue
-                  _                          -> ChildVisit_Recurse
+                  C.Cursor_FunctionDecl -> ChildVisit_Continue
+                  C.Cursor_CXXMethod    -> ChildVisit_Continue
+                  _                     -> ChildVisit_Recurse
       return (usrData, next)
 
-inProject :: String -> Bool
-inProject file = not (("/" `isPrefixOf` file) || (null file)) 
+inProject :: FilePath -> Bool
+inProject = isRelative .&&. isValid .&&. (not . null)
 
-isDef :: Cursor.Cursor -> Cursor.CursorKind -> Bool
-isDef c k = Cursor.isDefinition c && not (k == Cursor.Cursor_CXXAccessSpecifier)
+isDef :: C.Cursor -> C.CursorKind -> Bool
+isDef c k = C.isDefinition c && not (k == C.Cursor_CXXAccessSpecifier)
 
-fqn :: Cursor.Cursor -> String
+fqn :: C.Cursor -> String
 fqn = intercalate "::" . reverse . go
-  where go c | c == Cursor.nullCursor = []
-             | (Cursor.isTranslationUnit . Cursor.getKind) c = []
-             | otherwise = show (Cursor.getDisplayName c) : go (Cursor.getSemanticParent c)
-
-{-
-withStablePtr :: a -> (StablePtr a -> IO b) -> IO b
-withStablePtr v = bracket (newStablePtr v) (freeStablePtr)
--}
+  where go c | c == C.nullCursor = []
+             | (C.isTranslationUnit . C.getKind) c = []
+             | otherwise = show (C.getDisplayName c) : go (C.getSemanticParent c)
 
 withTranslationUnit :: CommandInfo -> (TranslationUnit -> IO ()) -> IO ()
 withTranslationUnit (CommandInfo sf _ (Command _ args) _) f = do

@@ -1,26 +1,13 @@
 module Pygmalion.Analyze.Command
-( hasSourceExtension
-, hasHeaderExtension
-, isLocalHeader
-, getCommandInfo
+( getCommandInfo
 ) where
 
 import Data.List
 import Data.Time.Clock.POSIX
 import System.Directory
-import System.FilePath.Posix
 
-import Data.Bool.Predicate
+import Pygmalion.Analyze.Extension
 import Pygmalion.Core
-
-sourceExtensions, headerExtensions :: [String]
-sourceExtensions = [".c", ".cc", ".cpp", ".C"]
-headerExtensions = [".h", ".hh", ".hpp", ".H"]
-
-hasSourceExtension, hasHeaderExtension, isLocalHeader :: String -> Bool
-hasSourceExtension a = any (`isSuffixOf` a) sourceExtensions
-hasHeaderExtension a = any (`isSuffixOf` a) headerExtensions
-isLocalHeader = isRelative .&&. isValid .&&. hasHeaderExtension
 
 getCommandInfo :: Command -> IO (Maybe CommandInfo)
 getCommandInfo (Command c as) = do

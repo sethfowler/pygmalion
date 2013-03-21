@@ -7,6 +7,7 @@ module Pygmalion.Database
 , getAllSourceFiles
 , getSourceFile
 , getSimilarSourceFile
+, updateDef
 , enableTracing
 , DBHandle
 ) where
@@ -56,7 +57,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int64
 dbMajorVersion = 0
-dbMinorVersion = 3
+dbMinorVersion = 4
 
 defineMetadataTable :: DBHandle -> IO ()
 defineMetadataTable h = execute_ h 
@@ -80,6 +81,13 @@ setDBVersion h = execute h sql params
   where sql = "insert into Metadata (Tool, MajorVersion, MinorVersion) \
               \values (?, ?, ?)"
         params = (dbToolName, dbMajorVersion, dbMinorVersion)
+
+-- Schema and operations for the Files table.
+defineFilesTable :: DBHandle -> IO ()
+defineFilesTable h = execute_ h sql
+  where sql =  "create table if not exists Files(        \
+               \ Id integer primary key unique not null, \
+               \ Name varchar(2048) unique not null)"
 
 -- Schema and operations for the Paths table.
 definePathsTable :: DBHandle -> IO ()
@@ -106,12 +114,13 @@ defineBuildArgsTable h = execute_ h sql
 defineSourceFilesTable :: DBHandle -> IO ()
 defineSourceFilesTable h = execute_ h sql
   where sql =  "create table if not exists SourceFiles(                  \
-               \ File varchar(2048) not null,                            \
+               \ File integer not null,                                  \
                \ Path integer not null,                                  \
                \ WorkingDirectory integer not null,                      \
                \ BuildCommand integer not null,                          \
                \ BuildArgs integer not null,                             \
                \ LastBuilt integer zerofill unsigned not null,           \
+               \ foreign key(File) references Files(Id),                 \
                \ foreign key(Path) references Paths(Id),                 \
                \ foreign key(WorkingDirectory) references Paths(Id),     \
                \ foreign key(BuildCommand) references BuildCommands(Id), \
@@ -121,11 +130,12 @@ defineSourceFilesTable h = execute_ h sql
 updateSourceFile :: DBHandle -> CommandInfo -> IO ()
 updateSourceFile h (CommandInfo f wd (Command cmd args) t) = do
     execute_ h "begin transaction"
+    fileId <- getIdForRow h "Files" "Name" (normalise . takeFileName $ f)
     pathId <- getIdForRow h "Paths" "Path" (normalise . takeDirectory $ f)
     wdId <- getIdForRow h "Paths" "Path" (normalise wd)
     cmdId <- getIdForRow h "BuildCommands" "Command" cmd
     argsId <- getIdForRow h "BuildArgs" "Args" (intercalate " " args)
-    execute h sql (normalise . takeFileName $ f, pathId, wdId, cmdId, argsId, t)
+    execute h sql (fileId, pathId, wdId, cmdId, argsId, t)
     execute_ h "commit"
   where
     sql =  "replace into SourceFiles                                           \
@@ -148,8 +158,9 @@ mkQuery = fromString
 
 getAllSourceFiles :: DBHandle -> IO [CommandInfo]
 getAllSourceFiles h = query_ h sql
-  where sql = "select File, P.Path, W.Path, C.Command, A.Args, LastBuilt   \
+  where sql = "select F.Name, P.Path, W.Path, C.Command, A.Args, LastBuilt \
               \ from SourceFiles                                           \
+              \ join Files as F on SourceFiles.File = F.Id                 \
               \ join Paths as P on SourceFiles.Path = P.Id                 \
               \ join Paths as W on SourceFiles.WorkingDirectory = W.Id     \
               \ join BuildCommands as C on SourceFiles.BuildCommand = C.Id \
@@ -161,13 +172,14 @@ getSourceFile h f = do
     return $ case row of
               (ci : _) -> Just ci
               _        -> Nothing
-  where sql = "select File, P.Path, W.Path, C.Command, A.Args, LastBuilt   \
+  where sql = "select F.Name, P.Path, W.Path, C.Command, A.Args, LastBuilt \
               \ from SourceFiles                                           \
+              \ join Files as F on SourceFiles.File = F.Id                 \
               \ join Paths as P on SourceFiles.Path = P.Id                 \
               \ join Paths as W on SourceFiles.WorkingDirectory = W.Id     \
               \ join BuildCommands as C on SourceFiles.BuildCommand = C.Id \
               \ join BuildArgs as A on SourceFiles.BuildArgs = A.Id        \
-              \ where File = ? and P.Path = ? limit 1"
+              \ where F.Name = ? and P.Path = ? limit 1"
 
 -- Eventually this should be more statistical, but right now it will just
 -- return an arbitrary file from the same directory.
@@ -177,21 +189,60 @@ getSimilarSourceFile h f = do
     return $ case row of
               (ci : _) -> Just ci
               _        -> Nothing
-  where sql = "select File, P.Path, W.Path, C.Command, A.Args, LastBuilt   \
+  where sql = "select F.Name, P.Path, W.Path, C.Command, A.Args, LastBuilt \
               \ from SourceFiles                                           \
+              \ join Files as F on SourceFiles.File = F.Id                 \
               \ join Paths as P on SourceFiles.Path = P.Id                 \
               \ join Paths as W on SourceFiles.WorkingDirectory = W.Id     \
               \ join BuildCommands as C on SourceFiles.BuildCommand = C.Id \
               \ join BuildArgs as A on SourceFiles.BuildArgs = A.Id        \
               \ where P.Path = ? limit 1"
 
+-- Schema and operations for the Kinds table.
+defineKindsTable :: DBHandle -> IO ()
+defineKindsTable h = execute_ h sql
+  where sql =  "create table if not exists Kinds(        \
+               \ Id integer primary key unique not null, \
+               \ Kind varchar(2048) unique not null)"
+
+-- Schema and operations for the Definitions table.
+defineDefinitionsTable :: DBHandle -> IO ()
+defineDefinitionsTable h = execute_ h sql
+  where sql =  "create table if not exists Definitions(         \
+               \ Name varchar(2048) not null,                   \
+               \ USR varchar(2048) unique not null primary key, \
+               \ File integer not null,                         \
+               \ Path integer not null,                         \
+               \ Line integer not null,                         \
+               \ Column integer not null,                       \
+               \ Kind integer not null,                         \
+               \ foreign key(File) references Files(Id),        \
+               \ foreign key(Path) references Paths(Id),        \
+               \ foreign key(Kind) references Kinds(Id))"
+
+updateDef :: DBHandle -> DefInfo -> IO ()
+updateDef h (DefInfo (Identifier n u) (SourceLocation f l c) k) = do
+    execute_ h "begin transaction"
+    fileId <- getIdForRow h "Files" "Name" (normalise . takeFileName $ f)
+    pathId <- getIdForRow h "Paths" "Path" (normalise . takeDirectory $ f)
+    kindId <- getIdForRow h "Kinds" "Kind" k
+    execute h sql (n, u, fileId, pathId, l, c, kindId)
+    execute_ h "commit"
+  where
+    sql =  "replace into Definitions                     \
+           \ (Name, USR, File, Path, Line, Column, Kind) \
+           \ values (?, ?, ?, ?, ?, ?, ?)"
+
 -- Checks that the database has the correct schema and sets it up if needed.
 ensureSchema :: DBHandle -> IO ()
 ensureSchema h = defineMetadataTable h
+              >> defineFilesTable h
               >> definePathsTable h
               >> defineBuildCommandsTable h
               >> defineBuildArgsTable h
               >> defineSourceFilesTable h
+              >> defineKindsTable h
+              >> defineDefinitionsTable h
               >> ensureVersion h
 
 ensureVersion :: DBHandle -> IO ()
