@@ -29,7 +29,7 @@ runScanner a = runMaybeT a
 
 analyzeCode :: CommandInfo -> Scanner (CommandInfo, [FilePath], [DefInfo])
 analyzeCode ci = do
-  liftIO $ putStrLn $ "Analyzing " ++ (show ci)
+  --liftIO $ putStrLn $ "Analyzing " ++ (show ci)
   result <- liftIO $ runSourceAnalyses ci
   case result of
     Just (is, ds) -> return (ci, is, ds)

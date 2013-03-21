@@ -10,8 +10,8 @@ import Clang.Alloc.Storable()
 import qualified Clang.CrossReference as XRef
 import qualified Clang.Cursor as C
 import Clang.File
-import Clang.FFI (TranslationUnit)
-import qualified Clang.Source as Source
+import qualified Clang.FFI as FFI
+--import qualified Clang.Source as Source
 import Clang.TranslationUnit
 import Clang.Traversal
 import Control.Applicative
@@ -39,44 +39,53 @@ runSourceAnalyses ci = do
   result <- try $ withTranslationUnit ci $ \tu -> do
                     includesAnalysis includesRef tu
                     defsAnalysis defsRef tu
+                    return $ ()
   case result of
     Right _ -> (,) <$> readIORef includesRef <*> readIORef defsRef >>= return . Just
     Left (ClangException _) -> return Nothing
 
-includesAnalysis :: IORef [FilePath] -> TranslationUnit -> IO ()
+includesAnalysis :: IORef [FilePath] -> FFI.TranslationUnit -> IO ()
 includesAnalysis isRef tu = void $ getInclusions tu visitInclusions unused
   where
     visitInclusions :: InclusionVisitor Bool
     visitInclusions file _ usrData = do
-      let name = getName file
+      f <- FFI.getFileName file
+      name <- evaluate $ show f
       when (isLocalHeader name) $ modifyIORef isRef $! ((normalise name) :)
       return usrData
 
 isLocalHeader :: FilePath -> Bool
 isLocalHeader = isRelative .&&. isValid .&&. hasHeaderExtension .&&. (not . null)
 
-defsAnalysis :: IORef [DefInfo] -> TranslationUnit -> IO ()
+defsAnalysis :: IORef [DefInfo] -> FFI.TranslationUnit -> IO ()
 defsAnalysis dsRef tu = void $ visitChildren (getCursor tu) kidVisitor unused
   where
     kidVisitor :: ChildVisitor Bool
     kidVisitor cursor _ usrData = do
-      let cKind = C.getKind cursor
-      let loc = C.getLocation cursor
-      let (f, ln, col, _) = Source.getSpellingLocation loc
-      let file = case f of
-                   Just validF -> show $ Source.getFilename validF
-                   Nothing     -> ""
-      when (inProject file && isDef cursor cKind) $ do
-        let usr = show $ XRef.getUSR cursor
-        let name = fqn cursor
-        let kind = show (C.getCursorKindSpelling cKind)
-        putStrLn $ "Name: " ++ name ++ " Kind: " ++ kind ++ " Loc: " ++
-                   (normalise file) ++ ":" ++ (show ln) ++ ":" ++ (show col)
-                   ++ " Usr: " ++ usr
-        let def = DefInfo (Identifier name usr)
+      cKind <- FFI.getCursorKind cursor
+      loc <- FFI.getCursorLocation cursor
+      (f, ln, col, _) <- FFI.getSpellingLocation loc
+      file <- case f of
+                   Just validF -> FFI.getFileName validF >>= return . show
+                   Nothing     -> return ""
+      --when (inProject file && isDef cursor cKind) $ do
+      --isItDef <- isDef cursor cKind
+      let isItDef = True
+      when (inProject file && isItDef) $ do
+        usr <- FFI.getCursorUSR cursor >>= return . show
+        name <- fqn cursor
+        kind <- FFI.getCursorKindSpelling cKind >>= return . show
+        -- putStrLn $ "Name: " ++ usr
+        -- putStrLn $ "Kind: " ++ kind
+        -- putStrLn $ "File: " ++ (normalise file)
+        -- putStrLn $ "Line" ++ (show ln)
+        -- putStrLn $ "Col" ++ (show col)
+        -- putStrLn $ "Usr: " ++ usr
+        def <- return $ DefInfo (Identifier name usr)
                           (SourceLocation (normalise file) ln col)
                           kind
-        modifyIORef dsRef $! (def :)
+        defEvaled <- evaluate def
+        modifyIORef dsRef $! (defEvaled :)
       let next = case cKind of
                   C.Cursor_FunctionDecl -> ChildVisit_Continue
                   C.Cursor_CXXMethod    -> ChildVisit_Continue
@@ -86,16 +95,30 @@ defsAnalysis dsRef tu = void $ visitChildren (getCursor tu) kidVisitor unused
 inProject :: FilePath -> Bool
 inProject = isRelative .&&. isValid .&&. (not . null)
 
-isDef :: C.Cursor -> C.CursorKind -> Bool
-isDef c k = C.isDefinition c && not (k == C.Cursor_CXXAccessSpecifier)
+isDef :: C.Cursor -> C.CursorKind -> IO Bool
+isDef c k = do
+  q1 <- FFI.isCursorDefinition c
+  return $ q1 && not (k == C.Cursor_CXXAccessSpecifier)
 
-fqn :: C.Cursor -> String
-fqn = intercalate "::" . reverse . go
-  where go c | c == C.nullCursor = []
-             | (C.isTranslationUnit . C.getKind) c = []
-             | otherwise = show (C.getDisplayName c) : go (C.getSemanticParent c)
+fqn :: C.Cursor -> IO String
+fqn cr = do
+    final <- go cr
+    return $ intercalate "::" . reverse $ final
+  where go c = do
+          nc <- FFI.getNullCursor
+          if c == nc then return []
+            else do
+              k <- FFI.getCursorKind c
+              isT <- FFI.isTranslationUnit k
+              if isT then return []
+                else do
+                  parent <- FFI.getCursorSemanticParent c
+                  pl <- go parent
+                  dn <- FFI.getCursorDisplayName c
+                  dns <- return $ show dn
+                  return $ dns : pl
 
-withTranslationUnit :: CommandInfo -> (TranslationUnit -> IO ()) -> IO ()
+withTranslationUnit :: CommandInfo -> (FFI.TranslationUnit -> IO ()) -> IO ()
 withTranslationUnit (CommandInfo sf _ (Command _ args) _) f = do
     withCreateIndex False False $ \index -> do
       withParse index (Just sf) args [] [TranslationUnit_None] f bail
