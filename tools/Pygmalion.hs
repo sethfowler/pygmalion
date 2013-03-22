@@ -15,17 +15,20 @@ usage :: IO ()
 usage = do
   putStrLn $ "Usage: " ++ queryExecutable ++ " [command]"
   putStrLn   "where [command] is one of the following:"
-  putStrLn   " --help                  Prints this message."
-  putStrLn   " --compile-commands      Prints a clang compilation database."
-  putStrLn   " --flags-for-file [file] Prints the compilation flags for the"
-  putStrLn   "                         given file, or nothing on failure. If"
-  putStrLn   "                         the file isn't in the database, a guess"
-  putStrLn   "                         will be printed if possible."
+  putStrLn   " --help                      Prints this message."
+  putStrLn   " --compile-commands          Prints a clang compilation database."
+  putStrLn   " --flags-for-file [file]     Prints the compilation flags for the"
+  putStrLn   "                             given file, or nothing on failure. If"
+  putStrLn   "                             the file isn't in the database, a guess"
+  putStrLn   "                             will be printed if possible."
+  putStrLn   " --directory-for-file [file] Prints the working directory at the time"
+  putStrLn   "                             the file was compiled. Guesses if needed."
   exitWith (ExitFailure (-1))
 
 parseArgs :: [String] -> IO ()
 parseArgs ["--compile-commands"] = printCDB
 parseArgs ["--flags-for-file", path] = printFlags path
+parseArgs ["--directory-for-file", path] = printDir path
 parseArgs ["--help"] = usage
 parseArgs ["-h"]     = usage
 parseArgs _          = usage
@@ -50,3 +53,19 @@ printSimilarFlags h f = do
 
 putFlags :: Command -> IO ()
 putFlags (Command _ args) = putStrLn . intercalate " " $ args
+
+-- FIXME: Ugh. Just hacking this in real quick; needs cleanup.
+-- In fact printFlags needs cleanup too.
+printDir :: FilePath -> IO ()
+printDir f = withDB dbFile $ \h -> do
+  preciseCmd <- getSourceFile h f
+  case preciseCmd of
+    Just (CommandInfo _ wd _ _) -> putStrLn wd
+    _                           -> printSimilarDir h f
+
+printSimilarDir :: DBHandle -> FilePath -> IO ()
+printSimilarDir h f = do
+  similarCmd <- getSimilarSourceFile h f
+  case similarCmd of
+    Just (CommandInfo _ wd _ _) -> putStrLn wd
+    _                           -> exitWith (ExitFailure (-1))
