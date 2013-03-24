@@ -7,6 +7,7 @@ module Pygmalion.RPC.Client
 import Data.Conduit
 import Data.Conduit.Network
 import Data.Serialize
+import System.Timeout
 
 import Pygmalion.Core
 
@@ -15,11 +16,17 @@ sendScanMessage port ci = runTCPClient settings (scanApp ci)
   where settings = clientSettings port "127.0.0.1"
 
 scanApp :: CommandInfo -> Application IO
-scanApp ci ad = (appSource ad) $$ conduit =$ (appSink ad)
-  where conduit = do
-          yield (encode ci)
-          result <- await
-          case result of
-            Just "OK"    -> return ()
-            Just "ERROR" -> error "Server reported an error"
-            _            -> error "Unexpected result from server"
+scanApp ci ad = ensureCompleted =<< timeout 100000 app
+  where 
+    app = (appSource ad) $$ conduit =$ (appSink ad)
+    conduit = do
+      yield (encode ci)
+      result <- await
+      case result of
+        Just "OK"    -> return ()
+        Just "ERROR" -> error "Server reported an error"
+        _            -> error "Unexpected result from server"
+
+ensureCompleted :: Maybe a -> IO a
+ensureCompleted (Just a) = return a
+ensureCompleted _        = error "Connection to server timed out"
