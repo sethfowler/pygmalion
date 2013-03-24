@@ -101,9 +101,7 @@ isDef c k = do
   return $ q1 && not (k == C.Cursor_CXXAccessSpecifier)
 
 fqn :: C.Cursor -> IO String
-fqn cr = do
-    final <- go cr
-    return $ intercalate "::" . reverse $ final
+fqn cr = (intercalate "::" . reverse) <$> go cr
   where go c = do
           nc <- FFI.getNullCursor
           if c == nc then return []
