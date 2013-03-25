@@ -16,8 +16,9 @@ sendScanMessage port ci = runTCPClient settings (scanApp ci)
   where settings = clientSettings port "127.0.0.1"
 
 scanApp :: CommandInfo -> Application IO
-scanApp ci ad = ensureCompleted =<< timeout 100000 app
+scanApp ci ad = ensureCompleted =<< timeout hundredSeconds app
   where 
+    hundredSeconds = 100000000
     app = (appSource ad) $$ conduit =$ (appSink ad)
     conduit = do
       yield (encode ci)
