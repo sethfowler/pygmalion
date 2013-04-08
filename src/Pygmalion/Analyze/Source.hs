@@ -9,14 +9,16 @@ module Pygmalion.Analyze.Source
 import Clang.Alloc.Storable()
 import qualified Clang.CrossReference as XRef
 import qualified Clang.Cursor as C
-import Clang.File
-import qualified Clang.FFI as FFI
---import qualified Clang.Source as Source
+import Clang.File as File
+import Clang.Monad
+import qualified Clang.Source as Source
+import qualified Clang.String as CStr
 import Clang.TranslationUnit
 import Clang.Traversal
 import Control.Applicative
 import Control.Exception
 import Control.Monad
+import Control.Monad.IO.Class
 import Data.List
 import Data.IORef
 import Data.Typeable
@@ -36,7 +38,8 @@ runSourceAnalyses :: CommandInfo -> IO (Maybe ([FilePath], [DefInfo]))
 runSourceAnalyses ci = do
   includesRef <- newIORef []
   defsRef <- newIORef []
-  result <- try $ withTranslationUnit ci $ \tu -> do
+  result <- try $ withTranslationUnit ci $ do
+                    tu <- getTranslationUnit
                     includesAnalysis includesRef tu
                     defsAnalysis defsRef tu
                     return $ ()
@@ -44,87 +47,85 @@ runSourceAnalyses ci = do
     Right _ -> (,) <$> readIORef includesRef <*> readIORef defsRef >>= return . Just
     Left (ClangException _) -> return Nothing
 
-includesAnalysis :: IORef [FilePath] -> FFI.TranslationUnit -> IO ()
-includesAnalysis isRef tu = void $ getInclusions tu visitInclusions unused
+includesAnalysis :: IORef [FilePath] -> TranslationUnit -> ClangApp ()
+includesAnalysis isRef tu = void $ getInclusions tu visitInclusions
   where
-    visitInclusions :: InclusionVisitor Bool
-    visitInclusions file _ usrData = do
-      f <- FFI.getFileName file
-      name <- evaluate $ show f
-      when (isLocalHeader name) $ modifyIORef isRef $! ((normalise name) :)
-      return usrData
+    visitInclusions :: InclusionVisitor
+    visitInclusions file _  = do
+      f <- File.getName file
+      name <- CStr.unpack f
+      when (isLocalHeader name) $ liftIO . modifyIORef isRef $! ((normalise name) :)
 
 isLocalHeader :: FilePath -> Bool
 isLocalHeader = isRelative .&&. isValid .&&. hasHeaderExtension .&&. (not . null)
 
-defsAnalysis :: IORef [DefInfo] -> FFI.TranslationUnit -> IO ()
-defsAnalysis dsRef tu = void $ visitChildren (getCursor tu) kidVisitor unused
+defsAnalysis :: IORef [DefInfo] -> TranslationUnit -> ClangApp ()
+defsAnalysis dsRef tu = do
+    cursor <- getCursor tu
+    void $ visitChildren cursor kidVisitor
   where
-    kidVisitor :: ChildVisitor Bool
-    kidVisitor cursor _ usrData = do
-      cKind <- FFI.getCursorKind cursor
-      loc <- FFI.getCursorLocation cursor
-      (f, ln, col, _) <- FFI.getSpellingLocation loc
+    kidVisitor :: ChildVisitor
+    kidVisitor cursor _ = do
+      cKind <- C.getKind cursor
+      loc <- C.getLocation cursor
+      (f, ln, col, _) <- Source.getSpellingLocation loc
       file <- case f of
-                   Just validF -> FFI.getFileName validF >>= return . show
+                   Just validF -> File.getName validF >>= CStr.unpack
                    Nothing     -> return ""
-      --when (inProject file && isDef cursor cKind) $ do
-      --isItDef <- isDef cursor cKind
-      let isItDef = True
-      when (inProject file && isItDef) $ do
-        usr <- FFI.getCursorUSR cursor >>= return . show
+      defined <- isDef cursor cKind
+      when (inProject file && defined) $ do
+        usr <- XRef.getUSR cursor >>= CStr.unpack
         name <- fqn cursor
-        kind <- FFI.getCursorKindSpelling cKind >>= return . show
-        -- putStrLn $ "Name: " ++ usr
-        -- putStrLn $ "Kind: " ++ kind
-        -- putStrLn $ "File: " ++ (normalise file)
-        -- putStrLn $ "Line" ++ (show ln)
-        -- putStrLn $ "Col" ++ (show col)
-        -- putStrLn $ "Usr: " ++ usr
+        kind <- C.getCursorKindSpelling cKind >>= CStr.unpack
+        -- liftIO $ putStrLn $ "Name: " ++ usr
+        -- liftIO $ putStrLn $ "Kind: " ++ kind
+        -- liftIO $ putStrLn $ "File: " ++ (normalise file)
+        -- liftIO $ putStrLn $ "Line" ++ (show ln)
+        -- liftIO $ putStrLn $ "Col" ++ (show col)
+        -- liftIO $ putStrLn $ "Usr: " ++ usr
         def <- return $ DefInfo (Identifier name usr)
                           (SourceLocation (normalise file) ln col)
                           kind
-        defEvaled <- evaluate def
-        modifyIORef dsRef $! (defEvaled :)
-      let next = case cKind of
+        defEvaled <- liftIO . evaluate $ def
+        liftIO . modifyIORef dsRef $! (defEvaled :)
+      return $ case cKind of
                   C.Cursor_FunctionDecl -> ChildVisit_Continue
                   C.Cursor_CXXMethod    -> ChildVisit_Continue
                   _                     -> ChildVisit_Recurse
-      return (usrData, next)
 
 inProject :: FilePath -> Bool
 inProject = isRelative .&&. isValid .&&. (not . null)
 
-isDef :: C.Cursor -> C.CursorKind -> IO Bool
+isDef :: C.Cursor -> C.CursorKind -> ClangApp Bool
 isDef c k = do
-  q1 <- FFI.isCursorDefinition c
+  q1 <- C.isDefinition c
   return $ q1 && not (k == C.Cursor_CXXAccessSpecifier)
 
-fqn :: C.Cursor -> IO String
-fqn cr = (intercalate "::" . reverse) <$> go cr
+fqn :: C.Cursor -> ClangApp String
+fqn cr = do
+    result <- go cr
+    liftM (intercalate "::" . reverse) (sequence result)
   where go c = do
-          nc <- FFI.getNullCursor
-          if c == nc then return []
+          nc <- C.nullCursor
+          isNull <- c `C.isSameCursor` nc
+          if isNull then return []
             else do
-              k <- FFI.getCursorKind c
-              isT <- FFI.isTranslationUnit k
+              k <- C.getKind c
+              isT <- C.isTranslationUnit k
               if isT then return []
                 else do
-                  parent <- FFI.getCursorSemanticParent c
+                  parent <- C.getSemanticParent c
                   pl <- go parent
-                  dn <- FFI.getCursorDisplayName c
-                  dns <- return $ show dn
+                  dn <- C.getDisplayName c
+                  dns <- return $ CStr.unpack dn
                   return $ dns : pl
 
-withTranslationUnit :: CommandInfo -> (FFI.TranslationUnit -> IO ()) -> IO ()
+withTranslationUnit :: CommandInfo -> ClangApp () -> IO ()
 withTranslationUnit (CommandInfo sf _ (Command _ args) _) f = do
     withCreateIndex False False $ \index -> do
       withParse index (Just sf) args [] [TranslationUnit_None] f bail
   where
     bail = throw . ClangException $ "Libclang couldn't parse " ++ sf
-
-unused :: Maybe Bool
-unused = Just True
 
 data ClangException = ClangException String
   deriving (Show, Typeable)
