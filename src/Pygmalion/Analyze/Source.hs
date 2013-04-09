@@ -1,9 +1,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 
 module Pygmalion.Analyze.Source
-( getIncludes -- deprecated
-, getDefs     -- deprecated
-, runSourceAnalyses
+( runSourceAnalyses
 ) where
 
 import Clang.Alloc.Storable()
@@ -27,12 +25,6 @@ import System.FilePath.Posix
 import Data.Bool.Predicate
 import Pygmalion.Analyze.Extension
 import Pygmalion.Core
-
-getIncludes :: CommandInfo -> IO (Maybe [FilePath])
-getIncludes ci = runSourceAnalyses ci >>= return . (fst <$>)
-
-getDefs :: CommandInfo -> IO (Maybe [DefInfo])
-getDefs ci = runSourceAnalyses ci >>= return . (snd <$>)
 
 runSourceAnalyses :: CommandInfo -> IO (Maybe ([FilePath], [DefInfo]))
 runSourceAnalyses ci = do
