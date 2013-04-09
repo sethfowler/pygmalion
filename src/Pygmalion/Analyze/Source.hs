@@ -103,13 +103,15 @@ isDef c k = do
 
 fqn :: C.Cursor -> ClangApp String
 fqn cursor = (intercalate "::" . reverse) <$> go cursor
-  where go c = do isNull <- C.nullCursor >>= C.isSameCursor c
+  where go c = do isNull <- C.isNullCursor c
                   isTU <- C.getKind c >>= C.isTranslationUnit
                   if isNull || isTU then return [] else go' c
         go' c =  (:) <$> (cursorName c) <*> (C.getSemanticParent c >>= go)
 
 cursorName :: C.Cursor -> ClangApp String
-cursorName c = C.getDisplayName c >>= CStr.unpack
+cursorName c = C.getDisplayName c >>= CStr.unpack >>= anonymize
+  where anonymize [] = return "<anonymous>"
+        anonymize s  = return s
 
 withTranslationUnit :: CommandInfo -> ClangApp () -> IO ()
 withTranslationUnit (CommandInfo sf _ (Command _ args) _) f = do
