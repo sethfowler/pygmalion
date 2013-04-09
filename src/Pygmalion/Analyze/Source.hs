@@ -102,23 +102,14 @@ isDef c k = do
   return $ q1 && not (k == C.Cursor_CXXAccessSpecifier)
 
 fqn :: C.Cursor -> ClangApp String
-fqn cr = do
-    result <- go cr
-    liftM (intercalate "::" . reverse) (sequence result)
-  where go c = do
-          nc <- C.nullCursor
-          isNull <- c `C.isSameCursor` nc
-          if isNull then return []
-            else do
-              k <- C.getKind c
-              isT <- C.isTranslationUnit k
-              if isT then return []
-                else do
-                  parent <- C.getSemanticParent c
-                  pl <- go parent
-                  dn <- C.getDisplayName c
-                  dns <- return $ CStr.unpack dn
-                  return $ dns : pl
+fqn cursor = (intercalate "::" . reverse) <$> go cursor
+  where go c = do isNull <- C.nullCursor >>= C.isSameCursor c
+                  isTU <- C.getKind c >>= C.isTranslationUnit
+                  if isNull || isTU then return [] else go' c
+        go' c =  (:) <$> (cursorName c) <*> (C.getSemanticParent c >>= go)
+
+cursorName :: C.Cursor -> ClangApp String
+cursorName c = C.getDisplayName c >>= CStr.unpack
 
 withTranslationUnit :: CommandInfo -> ClangApp () -> IO ()
 withTranslationUnit (CommandInfo sf _ (Command _ args) _) f = do
