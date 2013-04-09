@@ -24,12 +24,9 @@ module Pygmalion.Core
 ) where
 
 import Control.Applicative
-import Control.DeepSeq
 import Data.Int
-import Data.List
 import Data.Serialize
-import Database.SQLite.Simple (FromRow(..), ToRow(..), field)
-import Database.SQLite.Simple.ToField (ToField(..))
+import Database.SQLite.Simple (FromRow(..), field)
 import GHC.Generics
 import System.FilePath.Posix
 
@@ -40,18 +37,6 @@ data CommandInfo = CommandInfo SourceFile WorkingDirectory Command Time
   deriving (Eq, Show, Generic)
 
 instance Serialize CommandInfo
-
-instance NFData CommandInfo where
-  rnf (CommandInfo sf wd cmd t) =
-    sf `deepseq` wd `deepseq` cmd `deepseq` t `deepseq` ()
-
-instance ToRow CommandInfo where
-  toRow (CommandInfo sf wd (Command cmd args) t) =
-    [toField . takeFileName $ sf,
-     toField . takeDirectory $ sf,
-     toField wd,
-     toField (intercalate " " (cmd : args)),
-     toField t]
 
 instance FromRow CommandInfo where
   fromRow = do
@@ -66,9 +51,6 @@ data Command = Command String [String]
 
 instance Serialize Command
 
-instance NFData Command where
-  rnf (Command cmd args) = cmd `deepseq` args `deepseq` ()
-
 withSourceFile :: CommandInfo -> SourceFile -> CommandInfo
 withSourceFile (CommandInfo _ wd cmd t) sf' = CommandInfo sf' wd cmd t
 
@@ -80,20 +62,19 @@ type Time = Int64
 data DefInfo = DefInfo Identifier SourceLocation DefKind
   deriving (Eq, Show, Generic)
 
-instance NFData DefInfo where
-  rnf (DefInfo i sl k) = i `deepseq` sl `deepseq` k `deepseq` ()
+instance FromRow DefInfo where
+  fromRow = do
+    ident <- Identifier <$> field <*> field
+    sf    <- (flip combine) <$> field <*> field
+    sl    <- SourceLocation sf <$> field <*> field
+    kind  <- field
+    return $ DefInfo ident sl kind
 
 data Identifier = Identifier IdName IdUSR
   deriving (Eq, Show, Generic)
 
-instance NFData Identifier where
-  rnf (Identifier n u) = n `deepseq` u `deepseq` ()
-
 data SourceLocation = SourceLocation SourceFile SourceLine SourceColumn
   deriving (Eq, Show, Generic)
-
-instance NFData SourceLocation where
-  rnf (SourceLocation sf l c) = sf `deepseq` l `deepseq` c `deepseq` ()
 
 type IdName = String
 type IdUSR = String

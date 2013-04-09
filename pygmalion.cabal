@@ -20,8 +20,6 @@ library
                    cereal,
                    cereal-conduit,
                    conduit,
-                   deepseq,
-                   deepseq-th,
                    directory,
                    filepath,
                    ghc-prim,
@@ -52,7 +50,8 @@ executable pygmalion
   ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N
   main-is:        Pygmalion.hs 
   build-depends:  base >= 4,
-                  pygmalion
+                  pygmalion,
+                  safe
   hs-source-dirs: tools
 
 executable pygmake

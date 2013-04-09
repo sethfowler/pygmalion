@@ -8,6 +8,7 @@ module Pygmalion.Database
 , getSourceFile
 , getSimilarSourceFile
 , updateDef
+, getDef
 , enableTracing
 , DBHandle
 ) where
@@ -232,6 +233,20 @@ updateDef h (DefInfo (Identifier n u) (SourceLocation f l c) k) = do
     sql =  "replace into Definitions                     \
            \ (Name, USR, File, Path, Line, Column, Kind) \
            \ values (?, ?, ?, ?, ?, ?, ?)"
+
+getDef :: DBHandle -> Identifier -> IO (Maybe DefInfo)
+getDef h (Identifier _ usr) = do
+    row <- query h sql (Only $ usr)
+    return $ case row of
+              (di : _) -> Just di
+              _        -> Nothing
+  where sql = "select D.Name, D.USR, F.Name, P.Path, D.Line, D.Column, K.Kind \
+              \ from Definitions as D                                         \
+              \ join Files as F on D.File = F.Id                              \
+              \ join Paths as P on D.Path = P.Id                              \
+              \ join Kinds as K on D.Kind = K.Id                              \
+              \ where D.USR = ? limit 1"
+  
 
 -- Checks that the database has the correct schema and sets it up if needed.
 ensureSchema :: DBHandle -> IO ()

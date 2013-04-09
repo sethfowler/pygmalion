@@ -2,6 +2,7 @@
 
 module Pygmalion.Analyze.Source
 ( runSourceAnalyses
+, getIdentifier
 ) where
 
 import Clang.Alloc.Storable()
@@ -34,9 +35,15 @@ runSourceAnalyses ci = do
                     tu <- getTranslationUnit
                     includesAnalysis includesRef tu
                     defsAnalysis defsRef tu
-                    return $ ()
   case result of
     Right _ -> (,) <$> readIORef includesRef <*> readIORef defsRef >>= return . Just
+    Left (ClangException _) -> return Nothing
+
+getIdentifier :: CommandInfo -> SourceLocation -> IO (Maybe Identifier)
+getIdentifier ci sl = do
+  result <- try $ withTranslationUnit ci $ inspectIdentifier sl
+  case result of
+    Right identifier        -> return identifier
     Left (ClangException _) -> return Nothing
 
 includesAnalysis :: IORef [FilePath] -> TranslationUnit -> ClangApp ()
@@ -80,10 +87,15 @@ defsAnalysis dsRef tu = do
                           kind
         defEvaled <- liftIO . evaluate $ def
         liftIO . modifyIORef dsRef $! (defEvaled :)
+      return ChildVisit_Recurse
+
+{-
+-- Was the following; still evaluating the tradeoffs.
       return $ case cKind of
                   C.Cursor_FunctionDecl -> ChildVisit_Continue
                   C.Cursor_CXXMethod    -> ChildVisit_Continue
                   _                     -> ChildVisit_Recurse
+-}
 
 inProject :: FilePath -> Bool
 inProject = isRelative .&&. isValid .&&. (not . null)
@@ -105,7 +117,25 @@ cursorName c = C.getDisplayName c >>= CStr.unpack >>= anonymize
   where anonymize [] = return "<anonymous>"
         anonymize s  = return s
 
-withTranslationUnit :: CommandInfo -> ClangApp () -> IO ()
+inspectIdentifier :: SourceLocation -> ClangApp (Maybe Identifier)
+inspectIdentifier (SourceLocation f ln col) = do
+    tu <- getTranslationUnit
+    file <- File.getFile tu f
+    loc <- Source.getLocation tu file ln col
+    cursor <- Source.getCursor tu loc
+    defCursor <- C.getDefinition cursor
+    isNullDef <- C.isNullCursor defCursor
+    if isNullDef then do C.getReferenced cursor >>= reportIdentifier
+                 else reportIdentifier defCursor
+  where
+    reportIdentifier cursor = do
+      name <- fqn cursor
+      usr <- XRef.getUSR cursor >>= CStr.unpack
+      --liftIO $ putStrLn $ "In file: " ++ f ++ ":" ++ (show ln) ++ ":" ++ (show col) ++ " got name: " ++ name ++ " usr: " ++ usr
+      return $ if null usr then Nothing
+                           else Just $ Identifier name usr
+
+withTranslationUnit :: CommandInfo -> ClangApp a -> IO a
 withTranslationUnit (CommandInfo sf _ (Command _ args) _) f = do
     withCreateIndex False False $ \index -> do
       withParse index (Just sf) args [] [TranslationUnit_None] f bail

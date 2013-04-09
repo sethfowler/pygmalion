@@ -1,8 +1,10 @@
 import Control.Monad
 import Data.List
+import Safe (readMay)
 import System.Environment
 import System.Exit
 
+import Pygmalion.Analyze.Source
 import Pygmalion.Core
 import Pygmalion.Database
 import Pygmalion.JSON
@@ -23,12 +25,14 @@ usage = do
   putStrLn   "                             will be printed if possible."
   putStrLn   " --directory-for-file [file] Prints the working directory at the time"
   putStrLn   "                             the file was compiled. Guesses if needed."
+  putStrLn   " --definition-for [file] [line] [col]"
   exitWith (ExitFailure (-1))
 
 parseArgs :: [String] -> IO ()
 parseArgs ["--compile-commands"] = printCDB
 parseArgs ["--flags-for-file", path] = printFlags path
 parseArgs ["--directory-for-file", path] = printDir path
+parseArgs ["--definition-for", file, line, col] = printDef file (readMay line) (readMay col)
 parseArgs ["--help"] = usage
 parseArgs ["-h"]     = usage
 parseArgs _          = usage
@@ -69,3 +73,31 @@ printSimilarDir h f = do
   case similarCmd of
     Just (CommandInfo _ wd _ _) -> putStrLn wd
     _                           -> exitWith (ExitFailure (-1))
+
+-- FIXME: Ugh. Again hacked in real quick. Terrible code.
+printDef :: FilePath -> Maybe Int -> Maybe Int -> IO ()
+printDef f (Just line) (Just col) = withDB dbFile $ \h -> do
+  cmd <- getSourceFile h f
+  case cmd of
+    Just ci -> printDef' h ci (SourceLocation f line col)
+    Nothing -> do putStrLn "No database entry for this file."
+                  exitWith (ExitFailure (-1))
+printDef _ _ _ = usage
+
+printDef' :: DBHandle -> CommandInfo -> SourceLocation -> IO ()
+printDef' h cmd sl = do
+  ident <- getIdentifier cmd sl
+  case ident of
+    Just i -> printDef'' h i
+    Nothing -> do putStrLn "No identifier at this location."
+                  exitWith (ExitFailure (-1))
+
+printDef'' :: DBHandle -> Identifier -> IO ()
+printDef'' h i@(Identifier n _) = do
+  loc <- getDef h i
+  case loc of
+    Just (DefInfo _ (SourceLocation f line col) k) ->
+      putStrLn $ f ++ ":" ++ (show line) ++ ":" ++ (show col) ++
+                 ": Definition: " ++ n ++ " [" ++ k ++ "]"
+    Nothing -> do putStrLn "No database entry for this identifier."
+                  exitWith (ExitFailure (-1))
