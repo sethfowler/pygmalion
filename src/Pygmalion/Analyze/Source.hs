@@ -23,6 +23,7 @@ import Data.List
 import Data.IORef
 import Data.Typeable
 import System.FilePath.Posix
+import System.Directory
 
 import Data.Bool.Predicate
 import Pygmalion.Analyze.Extension
@@ -48,29 +49,32 @@ getIdentifier ci sl = do
     Left (ClangException _) -> return Nothing
 
 includesAnalysis :: IORef [FilePath] -> TranslationUnit -> ClangApp ()
-includesAnalysis isRef tu = void $ getInclusions tu visitInclusions
+includesAnalysis isRef tu = do
+    wd <- liftIO getCurrentDirectory
+    void $ getInclusions tu (visitInclusions wd)
   where
-    visitInclusions :: InclusionVisitor
-    visitInclusions file _  = do
+    visitInclusions :: FilePath -> InclusionVisitor
+    visitInclusions wd file _  = do
       f <- File.getName file
       name <- CStr.unpack f
-      when (isLocalHeader name) $ liftIO . modifyIORef isRef $! ((normalise name) :)
+      when (isLocalHeader wd name) $ liftIO . modifyIORef isRef $! ((normalise name) :)
 
-isLocalHeader :: FilePath -> Bool
-isLocalHeader = isRelative .&&. isValid .&&. hasHeaderExtension .&&. (not . null)
+isLocalHeader :: FilePath -> FilePath -> Bool
+isLocalHeader wd p = (wd `isPrefixOf`) .&&. isValid .&&. hasHeaderExtension .&&. (not . null) $ p
 
 defsAnalysis :: IORef [DefInfo] -> TranslationUnit -> ClangApp ()
 defsAnalysis dsRef tu = do
+    wd <- liftIO getCurrentDirectory
     cursor <- getCursor tu
-    void $ visitChildren cursor kidVisitor
+    void $ visitChildren cursor (kidVisitor wd)
   where
-    kidVisitor :: ChildVisitor
-    kidVisitor cursor _ = do
+    kidVisitor :: FilePath -> ChildVisitor
+    kidVisitor wd cursor _ = do
       loc <- C.getLocation cursor
       (f, ln, col, _) <- Source.getSpellingLocation loc
       file <- case f of Just validF -> File.getName validF >>= CStr.unpack
                         Nothing     -> return ""
-      when (inProject file) $ do
+      when (inProject wd file) $ do
         cKind <- C.getKind cursor
         defined <- isDef cursor cKind
         when defined $ do
@@ -82,8 +86,8 @@ defsAnalysis dsRef tu = do
                             kind
           defEvaled <- liftIO . evaluate $ def
           liftIO . modifyIORef dsRef $! (defEvaled :)
-      return $ if inProject file then ChildVisit_Recurse
-                                 else ChildVisit_Continue
+      return $ if (inProject wd file) then ChildVisit_Recurse
+                                      else ChildVisit_Continue
 
 {-
 -- Was the following; still evaluating the tradeoffs.
@@ -93,8 +97,8 @@ defsAnalysis dsRef tu = do
                   _                     -> ChildVisit_Recurse
 -}
 
-inProject :: FilePath -> Bool
-inProject = isRelative .&&. isValid .&&. (not . null)
+inProject :: FilePath -> FilePath -> Bool
+inProject wd p = (wd `isPrefixOf`) .&&. isValid .&&. (not . null) $ p
 
 isDef :: C.Cursor -> C.CursorKind -> ClangApp Bool
 isDef c k = do
@@ -121,7 +125,7 @@ inspectIdentifier (SourceLocation f ln col) = do
     loc <- Source.getLocation tu file ln col
     cursor <- Source.getCursor tu loc
     kind <- C.getKind cursor >>= C.getCursorKindSpelling >>= CStr.unpack
-    liftIO $ putStrLn $ "Cursor kind is " ++ kind
+    -- liftIO $ putStrLn $ "Cursor kind is " ++ kind
     defCursor <- C.getDefinition cursor
     isNullDef <- C.isNullCursor defCursor
     if isNullDef then do C.getReferenced cursor >>= reportIdentifier
