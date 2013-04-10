@@ -8,7 +8,8 @@ module Pygmalion.Analyze.Source
 import Clang.Alloc.Storable()
 import qualified Clang.CrossReference as XRef
 import qualified Clang.Cursor as C
-import Clang.File as File
+import qualified Clang.Diagnostic as Diag
+import qualified Clang.File as File
 import Clang.Monad
 import qualified Clang.Source as Source
 import qualified Clang.String as CStr
@@ -114,28 +115,67 @@ cursorName c = C.getDisplayName c >>= CStr.unpack >>= anonymize
 
 inspectIdentifier :: SourceLocation -> ClangApp (Maybe Identifier)
 inspectIdentifier (SourceLocation f ln col) = do
+    dumpDiagnostics
     tu <- getTranslationUnit
     file <- File.getFile tu f
     loc <- Source.getLocation tu file ln col
     cursor <- Source.getCursor tu loc
+    kind <- C.getKind cursor >>= C.getCursorKindSpelling >>= CStr.unpack
+    liftIO $ putStrLn $ "Cursor kind is " ++ kind
     defCursor <- C.getDefinition cursor
     isNullDef <- C.isNullCursor defCursor
     if isNullDef then do C.getReferenced cursor >>= reportIdentifier
                  else reportIdentifier defCursor
   where
     reportIdentifier cursor = do
+      -- dumpSubtree cursor
       name <- fqn cursor
       usr <- XRef.getUSR cursor >>= CStr.unpack
       -- liftIO $ putStrLn $ "In file: " ++ f ++ ":" ++ (show ln) ++ ":" ++ (show col) ++ " got name: " ++ name ++ " usr: " ++ usr
       return $ if null usr then Nothing
                            else Just $ Identifier name usr
 
+-- We need to decide on a policy, but it'd be good to figure out a way to let
+-- the user display these, and maybe always display errors.
+dumpDiagnostics :: ClangApp ()
+dumpDiagnostics = do
+  tu <- getTranslationUnit
+  opts <- Diag.defaultDisplayOptions
+  dias <- Diag.getDiagnostics tu
+  forM_ dias $ \dia -> do
+    diaStr <- Diag.formatDiagnostic opts dia
+    liftIO $ putStrLn $ "Diagnostic: " ++ diaStr
+
+dumpSubtree :: C.Cursor -> ClangApp ()
+dumpSubtree cursor = do
+    dump 0 cursor
+    void $ visitChildren cursor (dumpVisitor 0)
+  where dumpVisitor :: Int -> ChildVisitor
+        dumpVisitor i c _ = dump i c >> return ChildVisit_Recurse
+        dump :: Int -> C.Cursor -> ClangApp ()
+        dump i c = do
+          -- Get extent.
+          extent <- C.getExtent c
+          (_, startLn, startCol, _) <- Source.getStart extent >>= Source.getSpellingLocation
+          (_, endLn, endCol, _) <- Source.getEnd extent >>= Source.getSpellingLocation
+
+          -- Get metadata.
+          name <- cursorName c
+          usr <- XRef.getUSR cursor >>= CStr.unpack
+          kind <- C.getKind c >>= C.getCursorKindSpelling >>= CStr.unpack
+
+          -- Display.
+          liftIO $ putStrLn $ (replicate i ' ') ++"[" ++ kind ++ "] " ++ name ++ " (" ++ usr ++ ") @ " ++
+                              (show startLn) ++ "," ++ (show startCol) ++ " -> " ++
+                              (show endLn) ++ "," ++ (show endCol)
+
 withTranslationUnit :: CommandInfo -> ClangApp a -> IO a
 withTranslationUnit (CommandInfo sf _ (Command _ args) _) f = do
     withCreateIndex False False $ \index -> do
-      withParse index (Just sf) args [] [TranslationUnit_None] f bail
+      withParse index (Just sf) clangArgs [] [TranslationUnit_None] f bail
   where
     bail = throw . ClangException $ "Libclang couldn't parse " ++ sf
+    clangArgs = "-I/usr/local/Cellar/llvm/3.2/lib/clang/3.2/include" : args
 
 data ClangException = ClangException String
   deriving (Show, Typeable)
