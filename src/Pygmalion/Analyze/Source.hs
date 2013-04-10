@@ -65,29 +65,24 @@ defsAnalysis dsRef tu = do
   where
     kidVisitor :: ChildVisitor
     kidVisitor cursor _ = do
-      cKind <- C.getKind cursor
       loc <- C.getLocation cursor
       (f, ln, col, _) <- Source.getSpellingLocation loc
-      file <- case f of
-                   Just validF -> File.getName validF >>= CStr.unpack
-                   Nothing     -> return ""
-      defined <- isDef cursor cKind
-      when (inProject file && defined) $ do
-        usr <- XRef.getUSR cursor >>= CStr.unpack
-        name <- fqn cursor
-        kind <- C.getCursorKindSpelling cKind >>= CStr.unpack
-        -- liftIO $ putStrLn $ "Name: " ++ usr
-        -- liftIO $ putStrLn $ "Kind: " ++ kind
-        -- liftIO $ putStrLn $ "File: " ++ (normalise file)
-        -- liftIO $ putStrLn $ "Line" ++ (show ln)
-        -- liftIO $ putStrLn $ "Col" ++ (show col)
-        -- liftIO $ putStrLn $ "Usr: " ++ usr
-        def <- return $ DefInfo (Identifier name usr)
-                          (SourceLocation (normalise file) ln col)
-                          kind
-        defEvaled <- liftIO . evaluate $ def
-        liftIO . modifyIORef dsRef $! (defEvaled :)
-      return ChildVisit_Recurse
+      file <- case f of Just validF -> File.getName validF >>= CStr.unpack
+                        Nothing     -> return ""
+      when (inProject file) $ do
+        cKind <- C.getKind cursor
+        defined <- isDef cursor cKind
+        when defined $ do
+          usr <- XRef.getUSR cursor >>= CStr.unpack
+          name <- fqn cursor
+          kind <- C.getCursorKindSpelling cKind >>= CStr.unpack
+          def <- return $ DefInfo (Identifier name usr)
+                            (SourceLocation (normalise file) ln col)
+                            kind
+          defEvaled <- liftIO . evaluate $ def
+          liftIO . modifyIORef dsRef $! (defEvaled :)
+      return $ if inProject file then ChildVisit_Recurse
+                                 else ChildVisit_Continue
 
 {-
 -- Was the following; still evaluating the tradeoffs.
@@ -131,7 +126,7 @@ inspectIdentifier (SourceLocation f ln col) = do
     reportIdentifier cursor = do
       name <- fqn cursor
       usr <- XRef.getUSR cursor >>= CStr.unpack
-      --liftIO $ putStrLn $ "In file: " ++ f ++ ":" ++ (show ln) ++ ":" ++ (show col) ++ " got name: " ++ name ++ " usr: " ++ usr
+      -- liftIO $ putStrLn $ "In file: " ++ f ++ ":" ++ (show ln) ++ ":" ++ (show col) ++ " got name: " ++ name ++ " usr: " ++ usr
       return $ if null usr then Nothing
                            else Just $ Identifier name usr
 
