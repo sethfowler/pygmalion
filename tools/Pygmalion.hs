@@ -80,24 +80,24 @@ printDef f (Just line) (Just col) = withDB dbFile $ \h -> do
   cmd <- getSourceFile h f
   case cmd of
     Just ci -> printDef' h ci (SourceLocation f line col)
-    Nothing -> do putStrLn "No database entry for this file."
+    Nothing -> do putStrLn $ f ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": No database entry for this file."
                   exitWith (ExitFailure (-1))
 printDef _ _ _ = usage
 
 printDef' :: DBHandle -> CommandInfo -> SourceLocation -> IO ()
-printDef' h cmd sl = do
+printDef' h cmd sl@(SourceLocation f line col) = do
   ident <- getIdentifier cmd sl
   case ident of
-    Just i -> printDef'' h i
-    Nothing -> do putStrLn "No identifier at this location."
+    Just i -> printDef'' h sl i
+    Nothing -> do putStrLn $ f ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": No identifier at this location."
                   exitWith (ExitFailure (-1))
 
-printDef'' :: DBHandle -> Identifier -> IO ()
-printDef'' h i@(Identifier n _) = do
+printDef'' :: DBHandle -> SourceLocation -> Identifier -> IO ()
+printDef'' h (SourceLocation f line col) i@(Identifier n _) = do
   loc <- getDef h i
   case loc of
-    Just (DefInfo _ (SourceLocation f line col) k) ->
-      putStrLn $ f ++ ":" ++ (show line) ++ ":" ++ (show col) ++
+    Just (DefInfo _ (SourceLocation idF idLine idCol) k) ->
+      putStrLn $ idF ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Definition: " ++ n ++ " [" ++ k ++ "]"
-    Nothing -> do putStrLn "No database entry for this identifier."
+    Nothing -> do putStrLn $ f ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": No database entry for this identifier."
                   exitWith (ExitFailure (-1))
