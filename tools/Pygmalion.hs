@@ -1,5 +1,8 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 import Control.Monad
 import Data.List
+import qualified Data.Text as T
 import Safe (readMay)
 import System.Environment
 import System.Exit
@@ -56,7 +59,7 @@ printSimilarFlags h f = do
     _                            -> exitWith (ExitFailure (-1))
 
 putFlags :: Command -> IO ()
-putFlags (Command _ args) = putStrLn . intercalate " " $ args
+putFlags (Command _ args) = putStrLn . T.unpack . T.intercalate " " $ args
 
 -- FIXME: Ugh. Just hacking this in real quick; needs cleanup.
 -- In fact printFlags needs cleanup too.
@@ -64,14 +67,14 @@ printDir :: FilePath -> IO ()
 printDir f = withDB dbFile $ \h -> do
   preciseCmd <- getSourceFile h f
   case preciseCmd of
-    Just (CommandInfo _ wd _ _) -> putStrLn wd
+    Just (CommandInfo _ wd _ _) -> putStrLn . T.unpack $ wd
     _                           -> printSimilarDir h f
 
 printSimilarDir :: DBHandle -> FilePath -> IO ()
 printSimilarDir h f = do
   similarCmd <- getSimilarSourceFile h f
   case similarCmd of
-    Just (CommandInfo _ wd _ _) -> putStrLn wd
+    Just (CommandInfo _ wd _ _) -> putStrLn . T.unpack $ wd
     _                           -> exitWith (ExitFailure (-1))
 
 -- FIXME: Ugh. Again hacked in real quick. Terrible code.
@@ -79,7 +82,7 @@ printDef :: FilePath -> Maybe Int -> Maybe Int -> IO ()
 printDef f (Just line) (Just col) = withDB dbFile $ \h -> do
   cmd <- getSourceFile h f
   case cmd of
-    Just ci -> printDef' h ci (SourceLocation f line col)
+    Just ci -> printDef' h ci (SourceLocation (T.pack f) line col)
     Nothing -> do putStrLn $ f ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": No database entry for this file."
                   exitWith (ExitFailure (-1))
 printDef _ _ _ = usage
@@ -89,7 +92,7 @@ printDef' h cmd sl@(SourceLocation f line col) = do
   ident <- getIdentifier cmd sl
   case ident of
     Just i -> printDef'' h sl i
-    Nothing -> do putStrLn $ f ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": No identifier at this location."
+    Nothing -> do putStrLn $ (T.unpack f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": No identifier at this location."
                   exitWith (ExitFailure (-1))
 
 printDef'' :: DBHandle -> SourceLocation -> Identifier -> IO ()
@@ -97,7 +100,7 @@ printDef'' h (SourceLocation f line col) i@(Identifier n _) = do
   loc <- getDef h i
   case loc of
     Just (DefInfo _ (SourceLocation idF idLine idCol) k) ->
-      putStrLn $ idF ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Definition: " ++ n ++ " [" ++ k ++ "]"
-    Nothing -> do putStrLn $ f ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": No database entry for this identifier."
+      putStrLn $ (T.unpack idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
+                 ": Definition: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
+    Nothing -> do putStrLn $ (T.unpack f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": No database entry for this identifier."
                   exitWith (ExitFailure (-1))

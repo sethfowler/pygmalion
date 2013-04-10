@@ -1,6 +1,7 @@
 import Control.Concurrent.Async
 import Control.Monad
 import Control.Monad.Trans
+import qualified Data.Text as T
 import System.Environment
 import System.Exit
 import System.Process
@@ -27,14 +28,14 @@ needArg s = die ("No " ++ s ++ " specified") (ExitFailure (-1))
 parseArgs :: [String] -> IO (Port, Command)
 parseArgs ["--help"]                   = usage
 parseArgs ["-h"]                       = usage
-parseArgs ("--make" : port : cmd : as) = return (read port, Command cmd as)
+parseArgs ("--make" : port : cmd : as) = return (read port, Command (T.pack cmd) (map T.pack as))
 parseArgs ("--make" : _ : [])          = needArg "command"
 parseArgs ("--make" : [])              = needArg "port"
 parseArgs _                            = usage
 
 runCmd :: Command -> IO ()
 runCmd (Command c as) = do
-  (_, _, _, handle) <- liftIO $ createProcess (proc c as)
+  (_, _, _, handle) <- liftIO $ createProcess (proc (T.unpack c) (map T.unpack as))
   code <- liftIO $ waitForProcess handle
   case code of
     ExitSuccess -> return ()

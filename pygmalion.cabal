@@ -52,16 +52,18 @@ executable pygmalion
   main-is:        Pygmalion.hs 
   build-depends:  base >= 4,
                   pygmalion,
-                  safe
+                  safe,
+                  text
   hs-source-dirs: tools
 
 executable pygmake
-  ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:    -Wall -O -threaded -prof -fprof-auto -rtsopts -with-rtsopts=-N
   main-is:        Pygmake.hs 
   build-depends:  base >= 4,
                   async,
                   process,
-                  pygmalion
+                  pygmalion,
+                  text
   hs-source-dirs: tools
 
 executable pygscan
@@ -71,7 +73,8 @@ executable pygscan
                   async,
                   mtl,
                   process,
-                  pygmalion
+                  pygmalion,
+                  text
   hs-source-dirs: tools
 
 test-suite pygmalion-quickcheck

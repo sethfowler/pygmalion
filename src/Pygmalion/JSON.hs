@@ -1,8 +1,10 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Pygmalion.JSON
 ( sourceRecordsToJSON
 ) where
 
-import Data.List
+import qualified Data.Text as T
 import Text.JSON
 
 import Pygmalion.Core
@@ -10,4 +12,4 @@ import Pygmalion.Core
 sourceRecordsToJSON :: [CommandInfo] -> String
 sourceRecordsToJSON cis = encodeStrict $ map (toJSObject . toKeyValue) cis
   where toKeyValue (CommandInfo sf wd (Command cmd args) _) =
-          [("file", sf), ("directory", wd), ("command", intercalate " " (cmd : args))]
+          [("file", sf), ("directory", wd), ("command", T.intercalate " " (cmd : args))]

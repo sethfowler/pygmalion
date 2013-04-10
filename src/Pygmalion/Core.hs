@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric, OverloadedStrings #-}
 
 module Pygmalion.Core
 ( CommandInfo (..)
@@ -24,11 +24,13 @@ module Pygmalion.Core
 ) where
 
 import Control.Applicative
+import Control.Monad
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as TE
 import Data.Int
 import Data.Serialize
 import Database.SQLite.Simple (FromRow(..), field)
 import GHC.Generics
-import System.FilePath.Posix
 
 type Port = Int
 
@@ -36,17 +38,24 @@ type Port = Int
 data CommandInfo = CommandInfo SourceFile WorkingDirectory Command Time
   deriving (Eq, Show, Generic)
 
+instance Serialize T.Text where
+  put = put . TE.encodeUtf16BE
+  get = liftM (TE.decodeUtf16BEWith onError) get
+      where onError _ _ = Nothing
+
 instance Serialize CommandInfo
 
 instance FromRow CommandInfo where
   fromRow = do
-    sf   <- (flip combine) <$> field <*> field
-    wd   <- field
-    cmd  <- Command <$> field <*> (words <$> field)
-    time <- field
-    return $ CommandInfo (normalise sf) wd cmd time
+    fname <- field
+    fpath <- field
+    sf    <- return $ T.concat [fpath, "/", fname]
+    wd    <- field
+    cmd   <- Command <$> field <*> (T.words <$> field)
+    time  <- field
+    return $ CommandInfo sf wd cmd time
 
-data Command = Command String [String]
+data Command = Command T.Text [T.Text]
   deriving (Eq, Show, Generic)
 
 instance Serialize Command
@@ -54,8 +63,8 @@ instance Serialize Command
 withSourceFile :: CommandInfo -> SourceFile -> CommandInfo
 withSourceFile (CommandInfo _ wd cmd t) sf' = CommandInfo sf' wd cmd t
 
-type SourceFile = String
-type WorkingDirectory = String
+type SourceFile = T.Text
+type WorkingDirectory = T.Text
 type Time = Int64
 
 -- The information we collect about definitions in source code.
@@ -65,7 +74,9 @@ data DefInfo = DefInfo Identifier SourceLocation DefKind
 instance FromRow DefInfo where
   fromRow = do
     ident <- Identifier <$> field <*> field
-    sf    <- (flip combine) <$> field <*> field
+    fname <- field
+    fpath <- field
+    sf    <- return $ T.concat [fpath, "/", fname]
     sl    <- SourceLocation sf <$> field <*> field
     kind  <- field
     return $ DefInfo ident sl kind
@@ -76,11 +87,11 @@ data Identifier = Identifier IdName IdUSR
 data SourceLocation = SourceLocation SourceFile SourceLine SourceColumn
   deriving (Eq, Show, Generic)
 
-type IdName = String
-type IdUSR = String
+type IdName = T.Text
+type IdUSR = T.Text
 type SourceLine = Int
 type SourceColumn = Int
-type DefKind = String
+type DefKind = T.Text
 
 -- Tool names.
 queryExecutable, scanExecutable, makeExecutable :: String

@@ -8,6 +8,7 @@ import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
 import Data.Maybe
+import qualified Data.Text as T
 
 import Pygmalion.Analyze.Source
 import Pygmalion.Core
@@ -40,7 +41,7 @@ updateDB h (ci, includes, defs) = liftIO $ do
     updateSourceFile h ci
     -- Update entries for all non-system includes, using the same metadata.
     forM_ includes $ \i -> do
-      updateSourceFile h $ withSourceFile ci i
+      updateSourceFile h $ withSourceFile ci (T.pack i)
     -- Update entries for all definitions.
     forM_ defs $ \d -> do
       updateDef h d

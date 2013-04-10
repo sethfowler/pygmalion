@@ -15,7 +15,6 @@ module Pygmalion.Database
 
 import Control.Exception(bracket)
 import Data.Int
-import Data.List
 import Data.String
 import qualified Data.Text as T
 import Database.SQLite.Simple
@@ -131,11 +130,11 @@ defineSourceFilesTable h = execute_ h sql
 updateSourceFile :: DBHandle -> CommandInfo -> IO ()
 updateSourceFile h (CommandInfo f wd (Command cmd args) t) = do
     execute_ h "begin transaction"
-    fileId <- getIdForRow h "Files" "Name" (normalise . takeFileName $ f)
-    pathId <- getIdForRow h "Paths" "Path" (normalise . takeDirectory $ f)
-    wdId <- getIdForRow h "Paths" "Path" (normalise wd)
+    fileId <- getIdForRow h "Files" "Name" (normalise . takeFileName . T.unpack $ f)
+    pathId <- getIdForRow h "Paths" "Path" (normalise . takeDirectory . T.unpack $ f)
+    wdId <- getIdForRow h "Paths" "Path" wd
     cmdId <- getIdForRow h "BuildCommands" "Command" cmd
-    argsId <- getIdForRow h "BuildArgs" "Args" (intercalate " " args)
+    argsId <- getIdForRow h "BuildArgs" "Args" (T.intercalate " " args)
     execute h sql (fileId, pathId, wdId, cmdId, argsId, t)
     execute_ h "commit"
   where
@@ -224,8 +223,8 @@ defineDefinitionsTable h = execute_ h sql
 updateDef :: DBHandle -> DefInfo -> IO ()
 updateDef h (DefInfo (Identifier n u) (SourceLocation f l c) k) = do
     execute_ h "begin transaction"
-    fileId <- getIdForRow h "Files" "Name" (normalise . takeFileName $ f)
-    pathId <- getIdForRow h "Paths" "Path" (normalise . takeDirectory $ f)
+    fileId <- getIdForRow h "Files" "Name" (normalise . takeFileName . T.unpack $ f)
+    pathId <- getIdForRow h "Paths" "Path" (normalise . takeDirectory . T.unpack $ f)
     kindId <- getIdForRow h "Kinds" "Kind" k
     execute h sql (n, u, fileId, pathId, l, c, kindId)
     execute_ h "commit"

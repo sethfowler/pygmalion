@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveDataTypeable, OverloadedStrings #-}
 
 module Pygmalion.Analyze.Source
 ( runSourceAnalyses
@@ -21,6 +21,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Data.List
 import Data.IORef
+import qualified Data.Text as T
 import Data.Typeable
 import System.FilePath.Posix
 import System.Directory
@@ -81,9 +82,9 @@ defsAnalysis dsRef tu = do
           usr <- XRef.getUSR cursor >>= CStr.unpack
           name <- fqn cursor
           kind <- C.getCursorKindSpelling cKind >>= CStr.unpack
-          def <- return $ DefInfo (Identifier name usr)
-                            (SourceLocation (normalise file) ln col)
-                            kind
+          def <- return $ DefInfo (Identifier (T.pack name) (T.pack usr))
+                            (SourceLocation (T.pack . normalise $ file) ln col)
+                            (T.pack kind)
           defEvaled <- liftIO . evaluate $ def
           liftIO . modifyIORef dsRef $! (defEvaled :)
       return $ if (inProject wd file) then ChildVisit_Recurse
@@ -121,7 +122,7 @@ inspectIdentifier :: SourceLocation -> ClangApp (Maybe Identifier)
 inspectIdentifier (SourceLocation f ln col) = do
     dumpDiagnostics
     tu <- getTranslationUnit
-    file <- File.getFile tu f
+    file <- File.getFile tu (T.unpack f)
     loc <- Source.getLocation tu file ln col
     cursor <- Source.getCursor tu loc
     kind <- C.getKind cursor >>= C.getCursorKindSpelling >>= CStr.unpack
@@ -137,7 +138,7 @@ inspectIdentifier (SourceLocation f ln col) = do
       usr <- XRef.getUSR cursor >>= CStr.unpack
       -- liftIO $ putStrLn $ "In file: " ++ f ++ ":" ++ (show ln) ++ ":" ++ (show col) ++ " got name: " ++ name ++ " usr: " ++ usr
       return $ if null usr then Nothing
-                           else Just $ Identifier name usr
+                           else Just $ Identifier (T.pack name) (T.pack usr)
 
 -- We need to decide on a policy, but it'd be good to figure out a way to let
 -- the user display these, and maybe always display errors.
@@ -176,10 +177,10 @@ dumpSubtree cursor = do
 withTranslationUnit :: CommandInfo -> ClangApp a -> IO a
 withTranslationUnit (CommandInfo sf _ (Command _ args) _) f = do
     withCreateIndex False False $ \index -> do
-      withParse index (Just sf) clangArgs [] [TranslationUnit_None] f bail
+      withParse index (Just . T.unpack $ sf) clangArgs [] [TranslationUnit_None] f bail
   where
-    bail = throw . ClangException $ "Libclang couldn't parse " ++ sf
-    clangArgs = "-I/usr/local/Cellar/llvm/3.2/lib/clang/3.2/include" : args
+    bail = throw . ClangException $ "Libclang couldn't parse " ++ (T.unpack sf)
+    clangArgs = map T.unpack ("-I/usr/local/Cellar/llvm/3.2/lib/clang/3.2/include" : args)
 
 data ClangException = ClangException String
   deriving (Show, Typeable)

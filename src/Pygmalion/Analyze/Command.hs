@@ -5,6 +5,7 @@ module Pygmalion.Analyze.Command
 ) where
 
 import Data.List
+import qualified Data.Text as T
 import Data.Time.Clock.POSIX
 import System.Directory
 import System.Path -- FIXME: Not sure I want the MissingH dependency.
@@ -16,10 +17,11 @@ getCommandInfo :: Command -> IO (Maybe CommandInfo)
 getCommandInfo (Command c as) = do
     wd <- getCurrentDirectory
     time <- getPOSIXTime
-    let sourceFile = find hasSourceExtension as
-    let fas = (absArgs wd) . filterArgs $ as
+    let strAs = map T.unpack as
+    let sourceFile = find hasSourceExtension strAs
+    let fas = map T.pack . absArgs wd . filterArgs $ strAs
     case sourceFile of
-      Just sf -> return . Just $ CommandInfo sf wd (Command c fas) (floor time)
+      Just sf -> return . Just $ CommandInfo (T.pack sf) (T.pack wd) (Command c fas) (floor time)
       _       -> return Nothing
 
 -- We need to filter arguments that cause dependency files to be generated,
