@@ -31,7 +31,8 @@ library
                    text,
                    time,
                    transformers,
-                   LibClang
+                   LibClang,
+                   MissingH
   exposed-modules: Pygmalion.Analyze,
                    Pygmalion.Analyze.Command,
                    Pygmalion.Analyze.Extension,
