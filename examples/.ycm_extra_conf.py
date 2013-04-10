@@ -5,6 +5,6 @@ def FlagsForFile( filename ):
   pygflags = os.popen(cmd).read().strip().split(' ')
 
   return {
-    'flags': pygflags
+    'flags': pygflags,
     'do_cache': True
   }
