@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+import Control.Applicative
 import Control.Monad
-import Data.List
+import Data.Maybe
 import qualified Data.Text as T
 import Safe (readMay)
 import System.Environment
@@ -29,7 +30,7 @@ usage = do
   putStrLn   " --directory-for-file [file] Prints the working directory at the time"
   putStrLn   "                             the file was compiled. Guesses if needed."
   putStrLn   " --definition-for [file] [line] [col]"
-  exitWith (ExitFailure (-1))
+  bail
 
 parseArgs :: [String] -> IO ()
 parseArgs ["--compile-commands"] = printCDB
@@ -45,62 +46,39 @@ printCDB = withDB dbFile $ \h ->
   getAllSourceFiles h >>= putStrLn . sourceRecordsToJSON
 
 printFlags :: FilePath -> IO ()
-printFlags f = withDB dbFile $ \h -> do
-  preciseCmd <- getSourceFile h f
-  case preciseCmd of
-    Just (CommandInfo _ _ cmd _) -> putFlags cmd
-    _                            -> printSimilarFlags h f
+printFlags f = withDB dbFile (getSourceFileOr bail f) >>= putFlags
+  where putFlags (CommandInfo _ _ (Command _ args) _) = putStrLn . T.unpack . T.intercalate " " $ args
 
-printSimilarFlags :: DBHandle -> FilePath -> IO ()
-printSimilarFlags h f = do
-  similarCmd <- getSimilarSourceFile h f
-  case similarCmd of
-    Just (CommandInfo _ _ cmd _) -> putFlags cmd
-    _                            -> exitWith (ExitFailure (-1))
-
-putFlags :: Command -> IO ()
-putFlags (Command _ args) = putStrLn . T.unpack . T.intercalate " " $ args
-
--- FIXME: Ugh. Just hacking this in real quick; needs cleanup.
--- In fact printFlags needs cleanup too.
 printDir :: FilePath -> IO ()
-printDir f = withDB dbFile $ \h -> do
-  preciseCmd <- getSourceFile h f
-  case preciseCmd of
-    Just (CommandInfo _ wd _ _) -> putStrLn . T.unpack $ wd
-    _                           -> printSimilarDir h f
+printDir f = withDB dbFile (getSourceFileOr bail f) >>= putDir
+  where putDir (CommandInfo _ wd _ _) = putStrLn . T.unpack $ wd
 
-printSimilarDir :: DBHandle -> FilePath -> IO ()
-printSimilarDir h f = do
-  similarCmd <- getSimilarSourceFile h f
-  case similarCmd of
-    Just (CommandInfo _ wd _ _) -> putStrLn . T.unpack $ wd
-    _                           -> exitWith (ExitFailure (-1))
+getSourceFileOr :: IO () -> FilePath -> DBHandle -> IO CommandInfo
+getSourceFileOr a f h = do
+  cmd <- liftM2 (<|>) (getSourceFile h f) (getSimilarSourceFile h f)
+  unless (isJust cmd) a
+  return . fromJust $ cmd
 
--- FIXME: Ugh. Again hacked in real quick. Terrible code.
 printDef :: FilePath -> Maybe Int -> Maybe Int -> IO ()
 printDef f (Just line) (Just col) = withDB dbFile $ \h -> do
-  cmd <- getSourceFile h f
-  case cmd of
-    Just ci -> printDef' h ci (SourceLocation (T.pack f) line col)
-    Nothing -> do putStrLn $ f ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": No database entry for this file."
-                  exitWith (ExitFailure (-1))
-printDef _ _ _ = usage
-
-printDef' :: DBHandle -> CommandInfo -> SourceLocation -> IO ()
-printDef' h cmd sl@(SourceLocation f line col) = do
-  ident <- getIdentifier cmd sl
-  case ident of
-    Just i -> printDef'' h sl i
-    Nothing -> do putStrLn $ (T.unpack f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": No identifier at this location."
-                  exitWith (ExitFailure (-1))
-
-printDef'' :: DBHandle -> SourceLocation -> Identifier -> IO ()
-printDef'' h (SourceLocation f line col) i@(Identifier n _) = do
-  loc <- getDef h i
-  case loc of
-    Just (DefInfo _ (SourceLocation idF idLine idCol) k) ->
+    cmd <- getSourceFileOr (bailWith sfErr) f h
+    ident <- getIdentifier cmd (SourceLocation (T.pack f) line col)
+    unless (isJust ident) $ bailWith idErr
+    loc <- getDef h (fromJust ident)
+    unless (isJust loc) $ bailWith locErr
+    putDef (fromJust loc) (fromJust ident)
+  where 
+    errPrefix = f ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
+    sfErr = errPrefix ++ "No database entry for this file."
+    idErr = errPrefix ++ "No identifier at this location."
+    locErr = errPrefix ++ "No database entry for this identifier."
+    putDef (DefInfo _ (SourceLocation idF idLine idCol) k) (Identifier n _) =
       putStrLn $ (T.unpack idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Definition: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
-    Nothing -> do putStrLn $ (T.unpack f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": No database entry for this identifier."
-                  exitWith (ExitFailure (-1))
+printDef _ _ _ = usage
+
+bail :: IO ()
+bail = exitWith (ExitFailure (-1))
+
+bailWith :: String -> IO ()
+bailWith s = putStrLn s >> bail
