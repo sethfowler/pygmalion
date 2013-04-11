@@ -5,8 +5,8 @@ module Pygmalion.Database
 , withDB
 , updateSourceFile
 , getAllSourceFiles
-, getSourceFile
-, getSimilarSourceFile
+, getCommandInfo
+, getSimilarCommandInfo
 , updateDef
 , getDef
 , enableTracing
@@ -166,8 +166,8 @@ getAllSourceFiles h = query_ h sql
               \ join BuildCommands as C on SourceFiles.BuildCommand = C.Id \
               \ join BuildArgs as A on SourceFiles.BuildArgs = A.Id"
 
-getSourceFile :: DBHandle -> FilePath -> IO (Maybe CommandInfo)
-getSourceFile h f = do
+getCommandInfo :: DBHandle -> FilePath -> IO (Maybe CommandInfo)
+getCommandInfo h f = do
     row <- query h sql (normalise . takeFileName $ f, normalise . takeDirectory $ f)
     return $ case row of
               (ci : _) -> Just ci
@@ -183,8 +183,8 @@ getSourceFile h f = do
 
 -- Eventually this should be more statistical, but right now it will just
 -- return an arbitrary file from the same directory.
-getSimilarSourceFile :: DBHandle -> FilePath -> IO (Maybe CommandInfo)
-getSimilarSourceFile h f = do
+getSimilarCommandInfo :: DBHandle -> FilePath -> IO (Maybe CommandInfo)
+getSimilarCommandInfo h f = do
     row <- query h sql (Only $ takeDirectory f)
     return $ case row of
               (ci : _) -> Just ci

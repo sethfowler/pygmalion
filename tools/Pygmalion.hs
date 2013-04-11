@@ -45,32 +45,32 @@ printCDB :: IO ()
 printCDB = withDB $ \h -> getAllSourceFiles h >>= putStrLn . sourceRecordsToJSON
 
 printFlags :: FilePath -> IO ()
-printFlags f = withDB (getSourceFileOr bail f) >>= putFlags
+printFlags f = withDB (getCommandInfoOr bail f) >>= putFlags
   where putFlags (CommandInfo _ _ (Command _ args) _) = putStrLn . T.unpack . T.intercalate " " $ args
 
 printDir :: FilePath -> IO ()
-printDir f = withDB (getSourceFileOr bail f) >>= putDir
+printDir f = withDB (getCommandInfoOr bail f) >>= putDir
   where putDir (CommandInfo _ wd _ _) = putStrLn . T.unpack $ wd
 
-getSourceFileOr :: IO () -> FilePath -> DBHandle -> IO CommandInfo
-getSourceFileOr a f h = do
-  cmd <- liftM2 (<|>) (getSourceFile h f) (getSimilarSourceFile h f)
+getCommandInfoOr :: IO () -> FilePath -> DBHandle -> IO CommandInfo
+getCommandInfoOr a f h = do
+  cmd <- liftM2 (<|>) (getCommandInfo h f) (getSimilarCommandInfo h f)
   unless (isJust cmd) a
   return . fromJust $ cmd
 
 printDef :: FilePath -> Maybe Int -> Maybe Int -> IO ()
 printDef f (Just line) (Just col) = withDB $ \h -> do
-    cmd <- getSourceFileOr (bailWith sfErr) f h
+    cmd <- getCommandInfoOr (bailWith cmdErr) f h
     ident <- getIdentifier cmd (SourceLocation (T.pack f) line col)
     unless (isJust ident) $ bailWith idErr
-    loc <- getDef h (fromJust ident)
-    unless (isJust loc) $ bailWith locErr
-    putDef (fromJust loc) (fromJust ident)
+    def <- getDef h (fromJust ident)
+    unless (isJust def) $ bailWith defErr
+    putDef (fromJust def) (fromJust ident)
   where 
     errPrefix = f ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
-    sfErr = errPrefix ++ "No database entry for this file."
+    cmdErr = errPrefix ++ "No compilation information for this file."
     idErr = errPrefix ++ "No identifier at this location."
-    locErr = errPrefix ++ "No database entry for this identifier."
+    defErr = errPrefix ++ "No definition for this identifier."
     putDef (DefInfo _ (SourceLocation idF idLine idCol) k) (Identifier n _) =
       putStrLn $ (T.unpack idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Definition: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
