@@ -30,7 +30,7 @@ import Data.Bool.Predicate
 import Pygmalion.Analyze.Extension
 import Pygmalion.Core
 
-runSourceAnalyses :: CommandInfo -> IO (Maybe ([FilePath], [DefInfo]))
+runSourceAnalyses :: CommandInfo -> IO (Maybe ([SourceFile], [DefInfo]))
 runSourceAnalyses ci = do
   wd <- getCurrentDirectory -- FIXME: Should really pass this in.
   includesRef <- newIORef []
@@ -49,7 +49,7 @@ getIdentifier ci sl = do
     Right identifier        -> return identifier
     Left (ClangException _) -> return Nothing
 
-includesAnalysis :: IORef [FilePath] -> FilePath -> ClangApp ()
+includesAnalysis :: IORef [SourceFile] -> FilePath -> ClangApp ()
 includesAnalysis isRef wd = do
     tu <- getTranslationUnit
     void $ getInclusions tu visitInclusions
@@ -58,7 +58,8 @@ includesAnalysis isRef wd = do
     visitInclusions file _  = do
       f <- File.getName file
       name <- CStr.unpack f
-      when (isLocalHeader wd name) $ liftIO . modifyIORef isRef $! (name :)
+      when (isLocalHeader wd name) $
+        liftIO . modifyIORef isRef $! ((mkSourceFile name) :)
 
 isLocalHeader :: FilePath -> FilePath -> Bool
 isLocalHeader wd p = (wd `isPrefixOf`) .&&. hasHeaderExtension .&&. (not . null) $ p

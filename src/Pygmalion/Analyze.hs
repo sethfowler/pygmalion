@@ -27,7 +27,7 @@ type Scanner a = MaybeT IO a
 runScanner :: Scanner a -> IO (Maybe a)
 runScanner a = runMaybeT a
 
-analyzeCode :: CommandInfo -> Scanner (CommandInfo, [FilePath], [DefInfo])
+analyzeCode :: CommandInfo -> Scanner (CommandInfo, [SourceFile], [DefInfo])
 analyzeCode ci = do
   --liftIO $ putStrLn $ "Analyzing " ++ (show ci)
   result <- liftIO $ runSourceAnalyses ci
@@ -35,12 +35,12 @@ analyzeCode ci = do
     Just (is, ds) -> return (ci, is, ds)
     Nothing -> MaybeT $ return Nothing
 
-updateDB :: DBHandle -> (CommandInfo, [FilePath], [DefInfo]) -> Scanner ()
+updateDB :: DBHandle -> (CommandInfo, [SourceFile], [DefInfo]) -> Scanner ()
 updateDB h (ci, includes, defs) = liftIO $ do
     updateSourceFile h ci
     -- Update entries for all non-system includes, using the same metadata.
     forM_ includes $ \i -> do
-      updateSourceFile h $ withSourceFile ci (mkSourceFile i)
+      updateSourceFile h $ withSourceFile ci i
     -- Update entries for all definitions.
     forM_ defs $ \d -> do
       updateDef h d
