@@ -8,7 +8,7 @@ import Data.List
 import qualified Data.Text as T
 import Data.Time.Clock.POSIX
 import System.Directory
-import System.Path -- FIXME: Not sure I want the MissingH dependency.
+import System.Path
 
 import Pygmalion.Analyze.Extension
 import Pygmalion.Core
@@ -18,7 +18,7 @@ getCommandInfo (Command c as) = do
     wd <- getCurrentDirectory
     time <- getPOSIXTime
     let strAs = map T.unpack as
-    let sourceFile = find hasSourceExtension strAs
+    let sourceFile = find hasSourceExtension strAs >>= absNormPath wd
     let fas = map T.pack . absArgs wd . filterArgs $ strAs
     case sourceFile of
       Just sf -> return . Just $ CommandInfo (T.pack sf) (T.pack wd) (Command c fas) (floor time)

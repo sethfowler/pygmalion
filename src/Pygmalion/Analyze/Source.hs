@@ -3,6 +3,7 @@
 module Pygmalion.Analyze.Source
 ( runSourceAnalyses
 , getIdentifier
+, dumpSubtree -- Just to silence the warnings. Need to move this to another module.
 ) where
 
 import Clang.Alloc.Storable()
@@ -92,6 +93,9 @@ defsAnalysis dsRef tu = do
 
 {-
 -- Was the following; still evaluating the tradeoffs.
+-- It probably does NOT make sense to store definitions that must necessarily
+-- occur in the same file, because we have to parse the file anyway to get the
+-- USR. Should refactor things to support that flow.
       return $ case cKind of
                   C.Cursor_FunctionDecl -> ChildVisit_Continue
                   C.Cursor_CXXMethod    -> ChildVisit_Continue
@@ -125,7 +129,7 @@ inspectIdentifier (SourceLocation f ln col) = do
     file <- File.getFile tu (T.unpack f)
     loc <- Source.getLocation tu file ln col
     cursor <- Source.getCursor tu loc
-    kind <- C.getKind cursor >>= C.getCursorKindSpelling >>= CStr.unpack
+    -- kind <- C.getKind cursor >>= C.getCursorKindSpelling >>= CStr.unpack
     -- liftIO $ putStrLn $ "Cursor kind is " ++ kind
     defCursor <- C.getDefinition cursor
     isNullDef <- C.isNullCursor defCursor
@@ -136,7 +140,7 @@ inspectIdentifier (SourceLocation f ln col) = do
       -- dumpSubtree cursor
       name <- fqn cursor
       usr <- XRef.getUSR cursor >>= CStr.unpack
-      -- liftIO $ putStrLn $ "In file: " ++ f ++ ":" ++ (show ln) ++ ":" ++ (show col) ++ " got name: " ++ name ++ " usr: " ++ usr
+      -- liftIO $ putStrLn $ "In file: " ++ (T.unpack f) ++ ":" ++ (show ln) ++ ":" ++ (show col) ++ " got name: " ++ name ++ " usr: " ++ usr
       return $ if null usr then Nothing
                            else Just $ Identifier (T.pack name) (T.pack usr)
 
@@ -144,12 +148,17 @@ inspectIdentifier (SourceLocation f ln col) = do
 -- the user display these, and maybe always display errors.
 dumpDiagnostics :: ClangApp ()
 dumpDiagnostics = do
-  tu <- getTranslationUnit
-  opts <- Diag.defaultDisplayOptions
-  dias <- Diag.getDiagnostics tu
-  forM_ dias $ \dia -> do
-    diaStr <- Diag.formatDiagnostic opts dia
-    liftIO $ putStrLn $ "Diagnostic: " ++ diaStr
+    tu <- getTranslationUnit
+    opts <- Diag.defaultDisplayOptions
+    dias <- Diag.getDiagnostics tu
+    forM_ dias $ \dia -> do
+      severity <- Diag.getSeverity dia
+      when (isError severity) $ do
+        diaStr <- Diag.formatDiagnostic opts dia
+        liftIO $ putStrLn $ "Diagnostic: " ++ diaStr
+  where
+    isError = (== Diag.Diagnostic_Error) .||. (== Diag.Diagnostic_Fatal)
+
 
 dumpSubtree :: C.Cursor -> ClangApp ()
 dumpSubtree cursor = do
@@ -180,7 +189,10 @@ withTranslationUnit (CommandInfo sf _ (Command _ args) _) f = do
       withParse index (Just . T.unpack $ sf) clangArgs [] [TranslationUnit_None] f bail
   where
     bail = throw . ClangException $ "Libclang couldn't parse " ++ (T.unpack sf)
-    clangArgs = map T.unpack ("-I/usr/local/Cellar/llvm/3.2/lib/clang/3.2/include" : args)
+    clangArgs = map T.unpack args
+    -- FIXME: Is something along these lines useful? Internet claims so but this
+    -- may be outdated information, as things seems to work OK without it.
+    --clangArgs = map T.unpack ("-I/usr/local/Cellar/llvm/3.2/lib/clang/3.2/include" : args)
 
 data ClangException = ClangException String
   deriving (Show, Typeable)

@@ -187,7 +187,7 @@ getSimilarCommandInfo :: DBHandle -> FilePath -> IO (Maybe CommandInfo)
 getSimilarCommandInfo h f = do
     row <- query h sql (Only $ takeDirectory f)
     return $ case row of
-              (ci : _) -> Just ci
+              (ci : _) -> Just $ withSourceFile ci (T.pack f)
               _        -> Nothing
   where sql = "select F.Name, P.Path, W.Path, C.Command, A.Args, LastBuilt \
               \ from SourceFiles                                           \
