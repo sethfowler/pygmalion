@@ -22,8 +22,10 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Data.List
 import Data.IORef
+import qualified Data.HashMap.Strict as Map
 import qualified Data.Text as T
 import Data.Typeable
+import Data.Word
 import System.Directory
 
 import Data.Bool.Predicate
@@ -33,8 +35,8 @@ import Pygmalion.Core
 runSourceAnalyses :: CommandInfo -> IO (Maybe ([SourceFile], [DefInfo]))
 runSourceAnalyses ci = do
   wd <- getCurrentDirectory -- FIXME: Should really pass this in.
-  includesRef <- newIORef []
-  defsRef <- newIORef []
+  includesRef <- newIORef $! []
+  defsRef <- newIORef $! []
   result <- try $ withTranslationUnit ci $ do
                     includesAnalysis includesRef wd
                     defsAnalysis defsRef wd
@@ -68,26 +70,27 @@ defsAnalysis :: IORef [DefInfo] -> FilePath -> ClangApp ()
 defsAnalysis dsRef wd = do
     tu <- getTranslationUnit
     cursor <- getCursor tu
-    void $ visitChildren cursor kidVisitor
+    fileCache <- liftIO $ mkCache (CStr.unpack) id
+    attrCache <- liftIO $ mkCache (\s -> T.pack <$> CStr.unpack s) (T.unpack)
+    void $ visitChildren cursor (kidVisitor fileCache attrCache)
   where
-    kidVisitor :: ChildVisitor
-    kidVisitor cursor _ = do
+    kidVisitor :: CXStringCache FilePath -> CXStringCache T.Text -> ChildVisitor
+    kidVisitor fileCache attrCache cursor _ = do
       loc <- C.getLocation cursor
       (f, ln, col, _) <- Source.getSpellingLocation loc
-      file <- case f of Just validF -> File.getName validF >>= CStr.unpack
-                        Nothing     -> return ""
+      file <- case f of Just valid -> File.getName valid >>= fromCache fileCache
+                        Nothing    -> return ""
       when (inProject wd file) $ do
         cKind <- C.getKind cursor
         defined <- isDef cursor cKind
         when defined $ do
-          usr <- XRef.getUSR cursor >>= CStr.unpack
-          name <- fqn cursor
-          kind <- C.getCursorKindSpelling cKind >>= CStr.unpack
-          def <- return $ DefInfo (Identifier (T.pack name) (T.pack usr))
+          usr <- XRef.getUSR cursor >>= fromCache attrCache
+          name <- fqn attrCache cursor
+          kind <- C.getCursorKindSpelling cKind >>= fromCache attrCache
+          def <- return $! DefInfo (Identifier name usr)
                             (SourceLocation (mkSourceFile file) ln col)
-                            (T.pack kind)
-          defEvaled <- liftIO . evaluate $ def
-          liftIO . modifyIORef dsRef $! (defEvaled :)
+                            kind
+          liftIO . modifyIORef dsRef $! (def :)
       return $ if (inProject wd file) then ChildVisit_Recurse
                                       else ChildVisit_Continue
 
@@ -102,6 +105,30 @@ defsAnalysis dsRef wd = do
                   _                     -> ChildVisit_Recurse
 -}
 
+-- This whole thing needs cleanup; it serves only as a proof of concept.
+data CXStringCache a = CXStringCache {
+                        cxStringCache :: IORef (Map.HashMap Word64 a),
+                        cxStringPrepare :: CStr.CXString -> ClangApp a,
+                        cxStringCachedAsString :: a -> String
+                       }
+
+mkCache :: (CStr.CXString -> ClangApp a) -> (a -> String) -> IO (CXStringCache a)
+mkCache prep asString = do
+  cacheRef <- newIORef $! Map.empty
+  return $ CXStringCache cacheRef prep asString
+
+fromCache :: CXStringCache a -> CStr.CXString -> ClangApp a
+fromCache cache cxStr = do
+  hash <- CStr.hash cxStr
+  cacheMap <- liftIO $ readIORef (cxStringCache cache)
+  case hash `Map.lookup` cacheMap of
+    Just s -> do -- liftIO $ putStrLn $ "Cache HIT for " ++ (cxStringCachedAsString cache s)
+                 return $! s
+    Nothing -> do s <- (cxStringPrepare cache) cxStr
+                  -- liftIO $ putStrLn $ "Cache MISS for " ++ (cxStringCachedAsString cache s)
+                  liftIO $ modifyIORef (cxStringCache cache) $! (Map.insert hash s)
+                  return $! s
+
 inProject :: FilePath -> FilePath -> Bool
 inProject wd p = (wd `isPrefixOf`) .&&. (not . null) $ p
 
@@ -110,17 +137,17 @@ isDef c k = do
   q1 <- C.isDefinition c
   return $ q1 && not (k == C.Cursor_CXXAccessSpecifier)
 
-fqn :: C.Cursor -> ClangApp String
-fqn cursor = (intercalate "::" . reverse) <$> go cursor
+fqn :: CXStringCache T.Text -> C.Cursor -> ClangApp T.Text
+fqn cache cursor = (T.intercalate "::" . reverse) <$> go cursor
   where go c = do isNull <- C.isNullCursor c
                   isTU <- C.getKind c >>= C.isTranslationUnit
                   if isNull || isTU then return [] else go' c
-        go' c =  (:) <$> (cursorName c) <*> (C.getSemanticParent c >>= go)
+        go' c =  (:) <$> (cursorName cache c) <*> (C.getSemanticParent c >>= go)
 
-cursorName :: C.Cursor -> ClangApp String
-cursorName c = C.getDisplayName c >>= CStr.unpack >>= anonymize
-  where anonymize [] = return "<anonymous>"
-        anonymize s  = return s
+cursorName :: CXStringCache T.Text -> C.Cursor -> ClangApp T.Text
+cursorName cache c = C.getDisplayName c >>= fromCache cache >>= anonymize
+  where anonymize s | T.null s  = return "<anonymous>"
+                    | otherwise = return s
 
 inspectIdentifier :: SourceLocation -> ClangApp (Maybe Identifier)
 inspectIdentifier (SourceLocation f ln col) = do
@@ -138,7 +165,7 @@ inspectIdentifier (SourceLocation f ln col) = do
   where
     reportIdentifier cursor = do
       -- dumpSubtree cursor
-      name <- fqn cursor
+      name <- C.getDisplayName cursor >>= CStr.unpack
       usr <- XRef.getUSR cursor >>= CStr.unpack
       -- liftIO $ putStrLn $ "In file: " ++ (T.unpack f) ++ ":" ++ (show ln) ++ ":" ++ (show col) ++ " got name: " ++ name ++ " usr: " ++ usr
       return $ if null usr then Nothing
@@ -174,7 +201,7 @@ dumpSubtree cursor = do
           (_, endLn, endCol, _) <- Source.getEnd extent >>= Source.getSpellingLocation
 
           -- Get metadata.
-          name <- cursorName c
+          name <- C.getDisplayName cursor >>= CStr.unpack
           usr <- XRef.getUSR cursor >>= CStr.unpack
           kind <- C.getKind c >>= C.getCursorKindSpelling >>= CStr.unpack
 
