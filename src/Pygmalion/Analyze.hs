@@ -15,7 +15,7 @@ import Pygmalion.Core
 import Pygmalion.Database
 
 runAnalysisThread :: Chan (Maybe CommandInfo) -> IO ()
-runAnalysisThread chan = withDB dbFile $ \h -> do
+runAnalysisThread chan = withDB $ \h -> do
     commandStream <- getChanContents chan
     mapM_ (scanCommandAndUpdateDB h . fromJust) $ takeWhile isJust commandStream
 

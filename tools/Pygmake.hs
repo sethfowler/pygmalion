@@ -18,7 +18,7 @@ import Pygmalion.RPC.Server
 main :: IO ()
 main = do
   args <- (getArgs >>= parseArgs)
-  ensureDB dbFile
+  ensureDB
   cf <- getConfiguration
   port <- newEmptyMVar
   chan <- newChan
@@ -59,5 +59,5 @@ ensureNoException (Right v) = return v
 ensureNoException (Left e)  = putStrLn "Analysis thread threw an exception" >> throw e
 
 writeCompileCommands :: IO ()
-writeCompileCommands = withDB dbFile $ \h -> do
+writeCompileCommands = withDB $ \h -> do
   getAllSourceFiles h >>= (writeFile compileCommandsFile) . sourceRecordsToJSON

@@ -42,15 +42,14 @@ parseArgs ["-h"]     = usage
 parseArgs _          = usage
 
 printCDB :: IO ()
-printCDB = withDB dbFile $ \h ->
-  getAllSourceFiles h >>= putStrLn . sourceRecordsToJSON
+printCDB = withDB $ \h -> getAllSourceFiles h >>= putStrLn . sourceRecordsToJSON
 
 printFlags :: FilePath -> IO ()
-printFlags f = withDB dbFile (getSourceFileOr bail f) >>= putFlags
+printFlags f = withDB (getSourceFileOr bail f) >>= putFlags
   where putFlags (CommandInfo _ _ (Command _ args) _) = putStrLn . T.unpack . T.intercalate " " $ args
 
 printDir :: FilePath -> IO ()
-printDir f = withDB dbFile (getSourceFileOr bail f) >>= putDir
+printDir f = withDB (getSourceFileOr bail f) >>= putDir
   where putDir (CommandInfo _ wd _ _) = putStrLn . T.unpack $ wd
 
 getSourceFileOr :: IO () -> FilePath -> DBHandle -> IO CommandInfo
@@ -60,7 +59,7 @@ getSourceFileOr a f h = do
   return . fromJust $ cmd
 
 printDef :: FilePath -> Maybe Int -> Maybe Int -> IO ()
-printDef f (Just line) (Just col) = withDB dbFile $ \h -> do
+printDef f (Just line) (Just col) = withDB $ \h -> do
     cmd <- getSourceFileOr (bailWith sfErr) f h
     ident <- getIdentifier cmd (SourceLocation (T.pack f) line col)
     unless (isJust ident) $ bailWith idErr

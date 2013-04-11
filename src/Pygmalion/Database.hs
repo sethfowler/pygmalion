@@ -29,11 +29,11 @@ import Pygmalion.Core
 -- configured according to the correct schema and enable foreign keys.
 type DBHandle = Connection
 
-ensureDB :: FilePath -> IO ()
-ensureDB db = withDB db (const . return $ ())
+ensureDB :: IO ()
+ensureDB = withDB (const . return $ ())
 
-withDB :: FilePath -> (DBHandle -> IO a) -> IO a
-withDB db f = bracket (openDB db) closeDB f
+withDB :: (DBHandle -> IO a) -> IO a
+withDB f = bracket (openDB dbFile) closeDB f
 
 openDB :: FilePath -> IO DBHandle
 openDB db = labeledCatch "openDB" $ do
