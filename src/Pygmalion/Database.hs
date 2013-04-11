@@ -19,7 +19,6 @@ import Data.String
 import qualified Data.Text as T
 import Database.SQLite.Simple
 import Database.SQLite.Simple.ToField (ToField(..))
-import System.FilePath.Posix
 
 import Control.Exception.Labeled
 import Pygmalion.Core
@@ -128,10 +127,10 @@ defineSourceFilesTable h = execute_ h sql
                \ primary key(File, Path))"
 
 updateSourceFile :: DBHandle -> CommandInfo -> IO ()
-updateSourceFile h (CommandInfo f wd (Command cmd args) t) = do
+updateSourceFile h (CommandInfo (SourceFile sn sp) wd (Command cmd args) t) = do
     execute_ h "begin transaction"
-    fileId <- getIdForRow h "Files" "Name" (normalise . takeFileName . T.unpack $ f)
-    pathId <- getIdForRow h "Paths" "Path" (normalise . takeDirectory . T.unpack $ f)
+    fileId <- getIdForRow h "Files" "Name" sn
+    pathId <- getIdForRow h "Paths" "Path" sp
     wdId <- getIdForRow h "Paths" "Path" wd
     cmdId <- getIdForRow h "BuildCommands" "Command" cmd
     argsId <- getIdForRow h "BuildArgs" "Args" (T.intercalate " " args)
@@ -166,9 +165,9 @@ getAllSourceFiles h = query_ h sql
               \ join BuildCommands as C on SourceFiles.BuildCommand = C.Id \
               \ join BuildArgs as A on SourceFiles.BuildArgs = A.Id"
 
-getCommandInfo :: DBHandle -> FilePath -> IO (Maybe CommandInfo)
-getCommandInfo h f = do
-    row <- query h sql (normalise . takeFileName $ f, normalise . takeDirectory $ f)
+getCommandInfo :: DBHandle -> SourceFile -> IO (Maybe CommandInfo)
+getCommandInfo h (SourceFile sn sp) = do
+    row <- query h sql (sn, sp)
     return $ case row of
               (ci : _) -> Just ci
               _        -> Nothing
@@ -183,11 +182,11 @@ getCommandInfo h f = do
 
 -- Eventually this should be more statistical, but right now it will just
 -- return an arbitrary file from the same directory.
-getSimilarCommandInfo :: DBHandle -> FilePath -> IO (Maybe CommandInfo)
-getSimilarCommandInfo h f = do
-    row <- query h sql (Only $ takeDirectory f)
+getSimilarCommandInfo :: DBHandle -> SourceFile -> IO (Maybe CommandInfo)
+getSimilarCommandInfo h sf@(SourceFile _ sp) = do
+    row <- query h sql (Only sp)
     return $ case row of
-              (ci : _) -> Just $ withSourceFile ci (T.pack f)
+              (ci : _) -> Just $ withSourceFile ci sf
               _        -> Nothing
   where sql = "select F.Name, P.Path, W.Path, C.Command, A.Args, LastBuilt \
               \ from SourceFiles                                           \
@@ -221,10 +220,10 @@ defineDefinitionsTable h = execute_ h sql
                \ foreign key(Kind) references Kinds(Id))"
 
 updateDef :: DBHandle -> DefInfo -> IO ()
-updateDef h (DefInfo (Identifier n u) (SourceLocation f l c) k) = do
+updateDef h (DefInfo (Identifier n u) (SourceLocation (SourceFile sn sp) l c) k) = do
     execute_ h "begin transaction"
-    fileId <- getIdForRow h "Files" "Name" (normalise . takeFileName . T.unpack $ f)
-    pathId <- getIdForRow h "Paths" "Path" (normalise . takeDirectory . T.unpack $ f)
+    fileId <- getIdForRow h "Files" "Name" sn
+    pathId <- getIdForRow h "Paths" "Path" sp
     kindId <- getIdForRow h "Kinds" "Kind" k
     execute h sql (n, u, fileId, pathId, l, c, kindId)
     execute_ h "commit"

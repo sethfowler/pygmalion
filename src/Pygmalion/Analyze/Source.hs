@@ -24,7 +24,6 @@ import Data.List
 import Data.IORef
 import qualified Data.Text as T
 import Data.Typeable
-import System.FilePath.Posix
 import System.Directory
 
 import Data.Bool.Predicate
@@ -33,12 +32,12 @@ import Pygmalion.Core
 
 runSourceAnalyses :: CommandInfo -> IO (Maybe ([FilePath], [DefInfo]))
 runSourceAnalyses ci = do
+  wd <- getCurrentDirectory -- FIXME: Should really pass this in.
   includesRef <- newIORef []
   defsRef <- newIORef []
   result <- try $ withTranslationUnit ci $ do
-                    tu <- getTranslationUnit
-                    includesAnalysis includesRef tu
-                    defsAnalysis defsRef tu
+                    includesAnalysis includesRef wd
+                    defsAnalysis defsRef wd
   case result of
     Right _ -> (,) <$> readIORef includesRef <*> readIORef defsRef >>= return . Just
     Left (ClangException _) -> return Nothing
@@ -50,28 +49,28 @@ getIdentifier ci sl = do
     Right identifier        -> return identifier
     Left (ClangException _) -> return Nothing
 
-includesAnalysis :: IORef [FilePath] -> TranslationUnit -> ClangApp ()
-includesAnalysis isRef tu = do
-    wd <- liftIO getCurrentDirectory
-    void $ getInclusions tu (visitInclusions wd)
+includesAnalysis :: IORef [FilePath] -> FilePath -> ClangApp ()
+includesAnalysis isRef wd = do
+    tu <- getTranslationUnit
+    void $ getInclusions tu visitInclusions
   where
-    visitInclusions :: FilePath -> InclusionVisitor
-    visitInclusions wd file _  = do
+    visitInclusions :: InclusionVisitor
+    visitInclusions file _  = do
       f <- File.getName file
       name <- CStr.unpack f
-      when (isLocalHeader wd name) $ liftIO . modifyIORef isRef $! ((normalise name) :)
+      when (isLocalHeader wd name) $ liftIO . modifyIORef isRef $! (name :)
 
 isLocalHeader :: FilePath -> FilePath -> Bool
-isLocalHeader wd p = (wd `isPrefixOf`) .&&. isValid .&&. hasHeaderExtension .&&. (not . null) $ p
+isLocalHeader wd p = (wd `isPrefixOf`) .&&. hasHeaderExtension .&&. (not . null) $ p
 
-defsAnalysis :: IORef [DefInfo] -> TranslationUnit -> ClangApp ()
-defsAnalysis dsRef tu = do
-    wd <- liftIO getCurrentDirectory
+defsAnalysis :: IORef [DefInfo] -> FilePath -> ClangApp ()
+defsAnalysis dsRef wd = do
+    tu <- getTranslationUnit
     cursor <- getCursor tu
-    void $ visitChildren cursor (kidVisitor wd)
+    void $ visitChildren cursor kidVisitor
   where
-    kidVisitor :: FilePath -> ChildVisitor
-    kidVisitor wd cursor _ = do
+    kidVisitor :: ChildVisitor
+    kidVisitor cursor _ = do
       loc <- C.getLocation cursor
       (f, ln, col, _) <- Source.getSpellingLocation loc
       file <- case f of Just validF -> File.getName validF >>= CStr.unpack
@@ -84,7 +83,7 @@ defsAnalysis dsRef tu = do
           name <- fqn cursor
           kind <- C.getCursorKindSpelling cKind >>= CStr.unpack
           def <- return $ DefInfo (Identifier (T.pack name) (T.pack usr))
-                            (SourceLocation (T.pack . normalise $ file) ln col)
+                            (SourceLocation (mkSourceFile file) ln col)
                             (T.pack kind)
           defEvaled <- liftIO . evaluate $ def
           liftIO . modifyIORef dsRef $! (defEvaled :)
@@ -103,7 +102,7 @@ defsAnalysis dsRef tu = do
 -}
 
 inProject :: FilePath -> FilePath -> Bool
-inProject wd p = (wd `isPrefixOf`) .&&. isValid .&&. (not . null) $ p
+inProject wd p = (wd `isPrefixOf`) .&&. (not . null) $ p
 
 isDef :: C.Cursor -> C.CursorKind -> ClangApp Bool
 isDef c k = do
@@ -126,7 +125,7 @@ inspectIdentifier :: SourceLocation -> ClangApp (Maybe Identifier)
 inspectIdentifier (SourceLocation f ln col) = do
     dumpDiagnostics
     tu <- getTranslationUnit
-    file <- File.getFile tu (T.unpack f)
+    file <- File.getFile tu (unSourceFile f)
     loc <- Source.getLocation tu file ln col
     cursor <- Source.getCursor tu loc
     -- kind <- C.getKind cursor >>= C.getCursorKindSpelling >>= CStr.unpack
@@ -186,9 +185,9 @@ dumpSubtree cursor = do
 withTranslationUnit :: CommandInfo -> ClangApp a -> IO a
 withTranslationUnit (CommandInfo sf _ (Command _ args) _) f = do
     withCreateIndex False False $ \index -> do
-      withParse index (Just . T.unpack $ sf) clangArgs [] [TranslationUnit_None] f bail
+      withParse index (Just . unSourceFile $ sf) clangArgs [] [TranslationUnit_None] f bail
   where
-    bail = throw . ClangException $ "Libclang couldn't parse " ++ (T.unpack sf)
+    bail = throw . ClangException $ "Libclang couldn't parse " ++ (unSourceFile sf)
     clangArgs = map T.unpack args
     -- FIXME: Is something along these lines useful? Internet claims so but this
     -- may be outdated information, as things seems to work OK without it.

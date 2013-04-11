@@ -2,7 +2,7 @@
 
 module Pygmalion.Core
 ( CommandInfo (..)
-, SourceFile
+, SourceFile (..)
 , WorkingDirectory
 , Command (..)
 , DefInfo (..)
@@ -14,6 +14,9 @@ module Pygmalion.Core
 , SourceColumn
 , DefKind
 , Port
+, mkSourceFile
+, unSourceFile
+, unSourceFileText
 , withSourceFile
 , queryExecutable
 , scanExecutable
@@ -31,6 +34,7 @@ import Data.Int
 import Data.Serialize
 import Database.SQLite.Simple (FromRow(..), field)
 import GHC.Generics
+import System.FilePath.Posix
 
 type Port = Int
 
@@ -47,9 +51,7 @@ instance Serialize CommandInfo
 
 instance FromRow CommandInfo where
   fromRow = do
-    fname <- field
-    fpath <- field
-    sf    <- return $ T.concat [fpath, "/", fname]
+    sf    <- SourceFile <$> field <*> field
     wd    <- field
     cmd   <- Command <$> field <*> (T.words <$> field)
     time  <- field
@@ -63,7 +65,22 @@ instance Serialize Command
 withSourceFile :: CommandInfo -> SourceFile -> CommandInfo
 withSourceFile (CommandInfo _ wd cmd t) sf' = CommandInfo sf' wd cmd t
 
-type SourceFile = T.Text
+-- A source file has a name and a path.
+data SourceFile = SourceFile T.Text T.Text
+  deriving (Eq, Show, Generic)
+
+instance Serialize SourceFile
+
+mkSourceFile :: FilePath -> SourceFile
+mkSourceFile f = SourceFile (T.pack . normalise . takeFileName $ f)
+                            (T.pack . normalise . takeDirectory $ f)
+
+unSourceFileText :: SourceFile -> T.Text
+unSourceFileText (SourceFile sn sp) = T.concat [sp, "/", sn]
+
+unSourceFile :: SourceFile -> FilePath
+unSourceFile = T.unpack . unSourceFileText
+
 type WorkingDirectory = T.Text
 type Time = Int64
 
@@ -74,9 +91,7 @@ data DefInfo = DefInfo Identifier SourceLocation DefKind
 instance FromRow DefInfo where
   fromRow = do
     ident <- Identifier <$> field <*> field
-    fname <- field
-    fpath <- field
-    sf    <- return $ T.concat [fpath, "/", fname]
+    sf    <- SourceFile <$> field <*> field
     sl    <- SourceLocation sf <$> field <*> field
     kind  <- field
     return $ DefInfo ident sl kind

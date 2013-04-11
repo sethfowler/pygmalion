@@ -21,7 +21,7 @@ getCommandInfo (Command c as) = do
     let sourceFile = find hasSourceExtension strAs >>= absNormPath wd
     let fas = map T.pack . absArgs wd . filterArgs $ strAs
     case sourceFile of
-      Just sf -> return . Just $ CommandInfo (T.pack sf) (T.pack wd) (Command c fas) (floor time)
+      Just sf -> return . Just $ CommandInfo (mkSourceFile sf) (T.pack wd) (Command c fas) (floor time)
       _       -> return Nothing
 
 -- We need to filter arguments that cause dependency files to be generated,

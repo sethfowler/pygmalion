@@ -34,9 +34,10 @@ usage = do
 
 parseArgs :: [String] -> IO ()
 parseArgs ["--compile-commands"] = printCDB
-parseArgs ["--flags-for-file", path] = printFlags path
-parseArgs ["--directory-for-file", path] = printDir path
-parseArgs ["--definition-for", file, line, col] = printDef file (readMay line) (readMay col)
+parseArgs ["--flags-for-file", f] = printFlags (mkSourceFile f)
+parseArgs ["--directory-for-file", f] = printDir (mkSourceFile f)
+parseArgs ["--definition-for", f, line, col] = printDef (mkSourceFile f)
+                                                        (readMay line) (readMay col)
 parseArgs ["--help"] = usage
 parseArgs ["-h"]     = usage
 parseArgs _          = usage
@@ -44,35 +45,35 @@ parseArgs _          = usage
 printCDB :: IO ()
 printCDB = withDB $ \h -> getAllSourceFiles h >>= putStrLn . sourceRecordsToJSON
 
-printFlags :: FilePath -> IO ()
+printFlags :: SourceFile -> IO ()
 printFlags f = withDB (getCommandInfoOr bail f) >>= putFlags
   where putFlags (CommandInfo _ _ (Command _ args) _) = putStrLn . T.unpack . T.intercalate " " $ args
 
-printDir :: FilePath -> IO ()
+printDir :: SourceFile -> IO ()
 printDir f = withDB (getCommandInfoOr bail f) >>= putDir
   where putDir (CommandInfo _ wd _ _) = putStrLn . T.unpack $ wd
 
-getCommandInfoOr :: IO () -> FilePath -> DBHandle -> IO CommandInfo
+getCommandInfoOr :: IO () -> SourceFile -> DBHandle -> IO CommandInfo
 getCommandInfoOr a f h = do
   cmd <- liftM2 (<|>) (getCommandInfo h f) (getSimilarCommandInfo h f)
   unless (isJust cmd) a
   return . fromJust $ cmd
 
-printDef :: FilePath -> Maybe Int -> Maybe Int -> IO ()
+printDef :: SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printDef f (Just line) (Just col) = withDB $ \h -> do
     cmd <- getCommandInfoOr (bailWith cmdErr) f h
-    ident <- getIdentifier cmd (SourceLocation (T.pack f) line col)
+    ident <- getIdentifier cmd (SourceLocation f line col)
     unless (isJust ident) $ bailWith idErr
     def <- getDef h (fromJust ident)
     unless (isJust def) $ bailWith defErr
     putDef (fromJust def) (fromJust ident)
   where 
-    errPrefix = f ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
+    errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
     cmdErr = errPrefix ++ "No compilation information for this file."
     idErr = errPrefix ++ "No identifier at this location."
     defErr = errPrefix ++ "No definition for this identifier."
     putDef (DefInfo _ (SourceLocation idF idLine idCol) k) (Identifier n _) =
-      putStrLn $ (T.unpack idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
+      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Definition: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
 printDef _ _ _ = usage
 
