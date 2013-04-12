@@ -21,11 +21,20 @@ main = do
   ensureDB
   cf <- getConfiguration
   port <- newEmptyMVar
-  chan <- newChan
-  withAsyncBound (runAnalysisThread chan) $ \analysis -> do
-    ensureSuccess =<< (race (runRPCServer cf port chan) (executeMake cf port args))
-    writeChan chan Nothing  -- Signifies end of data.
-    ensureNoException =<< waitCatch analysis
+  chanA <- newChan
+  chanB <- newChan
+  dbChan <- newChan
+  let chans = [chanA, chanB]
+  withAsyncBound (runDatabaseThread dbChan) $ \database -> do
+    withAsyncBound (runAnalysisThread chanA dbChan) $ \analysisA -> do
+      withAsyncBound (runAnalysisThread chanB dbChan) $ \analysisB -> do
+        ensureSuccess =<< (race (runRPCServer cf port chans) (executeMake cf port args))
+        writeChan chanB Nothing  -- Signifies end of data.
+        ensureNoException =<< waitCatch analysisB
+      writeChan chanA Nothing
+      ensureNoException =<< waitCatch analysisA
+    writeChan dbChan Nothing
+    ensureNoException =<< waitCatch database
   when (makeCDB cf) writeCompileCommands
 
 usage :: IO a

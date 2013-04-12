@@ -1,6 +1,7 @@
 module Pygmalion.Analyze
 ( scanCommandAndUpdateDB
 , runAnalysisThread
+, runDatabaseThread
 ) where
 
 import Control.Applicative
@@ -14,22 +15,32 @@ import Pygmalion.Analyze.Source
 import Pygmalion.Core
 import Pygmalion.Database
 
-runAnalysisThread :: Chan (Maybe CommandInfo) -> IO ()
-runAnalysisThread chan = do
+runAnalysisThread :: Chan (Maybe CommandInfo) -> Chan (Maybe (CommandInfo, [SourceFile], [DefInfo])) -> IO ()
+runAnalysisThread chan dbChan = do
     wd <- T.pack <$> getCurrentDirectory
-    withDB (go wd)
-  where go :: T.Text -> DBHandle -> IO ()
-        go wd h = do  mayCmd <- readChan chan
-                      case mayCmd of
-                        Just cmd -> scanCommandAndUpdateDB h wd cmd >> go wd h
-                        Nothing  -> return ()
+    go wd
+  where go :: T.Text -> IO ()
+        go wd = {-# SCC "analysisThread" #-}
+               do mayCmd <- readChan chan
+                  case mayCmd of
+                      Just cmd -> scanCommandAndSendToDBThread wd cmd dbChan >> go wd
+                      Nothing  -> return ()
 
-scanCommandAndUpdateDB :: DBHandle -> T.Text -> CommandInfo -> IO ()
-scanCommandAndUpdateDB h wd cmdInfo = do
+runDatabaseThread :: Chan (Maybe (CommandInfo, [SourceFile], [DefInfo])) -> IO ()
+runDatabaseThread chan = withDB go
+  where go :: DBHandle -> IO ()
+        go h = {-# SCC "databaseThread" #-}
+               do mayInfo <- readChan chan
+                  case mayInfo of
+                    Just info -> updateDB h info >> go h
+                    Nothing  -> return ()
+
+scanCommandAndSendToDBThread :: T.Text -> CommandInfo -> Chan (Maybe (CommandInfo, [SourceFile], [DefInfo])) -> IO ()
+scanCommandAndSendToDBThread wd cmdInfo dbChan = do
   mayResult <- analyzeCode wd cmdInfo
   case mayResult of
-    Just result -> updateDB h result
-    Nothing     -> return ()
+    result@(Just _) -> writeChan dbChan result
+    Nothing         -> return ()
 
 analyzeCode :: T.Text -> CommandInfo -> IO (Maybe (CommandInfo, [SourceFile], [DefInfo]))
 analyzeCode wd ci = do
