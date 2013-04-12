@@ -32,12 +32,12 @@ import Pygmalion.Analyze.Extension
 import Pygmalion.Core
 
 runSourceAnalyses :: T.Text -> CommandInfo -> IO (Maybe ([SourceFile], [DefInfo]))
-runSourceAnalyses wd ci = do
+runSourceAnalyses wd ci@(CommandInfo sf _ _ _) = do
   includesRef <- newIORef $! []
   defsRef <- newIORef $! []
   result <- try $ withTranslationUnit ci $ do
-                    includesAnalysis includesRef wd
-                    defsAnalysis defsRef wd
+                    --includesAnalysis includesRef wd
+                    defsAnalysis defsRef wd sf
   case result of
     Right _ -> (,) <$> readIORef includesRef <*> readIORef defsRef >>= return . Just
     Left (ClangException e) -> putStrLn ("Clang exception: " ++ e) >> return Nothing
@@ -54,7 +54,7 @@ getLookupInfo ci sl = do
     Right r                 -> return r
     Left (ClangException e) -> putStrLn ("Clang exception: " ++ e ) >> return GotNothing
 
-includesAnalysis :: IORef [SourceFile] -> T.Text -> ClangApp ()
+includesAnalysis :: IORef [SourceFile] -> WorkingDirectory -> ClangApp ()
 includesAnalysis isRef wd = do
     tu <- getTranslationUnit
     void $ getInclusions tu visitInclusions
@@ -66,25 +66,25 @@ includesAnalysis isRef wd = do
       when (isLocalHeader wd name) $
         liftIO . modifyIORef' isRef $! (name :)
 
-isLocalHeader :: T.Text -> T.Text -> Bool
+isLocalHeader :: WorkingDirectory -> SourceFile -> Bool
 isLocalHeader wd p = (wd `T.isPrefixOf`) .&&.
                      hasHeaderExtensionText .&&.
                      (not . T.null) $ p
 
-defsAnalysis :: IORef [DefInfo] -> T.Text -> ClangApp ()
-defsAnalysis dsRef wd = do
+defsAnalysis :: IORef [DefInfo] -> WorkingDirectory -> SourceFile -> ClangApp ()
+defsAnalysis dsRef wd thisFile = do
     tu <- getTranslationUnit
     cursor <- getCursor tu
     fileCache <- liftIO $ mkCache CS.unpackText T.unpack
     void $ visitChildren cursor (kidVisitor fileCache)
   where
-    kidVisitor :: StringCache T.Text -> ChildVisitor
+    kidVisitor :: StringCache SourceFile -> ChildVisitor
     kidVisitor fileCache cursor _ = do
       loc <- C.getLocation cursor
       (f, ln, col, _) <- Source.getSpellingLocation loc
       file <- case f of Just valid -> File.getName valid >>= fromCache fileCache
                         Nothing    -> return ""
-      case (inProject wd file) of
+      case (file == thisFile) of
         True -> do  cKind <- C.getKind cursor
                     cursorIsDef <- isDef cursor cKind
                     when cursorIsDef $ do
@@ -137,7 +137,7 @@ fromCache cache cxStr = do
                   liftIO $ modifyIORef' (cacheHashMap cache) $! (Map.insert hash s)
                   return $! s
 
-inProject :: T.Text -> T.Text -> Bool
+inProject :: WorkingDirectory -> SourceFile -> Bool
 inProject wd p = (wd `T.isPrefixOf`) .&&. (not . T.null) $ p
 
 isDef :: C.Cursor -> C.CursorKind -> ClangApp Bool
@@ -145,14 +145,14 @@ isDef c k = do
   q1 <- C.isDefinition c
   return $ q1 && not (k == C.Cursor_CXXAccessSpecifier)
 
-fqn :: C.Cursor -> ClangApp T.Text
+fqn :: C.Cursor -> ClangApp Identifier 
 fqn cursor = (T.intercalate "::" . reverse) <$> go cursor
   where go c = do isNull <- C.isNullCursor c
                   isTU <- C.getKind c >>= C.isTranslationUnit
                   if isNull || isTU then return [] else go' c
         go' c =  (:) <$> (cursorName c) <*> (C.getSemanticParent c >>= go)
 
-cursorName :: C.Cursor -> ClangApp T.Text
+cursorName :: C.Cursor -> ClangApp Identifier
 cursorName c = C.getDisplayName c >>= CS.unpackText >>= anonymize
   where anonymize s | T.null s  = return "<anonymous>"
                     | otherwise = return s

@@ -43,8 +43,8 @@ updateDB :: DBHandle -> (CommandInfo, [SourceFile], [DefInfo]) -> IO ()
 updateDB h (ci, includes, defs) = liftIO $ do
     updateSourceFile h ci
     -- Update entries for all non-system includes, using the same metadata.
-    forM_ includes $ \i -> do
-      updateSourceFile h $ withSourceFile ci i
+    -- forM_ includes $ \i -> do
+      -- updateSourceFile h $ withSourceFile ci i
     -- Update entries for all definitions.
     forM_ defs $ \d -> do
       updateDef h d
