@@ -6,36 +6,35 @@ module Pygmalion.Analyze
 import Control.Concurrent.Chan
 import Control.Monad
 import Control.Monad.Trans
-import Control.Monad.Trans.Maybe
-import Data.Maybe
 
 import Pygmalion.Analyze.Source
 import Pygmalion.Core
 import Pygmalion.Database
 
 runAnalysisThread :: Chan (Maybe CommandInfo) -> IO ()
-runAnalysisThread chan = withDB $ \h -> do
-    commandStream <- getChanContents chan
-    mapM_ (scanCommandAndUpdateDB h . fromJust) $ takeWhile isJust commandStream
+runAnalysisThread chan = withDB go
+  where go :: DBHandle -> IO ()
+        go h = do mayCmd <- readChan chan
+                  case mayCmd of
+                    Just cmd -> scanCommandAndUpdateDB h cmd >> go h
+                    Nothing  -> return ()
 
-scanCommandAndUpdateDB :: DBHandle -> CommandInfo -> IO (Maybe ())
-scanCommandAndUpdateDB h cmdInfo = runScanner $    analyzeCode cmdInfo
-                                               >>= updateDB h
+scanCommandAndUpdateDB :: DBHandle -> CommandInfo -> IO ()
+scanCommandAndUpdateDB h cmdInfo = do
+  mayResult <- analyzeCode cmdInfo
+  case mayResult of
+    Just result -> updateDB h result
+    Nothing     -> return ()
 
-type Scanner a = MaybeT IO a
-
-runScanner :: Scanner a -> IO (Maybe a)
-runScanner a = runMaybeT a
-
-analyzeCode :: CommandInfo -> Scanner (CommandInfo, [SourceFile], [DefInfo])
+analyzeCode :: CommandInfo -> IO (Maybe (CommandInfo, [SourceFile], [DefInfo]))
 analyzeCode ci = do
   --liftIO $ putStrLn $ "Analyzing " ++ (show ci)
   result <- liftIO $ runSourceAnalyses ci
   case result of
-    Just (is, ds) -> return (ci, is, ds)
-    Nothing -> MaybeT $ return Nothing
+    Just (is, ds) -> return . Just $ (ci, is, ds)
+    Nothing       -> return Nothing
 
-updateDB :: DBHandle -> (CommandInfo, [SourceFile], [DefInfo]) -> Scanner ()
+updateDB :: DBHandle -> (CommandInfo, [SourceFile], [DefInfo]) -> IO ()
 updateDB h (ci, includes, defs) = liftIO $ do
     updateSourceFile h ci
     -- Update entries for all non-system includes, using the same metadata.
@@ -44,3 +43,4 @@ updateDB h (ci, includes, defs) = liftIO $ do
     -- Update entries for all definitions.
     forM_ defs $ \d -> do
       updateDef h d
+    --liftIO $ putStrLn $ "Updated DB entries related to " ++ (show ci)
