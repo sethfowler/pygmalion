@@ -1,6 +1,5 @@
 module Pygmalion.Analyze
-( scanCommandAndUpdateDB
-, runAnalysisThread
+( runAnalysisThread
 , runDatabaseThread
 ) where
 
