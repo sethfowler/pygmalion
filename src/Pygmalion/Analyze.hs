@@ -3,33 +3,38 @@ module Pygmalion.Analyze
 , runAnalysisThread
 ) where
 
+import Control.Applicative
 import Control.Concurrent.Chan
 import Control.Monad
 import Control.Monad.Trans
+import qualified Data.Text as T
+import System.Directory
 
 import Pygmalion.Analyze.Source
 import Pygmalion.Core
 import Pygmalion.Database
 
 runAnalysisThread :: Chan (Maybe CommandInfo) -> IO ()
-runAnalysisThread chan = withDB go
-  where go :: DBHandle -> IO ()
-        go h = do mayCmd <- readChan chan
-                  case mayCmd of
-                    Just cmd -> scanCommandAndUpdateDB h cmd >> go h
-                    Nothing  -> return ()
+runAnalysisThread chan = do
+    wd <- T.pack <$> getCurrentDirectory
+    withDB (go wd)
+  where go :: T.Text -> DBHandle -> IO ()
+        go wd h = do  mayCmd <- readChan chan
+                      case mayCmd of
+                        Just cmd -> scanCommandAndUpdateDB h wd cmd >> go wd h
+                        Nothing  -> return ()
 
-scanCommandAndUpdateDB :: DBHandle -> CommandInfo -> IO ()
-scanCommandAndUpdateDB h cmdInfo = do
-  mayResult <- analyzeCode cmdInfo
+scanCommandAndUpdateDB :: DBHandle -> T.Text -> CommandInfo -> IO ()
+scanCommandAndUpdateDB h wd cmdInfo = do
+  mayResult <- analyzeCode wd cmdInfo
   case mayResult of
     Just result -> updateDB h result
     Nothing     -> return ()
 
-analyzeCode :: CommandInfo -> IO (Maybe (CommandInfo, [SourceFile], [DefInfo]))
-analyzeCode ci = do
+analyzeCode :: T.Text -> CommandInfo -> IO (Maybe (CommandInfo, [SourceFile], [DefInfo]))
+analyzeCode wd ci = do
   --liftIO $ putStrLn $ "Analyzing " ++ (show ci)
-  result <- liftIO $ runSourceAnalyses ci
+  result <- liftIO $ runSourceAnalyses wd ci
   case result of
     Just (is, ds) -> return . Just $ (ci, is, ds)
     Nothing       -> return Nothing

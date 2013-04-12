@@ -2,14 +2,13 @@
 
 module Pygmalion.Core
 ( CommandInfo (..)
-, SourceFile (..)
+, SourceFile
 , WorkingDirectory
 , Command (..)
 , DefInfo (..)
-, Identifier (..)
 , SourceLocation (..)
-, IdName
-, IdUSR
+, Identifier
+, USR
 , SourceLine
 , SourceColumn
 , DefKind
@@ -51,7 +50,7 @@ instance Serialize CommandInfo
 
 instance FromRow CommandInfo where
   fromRow = do
-    sf    <- SourceFile <$> field <*> field
+    sf    <- field
     wd    <- field
     cmd   <- Command <$> field <*> (T.words <$> field)
     time  <- field
@@ -65,45 +64,37 @@ instance Serialize Command
 withSourceFile :: CommandInfo -> SourceFile -> CommandInfo
 withSourceFile (CommandInfo _ wd cmd t) sf' = CommandInfo sf' wd cmd t
 
--- A source file has a name and a path.
-data SourceFile = SourceFile !T.Text !T.Text
-  deriving (Eq, Show, Generic)
-
-instance Serialize SourceFile
+type SourceFile = T.Text
 
 mkSourceFile :: FilePath -> SourceFile
-mkSourceFile f = SourceFile (T.pack . normalise . takeFileName $ f)
-                            (T.pack . normalise . takeDirectory $ f)
+mkSourceFile = T.pack
 
 unSourceFileText :: SourceFile -> T.Text
-unSourceFileText (SourceFile sn sp) = T.concat [sp, "/", sn]
+unSourceFileText = id
 
 unSourceFile :: SourceFile -> FilePath
-unSourceFile = T.unpack . unSourceFileText
+unSourceFile = T.unpack
 
 type WorkingDirectory = T.Text
 type Time = Int64
 
 -- The information we collect about definitions in source code.
-data DefInfo = DefInfo !Identifier !SourceLocation !DefKind
+data DefInfo = DefInfo !Identifier !USR !SourceLocation !DefKind
   deriving (Eq, Show, Generic)
 
 instance FromRow DefInfo where
   fromRow = do
-    ident <- Identifier <$> field <*> field
-    sf    <- SourceFile <$> field <*> field
-    sl    <- SourceLocation sf <$> field <*> field
+    ident <- field
+    usr   <- field
+    sl    <- SourceLocation <$> field <*> field <*> field
     kind  <- field
-    return $ DefInfo ident sl kind
-
-data Identifier = Identifier !IdName !IdUSR
-  deriving (Eq, Show, Generic)
+    return $ DefInfo ident usr sl kind
 
 data SourceLocation = SourceLocation !SourceFile !SourceLine !SourceColumn
   deriving (Eq, Show, Generic)
 
-type IdName = T.Text
-type IdUSR = T.Text
+type Identifier = T.Text
+type USR = T.Text
 type SourceLine = Int
 type SourceColumn = Int
 type DefKind = T.Text

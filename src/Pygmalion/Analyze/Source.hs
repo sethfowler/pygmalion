@@ -2,7 +2,8 @@
 
 module Pygmalion.Analyze.Source
 ( runSourceAnalyses
-, getIdentifier
+, getLookupInfo
+, LookupInfo (..)
 , dumpSubtree -- Just to silence the warnings. Need to move this to another module.
 ) where
 
@@ -20,21 +21,18 @@ import Control.Applicative
 import Control.Exception
 import Control.Monad
 import Control.Monad.IO.Class
-import Data.List
 import Data.IORef
 import qualified Data.HashMap.Strict as Map
 import qualified Data.Text as T
 import Data.Typeable
 import Data.Word
-import System.Directory
 
 import Data.Bool.Predicate
 import Pygmalion.Analyze.Extension
 import Pygmalion.Core
 
-runSourceAnalyses :: CommandInfo -> IO (Maybe ([SourceFile], [DefInfo]))
-runSourceAnalyses ci = do
-  wd <- getCurrentDirectory -- FIXME: Should really pass this in.
+runSourceAnalyses :: T.Text -> CommandInfo -> IO (Maybe ([SourceFile], [DefInfo]))
+runSourceAnalyses wd ci = do
   includesRef <- newIORef $! []
   defsRef <- newIORef $! []
   result <- try $ withTranslationUnit ci $ do
@@ -44,14 +42,19 @@ runSourceAnalyses ci = do
     Right _ -> (,) <$> readIORef includesRef <*> readIORef defsRef >>= return . Just
     Left (ClangException e) -> putStrLn ("Clang exception: " ++ e) >> return Nothing
 
-getIdentifier :: CommandInfo -> SourceLocation -> IO (Maybe Identifier)
-getIdentifier ci sl = do
+data LookupInfo = GotDef DefInfo
+                | GotUSR USR
+                | GotNothing
+                deriving (Eq, Show)
+
+getLookupInfo :: CommandInfo -> SourceLocation -> IO LookupInfo
+getLookupInfo ci sl = do
   result <- try $ withTranslationUnit ci $ inspectIdentifier sl
   case result of
-    Right identifier        -> return identifier
-    Left (ClangException _) -> return Nothing
+    Right r                 -> return r
+    Left (ClangException e) -> putStrLn ("Clang exception: " ++ e ) >> return GotNothing
 
-includesAnalysis :: IORef [SourceFile] -> FilePath -> ClangApp ()
+includesAnalysis :: IORef [SourceFile] -> T.Text -> ClangApp ()
 includesAnalysis isRef wd = do
     tu <- getTranslationUnit
     void $ getInclusions tu visitInclusions
@@ -59,40 +62,44 @@ includesAnalysis isRef wd = do
     visitInclusions :: InclusionVisitor
     visitInclusions file _  = do
       f <- File.getName file
-      name <- CS.unpack f
+      name <- CS.unpackText f
       when (isLocalHeader wd name) $
-        liftIO . modifyIORef' isRef $! ((mkSourceFile name) :)
+        liftIO . modifyIORef' isRef $! (name :)
 
-isLocalHeader :: FilePath -> FilePath -> Bool
-isLocalHeader wd p = (wd `isPrefixOf`) .&&. hasHeaderExtension .&&. (not . null) $ p
+isLocalHeader :: T.Text -> T.Text -> Bool
+isLocalHeader wd p = (wd `T.isPrefixOf`) .&&.
+                     hasHeaderExtensionText .&&.
+                     (not . T.null) $ p
 
-defsAnalysis :: IORef [DefInfo] -> FilePath -> ClangApp ()
+defsAnalysis :: IORef [DefInfo] -> T.Text -> ClangApp ()
 defsAnalysis dsRef wd = do
     tu <- getTranslationUnit
     cursor <- getCursor tu
-    fileCache <- liftIO $ mkCache CS.unpack id
-    attrCache <- liftIO $ mkCache CS.unpackText T.unpack
-    void $ visitChildren cursor (kidVisitor fileCache attrCache)
+    fileCache <- liftIO $ mkCache CS.unpackText T.unpack
+    void $ visitChildren cursor (kidVisitor fileCache)
   where
-    kidVisitor :: StringCache FilePath -> StringCache T.Text -> ChildVisitor
-    kidVisitor fileCache attrCache cursor _ = do
+    kidVisitor :: StringCache T.Text -> ChildVisitor
+    kidVisitor fileCache cursor _ = do
       loc <- C.getLocation cursor
       (f, ln, col, _) <- Source.getSpellingLocation loc
       file <- case f of Just valid -> File.getName valid >>= fromCache fileCache
                         Nothing    -> return ""
-      when (inProject wd file) $ do
-        cKind <- C.getKind cursor
-        defined <- isDef cursor cKind
-        when defined $ do
-          usr <- XRef.getUSR cursor >>= fromCache attrCache
-          name <- fqn attrCache cursor
-          kind <- C.getCursorKindSpelling cKind >>= fromCache attrCache
-          def <- return $! DefInfo (Identifier name usr)
-                            (SourceLocation (mkSourceFile file) ln col)
-                            kind
-          liftIO . modifyIORef' dsRef $! (def :)
-      return $ if (inProject wd file) then ChildVisit_Recurse
-                                      else ChildVisit_Continue
+      case (inProject wd file) of
+        True -> do  cKind <- C.getKind cursor
+                    cursorIsDef <- isDef cursor cKind
+                    when cursorIsDef $ do
+                      usr <- XRef.getUSR cursor >>= CS.unpackText
+                      name <- fqn cursor
+                      kind <- C.getCursorKindSpelling cKind >>= CS.unpackText
+                      def <- return $! DefInfo name usr
+                                        (SourceLocation file ln col)
+                                        kind
+                      liftIO . modifyIORef' dsRef $! (def :)
+                    return $ case cKind of
+                                C.Cursor_FunctionDecl -> ChildVisit_Continue
+                                C.Cursor_CXXMethod    -> ChildVisit_Continue
+                                _                     -> ChildVisit_Recurse
+        False -> return ChildVisit_Continue
 
 {-
 -- Was the following; still evaluating the tradeoffs.
@@ -120,6 +127,7 @@ mkCache prep asString = do
 fromCache :: StringCache a -> CS.ClangString -> ClangApp a
 fromCache cache cxStr = do
   hash <- CS.hash cxStr
+  -- liftIO $ putStrLn $ "Got hash " ++ (show hash) ++ " for name " ++ name
   cacheMap <- liftIO $ readIORef (cacheHashMap cache)
   case hash `Map.lookup` cacheMap of
     Just s -> do --liftIO $ putStrLn $ "Cache HIT for " ++ (cachedAsString cache s)
@@ -129,27 +137,27 @@ fromCache cache cxStr = do
                   liftIO $ modifyIORef' (cacheHashMap cache) $! (Map.insert hash s)
                   return $! s
 
-inProject :: FilePath -> FilePath -> Bool
-inProject wd p = (wd `isPrefixOf`) .&&. (not . null) $ p
+inProject :: T.Text -> T.Text -> Bool
+inProject wd p = (wd `T.isPrefixOf`) .&&. (not . T.null) $ p
 
 isDef :: C.Cursor -> C.CursorKind -> ClangApp Bool
 isDef c k = do
   q1 <- C.isDefinition c
   return $ q1 && not (k == C.Cursor_CXXAccessSpecifier)
 
-fqn :: StringCache T.Text -> C.Cursor -> ClangApp T.Text
-fqn cache cursor = (T.intercalate "::" . reverse) <$> go cursor
+fqn :: C.Cursor -> ClangApp T.Text
+fqn cursor = (T.intercalate "::" . reverse) <$> go cursor
   where go c = do isNull <- C.isNullCursor c
                   isTU <- C.getKind c >>= C.isTranslationUnit
                   if isNull || isTU then return [] else go' c
-        go' c =  (:) <$> (cursorName cache c) <*> (C.getSemanticParent c >>= go)
+        go' c =  (:) <$> (cursorName c) <*> (C.getSemanticParent c >>= go)
 
-cursorName :: StringCache T.Text -> C.Cursor -> ClangApp T.Text
-cursorName cache c = C.getDisplayName c >>= fromCache cache >>= anonymize
+cursorName :: C.Cursor -> ClangApp T.Text
+cursorName c = C.getDisplayName c >>= CS.unpackText >>= anonymize
   where anonymize s | T.null s  = return "<anonymous>"
                     | otherwise = return s
 
-inspectIdentifier :: SourceLocation -> ClangApp (Maybe Identifier)
+inspectIdentifier :: SourceLocation -> ClangApp LookupInfo
 inspectIdentifier (SourceLocation f ln col) = do
     dumpDiagnostics
     tu <- getTranslationUnit
@@ -165,11 +173,24 @@ inspectIdentifier (SourceLocation f ln col) = do
   where
     reportIdentifier cursor = do
       -- dumpSubtree cursor
-      name <- C.getDisplayName cursor >>= CS.unpackText
-      usr <- XRef.getUSR cursor >>= CS.unpackText
       -- liftIO $ putStrLn $ "In file: " ++ (T.unpack f) ++ ":" ++ (show ln) ++ ":" ++ (show col) ++ " got name: " ++ name ++ " usr: " ++ usr
-      return $ if T.null usr then Nothing
-                             else Just $ Identifier name usr
+      isNull <- C.isNullCursor cursor
+      case isNull of
+        False -> do usr <- XRef.getUSR cursor >>= CS.unpackText
+                    kind <- C.getKind cursor 
+                    cursorIsDef <- isDef cursor kind
+                    if cursorIsDef then reportDef cursor usr kind
+                                   else return (GotUSR usr)
+        True -> return GotNothing
+    reportDef cursor usr k = do
+      name <- C.getDisplayName cursor >>= CS.unpackText
+      kind <- C.getCursorKindSpelling k >>= CS.unpackText
+      loc <- C.getLocation cursor
+      (df, dl, dc, _) <- Source.getSpellingLocation loc
+      file <- case df of Just valid -> File.getName valid >>= CS.unpackText
+                         Nothing    -> return ""
+      return $ if (not $ T.null file) then GotDef (DefInfo name usr (SourceLocation file dl dc) kind)
+                                      else GotUSR usr
 
 -- We need to decide on a policy, but it'd be good to figure out a way to let
 -- the user display these, and maybe always display errors.

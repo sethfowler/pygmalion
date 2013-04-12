@@ -20,6 +20,7 @@ import Data.Int
 import Data.String
 import qualified Data.Text as T
 import Database.SQLite.Simple
+import System.FilePath.Posix
 
 import Control.Exception.Labeled
 import Pygmalion.Core
@@ -52,6 +53,8 @@ withDB f = bracket (openDB dbFile) closeDB f
 openDB :: FilePath -> IO DBHandle
 openDB db = labeledCatch "openDB" $ do
   c <- open db
+  enableForeignKeyConstraints c
+  ensureSchema c
   h <- DBHandle c <$> openStatement c (mkQueryT updateSourceFileSQL)
                   <*> openStatement c (mkQueryT updateDefSQL)
                   <*> openStatement c (mkQueryT getFileSQL)
@@ -64,8 +67,6 @@ openDB db = labeledCatch "openDB" $ do
                   <*> openStatement c (mkQueryT insertArgsSQL)
                   <*> openStatement c (mkQueryT getKindSQL)
                   <*> openStatement c (mkQueryT insertKindSQL)
-  enableForeignKeyConstraints h
-  ensureSchema h
   return h
 
 closeDB :: DBHandle -> IO ()
@@ -84,8 +85,8 @@ closeDB h = do
   closeStatement (insertKindStmt h)
   close (conn h)
 
-enableForeignKeyConstraints :: DBHandle -> IO ()
-enableForeignKeyConstraints h = execute_ (conn h) "pragma foreign_keys = on"
+enableForeignKeyConstraints :: Connection -> IO ()
+enableForeignKeyConstraints c = execute_ c "pragma foreign_keys = on"
 
 enableTracing :: DBHandle -> IO ()
 enableTracing h = setTrace (conn h) (Just $ putStrLn . T.unpack)
@@ -102,18 +103,18 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int64
 dbMajorVersion = 0
-dbMinorVersion = 4
+dbMinorVersion = 5
 
-defineMetadataTable :: DBHandle -> IO ()
-defineMetadataTable h = execute_ (conn h) 
+defineMetadataTable :: Connection -> IO ()
+defineMetadataTable c = execute_ c 
   "create table if not exists Metadata(               \
   \ Tool varchar(2048) primary key not null,          \
   \ MajorVersion integer zerofill unsigned not null,  \
   \ MinorVersion integer zerofill unsigned not null)"
 
-getDBVersion :: DBHandle -> IO (Maybe (Int64, Int64))
-getDBVersion h = do
-    row <- query (conn h) sql params
+getDBVersion :: Connection -> IO (Maybe (Int64, Int64))
+getDBVersion c = do
+    row <- query c sql params
     return $ case row of
               [version] -> Just version
               _         -> Nothing
@@ -121,72 +122,69 @@ getDBVersion h = do
               \where Tool = ?"
         params = Only dbToolName
 
-setDBVersion :: DBHandle -> IO ()
-setDBVersion h = execute (conn h) sql params
+setDBVersion :: Connection -> IO ()
+setDBVersion c = execute c sql params
   where sql = "insert into Metadata (Tool, MajorVersion, MinorVersion) \
               \values (?, ?, ?)"
         params = (dbToolName, dbMajorVersion, dbMinorVersion)
 
 -- Schema and operations for the Files table.
-defineFilesTable :: DBHandle -> IO ()
-defineFilesTable h = execute_ (conn h) sql
+defineFilesTable :: Connection -> IO ()
+defineFilesTable c = execute_ c sql
   where sql =  "create table if not exists Files(        \
                \ Id integer primary key unique not null, \
                \ Name varchar(2048) unique not null)"
 
 -- Schema and operations for the Paths table.
-definePathsTable :: DBHandle -> IO ()
-definePathsTable h = execute_ (conn h) sql
+definePathsTable :: Connection -> IO ()
+definePathsTable c = execute_ c sql
   where sql =  "create table if not exists Paths(        \
                \ Id integer primary key unique not null, \
                \ Path varchar(2048) unique not null)"
 
 -- Schema and operations for the BuildCommands table.
-defineBuildCommandsTable :: DBHandle -> IO ()
-defineBuildCommandsTable h = execute_ (conn h) sql
+defineBuildCommandsTable :: Connection -> IO ()
+defineBuildCommandsTable c = execute_ c sql
   where sql =  "create table if not exists BuildCommands(\
                \ Id integer primary key unique not null, \
                \ Command varchar(2048) unique not null)"
 
 -- Schema and operations for the BuildArgs table.
-defineBuildArgsTable :: DBHandle -> IO ()
-defineBuildArgsTable h = execute_ (conn h) sql
+defineBuildArgsTable :: Connection -> IO ()
+defineBuildArgsTable c = execute_ c sql
   where sql =  "create table if not exists BuildArgs(    \
                \ Id integer primary key unique not null, \
                \ Args varchar(2048) unique not null)"
 
 -- Schema and operations for the SourceFiles table.
-defineSourceFilesTable :: DBHandle -> IO ()
-defineSourceFilesTable h = execute_ (conn h) sql
+defineSourceFilesTable :: Connection -> IO ()
+defineSourceFilesTable c = execute_ c sql
   where sql =  "create table if not exists SourceFiles(                  \
                \ File integer not null,                                  \
-               \ Path integer not null,                                  \
                \ WorkingDirectory integer not null,                      \
                \ BuildCommand integer not null,                          \
                \ BuildArgs integer not null,                             \
                \ LastBuilt integer zerofill unsigned not null,           \
                \ foreign key(File) references Files(Id),                 \
-               \ foreign key(Path) references Paths(Id),                 \
                \ foreign key(WorkingDirectory) references Paths(Id),     \
                \ foreign key(BuildCommand) references BuildCommands(Id), \
                \ foreign key(BuildArgs) references BuildArgs(Id),        \
-               \ primary key(File, Path))"
+               \ primary key(File))"
 
 updateSourceFile :: DBHandle -> CommandInfo -> IO ()
-updateSourceFile h (CommandInfo (SourceFile sn sp) wd (Command cmd args) t) = do
+updateSourceFile h (CommandInfo sf wd (Command cmd args) t) = do
     --execute_ (conn h) "begin transaction"
-    fileId <- getFileId h sn
-    pathId <- getPathId h sp
+    fileId <- getFileId h sf
     wdId <- getPathId h wd
     cmdId <- getCommandId h cmd
     argsId <- getArgsId h (T.intercalate " " args)
-    void $ withBind (updateSourceFileStmt h) (fileId, pathId, wdId, cmdId, argsId, t) $ voidNextRow (updateSourceFileStmt h)
+    void $ withBind (updateSourceFileStmt h) (fileId, wdId, cmdId, argsId, t) $ voidNextRow (updateSourceFileStmt h)
     --execute_ (conn h) "commit"
 
 updateSourceFileSQL :: T.Text
 updateSourceFileSQL = "replace into SourceFiles                                           \
-                      \(File, Path, WorkingDirectory, BuildCommand, BuildArgs, LastBuilt) \
-                      \values (?, ?, ?, ?, ?, ?)"
+                      \(File, WorkingDirectory, BuildCommand, BuildArgs, LastBuilt) \
+                      \values (?, ?, ?, ?, ?)"
 
 getFileId :: DBHandle -> T.Text -> IO Int64
 getFileId h v = do
@@ -256,115 +254,109 @@ mkQueryT = mkQuery . T.unpack
 
 getAllSourceFiles :: DBHandle -> IO [CommandInfo]
 getAllSourceFiles h = query_ (conn h) sql
-  where sql = "select F.Name, P.Path, W.Path, C.Command, A.Args, LastBuilt \
+  where sql = "select F.Name, W.Path, C.Command, A.Args, LastBuilt \
               \ from SourceFiles                                           \
               \ join Files as F on SourceFiles.File = F.Id                 \
-              \ join Paths as P on SourceFiles.Path = P.Id                 \
               \ join Paths as W on SourceFiles.WorkingDirectory = W.Id     \
               \ join BuildCommands as C on SourceFiles.BuildCommand = C.Id \
               \ join BuildArgs as A on SourceFiles.BuildArgs = A.Id"
 
 getCommandInfo :: DBHandle -> SourceFile -> IO (Maybe CommandInfo)
-getCommandInfo h (SourceFile sn sp) = do
-    row <- query (conn h) sql (sn, sp)
+getCommandInfo h sf = do
+    row <- query (conn h) sql (Only sf)
     return $ case row of
               (ci : _) -> Just ci
               _        -> Nothing
-  where sql = "select F.Name, P.Path, W.Path, C.Command, A.Args, LastBuilt \
+  where sql = "select F.Name, W.Path, C.Command, A.Args, LastBuilt \
               \ from SourceFiles                                           \
               \ join Files as F on SourceFiles.File = F.Id                 \
-              \ join Paths as P on SourceFiles.Path = P.Id                 \
               \ join Paths as W on SourceFiles.WorkingDirectory = W.Id     \
               \ join BuildCommands as C on SourceFiles.BuildCommand = C.Id \
               \ join BuildArgs as A on SourceFiles.BuildArgs = A.Id        \
-              \ where F.Name = ? and P.Path = ? limit 1"
+              \ where F.Name = ? limit 1"
 
 -- Eventually this should be more statistical, but right now it will just
 -- return an arbitrary file from the same directory.
 getSimilarCommandInfo :: DBHandle -> SourceFile -> IO (Maybe CommandInfo)
-getSimilarCommandInfo h sf@(SourceFile _ sp) = do
-    row <- query (conn h) sql (Only sp)
+getSimilarCommandInfo h sf = do
+    let path = (++ "%") . normalise . takeDirectory . unSourceFile $ sf
+    row <- query (conn h) sql (Only path)
     return $ case row of
               (ci : _) -> Just $ withSourceFile ci sf
               _        -> Nothing
-  where sql = "select F.Name, P.Path, W.Path, C.Command, A.Args, LastBuilt \
+  where sql = "select F.Name, W.Path, C.Command, A.Args, LastBuilt \
               \ from SourceFiles                                           \
               \ join Files as F on SourceFiles.File = F.Id                 \
-              \ join Paths as P on SourceFiles.Path = P.Id                 \
               \ join Paths as W on SourceFiles.WorkingDirectory = W.Id     \
               \ join BuildCommands as C on SourceFiles.BuildCommand = C.Id \
               \ join BuildArgs as A on SourceFiles.BuildArgs = A.Id        \
-              \ where P.Path = ? limit 1"
+              \ where F.Name like ? limit 1"
 
 -- Schema and operations for the Kinds table.
-defineKindsTable :: DBHandle -> IO ()
-defineKindsTable h = execute_ (conn h) sql
+defineKindsTable :: Connection -> IO ()
+defineKindsTable c = execute_ c sql
   where sql =  "create table if not exists Kinds(        \
                \ Id integer primary key unique not null, \
                \ Kind varchar(2048) unique not null)"
 
 -- Schema and operations for the Definitions table.
-defineDefinitionsTable :: DBHandle -> IO ()
-defineDefinitionsTable h = execute_ (conn h) sql
+defineDefinitionsTable :: Connection -> IO ()
+defineDefinitionsTable c = execute_ c sql
   where sql =  "create table if not exists Definitions(         \
                \ Name varchar(2048) not null,                   \
                \ USR varchar(2048) unique not null primary key, \
                \ File integer not null,                         \
-               \ Path integer not null,                         \
                \ Line integer not null,                         \
                \ Column integer not null,                       \
                \ Kind integer not null,                         \
                \ foreign key(File) references Files(Id),        \
-               \ foreign key(Path) references Paths(Id),        \
                \ foreign key(Kind) references Kinds(Id))"
 
 updateDef :: DBHandle -> DefInfo -> IO ()
-updateDef h (DefInfo (Identifier n u) (SourceLocation (SourceFile sn sp) l c) k) = do
+updateDef h (DefInfo n u (SourceLocation sf l c) k) = do
     -- execute_ (conn h) "begin transaction"
-    fileId <- getFileId h sn
-    pathId <- getPathId h sp
+    fileId <- getFileId h sf
     kindId <- getKindId h k
-    void $ withBind (updateDefStmt h) (n, u, fileId, pathId, l, c, kindId) $ voidNextRow (updateDefStmt h)
+    void $ withBind (updateDefStmt h) (n, u, fileId, l, c, kindId) $ voidNextRow (updateDefStmt h)
     -- execute_ (conn h) "commit"
 
 updateDefSQL :: T.Text
 updateDefSQL = "replace into Definitions                     \
-               \ (Name, USR, File, Path, Line, Column, Kind) \
-               \ values (?, ?, ?, ?, ?, ?, ?)"
+               \ (Name, USR, File, Line, Column, Kind) \
+               \ values (?, ?, ?, ?, ?, ?)"
 
-getDef :: DBHandle -> Identifier -> IO (Maybe DefInfo)
-getDef h (Identifier _ usr) = do
-    row <- query (conn h) sql (Only $ usr)
+getDef :: DBHandle -> USR -> IO (Maybe DefInfo)
+getDef h usr = do
+    row <- query (conn h) sql (Only usr)
     return $ case row of
               (di : _) -> Just di
               _        -> Nothing
-  where sql = "select D.Name, D.USR, F.Name, P.Path, D.Line, D.Column, K.Kind \
+  where sql = "select D.Name, D.USR, F.Name, D.Line, D.Column, K.Kind \
               \ from Definitions as D                                         \
               \ join Files as F on D.File = F.Id                              \
-              \ join Paths as P on D.Path = P.Id                              \
               \ join Kinds as K on D.Kind = K.Id                              \
               \ where D.USR = ? limit 1"
   
 
 -- Checks that the database has the correct schema and sets it up if needed.
-ensureSchema :: DBHandle -> IO ()
-ensureSchema h = defineMetadataTable h
-              >> defineFilesTable h
-              >> definePathsTable h
-              >> defineBuildCommandsTable h
-              >> defineBuildArgsTable h
-              >> defineSourceFilesTable h
-              >> defineKindsTable h
-              >> defineDefinitionsTable h
-              >> ensureVersion h
+ensureSchema :: Connection -> IO ()
+ensureSchema c = defineMetadataTable c
+              >> defineFilesTable c
+              >> definePathsTable c
+              >> defineBuildCommandsTable c
+              >> defineBuildArgsTable c
+              >> defineSourceFilesTable c
+              >> defineKindsTable c
+              >> defineDefinitionsTable c
+              >> ensureVersion c
 
-ensureVersion :: DBHandle -> IO ()
-ensureVersion h = getDBVersion h >>= checkVersion
+ensureVersion :: Connection -> IO ()
+ensureVersion c = getDBVersion c >>= checkVersion
   where
     checkVersion (Just (major, minor))
                  | (major, minor) == (dbMajorVersion, dbMinorVersion) = return ()
                  | otherwise = throwDBVersionError major minor
-    checkVersion _ = setDBVersion h
+    checkVersion _ = setDBVersion c
 
 throwDBVersionError :: Int64 -> Int64 -> IO ()
 throwDBVersionError major minor  =  error $ "Database version "

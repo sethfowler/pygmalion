@@ -62,17 +62,19 @@ getCommandInfoOr a f h = do
 printDef :: SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printDef f (Just line) (Just col) = withDB $ \h -> do
     cmd <- getCommandInfoOr (bailWith cmdErr) f h
-    ident <- getIdentifier cmd (SourceLocation f line col)
-    unless (isJust ident) $ bailWith idErr
-    def <- getDef h (fromJust ident)
-    unless (isJust def) $ bailWith defErr
-    putDef (fromJust def) (fromJust ident)
+    info <- getLookupInfo cmd (SourceLocation f line col)
+    case info of
+      GotDef di  -> putDef di
+      GotUSR usr -> do def <- getDef h usr
+                       unless (isJust def) $ bailWith defErr
+                       putDef (fromJust def)
+      GotNothing -> bailWith idErr
   where 
     errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
     cmdErr = errPrefix ++ "No compilation information for this file."
     idErr = errPrefix ++ "No identifier at this location."
     defErr = errPrefix ++ "No definition for this identifier."
-    putDef (DefInfo _ (SourceLocation idF idLine idCol) k) (Identifier n _) =
+    putDef (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Definition: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
 printDef _ _ _ = usage
