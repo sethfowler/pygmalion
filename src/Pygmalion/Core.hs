@@ -39,7 +39,7 @@ import System.FilePath.Posix
 type Port = Int
 
 -- The information we collect about a compilation command.
-data CommandInfo = CommandInfo SourceFile WorkingDirectory Command Time
+data CommandInfo = CommandInfo !SourceFile !WorkingDirectory !Command !Time
   deriving (Eq, Show, Generic)
 
 instance Serialize T.Text where
@@ -57,7 +57,7 @@ instance FromRow CommandInfo where
     time  <- field
     return $ CommandInfo sf wd cmd time
 
-data Command = Command T.Text [T.Text]
+data Command = Command !T.Text ![T.Text]
   deriving (Eq, Show, Generic)
 
 instance Serialize Command
@@ -66,7 +66,7 @@ withSourceFile :: CommandInfo -> SourceFile -> CommandInfo
 withSourceFile (CommandInfo _ wd cmd t) sf' = CommandInfo sf' wd cmd t
 
 -- A source file has a name and a path.
-data SourceFile = SourceFile T.Text T.Text
+data SourceFile = SourceFile !T.Text !T.Text
   deriving (Eq, Show, Generic)
 
 instance Serialize SourceFile
@@ -85,7 +85,7 @@ type WorkingDirectory = T.Text
 type Time = Int64
 
 -- The information we collect about definitions in source code.
-data DefInfo = DefInfo Identifier SourceLocation DefKind
+data DefInfo = DefInfo !Identifier !SourceLocation !DefKind
   deriving (Eq, Show, Generic)
 
 instance FromRow DefInfo where
@@ -96,10 +96,10 @@ instance FromRow DefInfo where
     kind  <- field
     return $ DefInfo ident sl kind
 
-data Identifier = Identifier IdName IdUSR
+data Identifier = Identifier !IdName !IdUSR
   deriving (Eq, Show, Generic)
 
-data SourceLocation = SourceLocation SourceFile SourceLine SourceColumn
+data SourceLocation = SourceLocation !SourceFile !SourceLine !SourceColumn
   deriving (Eq, Show, Generic)
 
 type IdName = T.Text
