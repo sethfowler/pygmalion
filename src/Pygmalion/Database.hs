@@ -53,6 +53,8 @@ withDB f = bracket (openDB dbFile) closeDB f
 openDB :: FilePath -> IO DBHandle
 openDB db = labeledCatch "openDB" $ do
   c <- open db
+  disableSynchronousWrites c
+  enableMemoryJournaling c
   enableForeignKeyConstraints c
   ensureSchema c
   h <- DBHandle c <$> openStatement c (mkQueryT updateSourceFileSQL)
@@ -67,10 +69,12 @@ openDB db = labeledCatch "openDB" $ do
                   <*> openStatement c (mkQueryT insertArgsSQL)
                   <*> openStatement c (mkQueryT getKindSQL)
                   <*> openStatement c (mkQueryT insertKindSQL)
+  beginTransaction h
   return h
 
 closeDB :: DBHandle -> IO ()
 closeDB h = do
+  endTransaction h
   closeStatement (updateSourceFileStmt h)
   closeStatement (updateDefStmt h)
   closeStatement (getFileStmt h)
@@ -88,8 +92,20 @@ closeDB h = do
 enableForeignKeyConstraints :: Connection -> IO ()
 enableForeignKeyConstraints c = execute_ c "pragma foreign_keys = on"
 
-enableTracing :: DBHandle -> IO ()
-enableTracing h = setTrace (conn h) (Just $ putStrLn . T.unpack)
+enableTracing :: Connection -> IO ()
+enableTracing c = setTrace c (Just $ putStrLn . T.unpack)
+
+disableSynchronousWrites :: Connection -> IO ()
+disableSynchronousWrites c = execute_ c "pragma synchronous = off"
+
+enableMemoryJournaling :: Connection -> IO ()
+enableMemoryJournaling c = execute_ c "pragma journal_mode = memory"
+
+beginTransaction :: DBHandle -> IO ()
+beginTransaction h = execute_ (conn h) "begin transaction"
+
+endTransaction :: DBHandle -> IO ()
+endTransaction h = execute_ (conn h) "end transaction"
 
 voidNextRow :: Statement -> IO (Maybe (Only Int64))
 voidNextRow = nextRow
