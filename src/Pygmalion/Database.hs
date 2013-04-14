@@ -114,7 +114,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int64
 dbMajorVersion = 0
-dbMinorVersion = 6
+dbMinorVersion = 7
 
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c sql
@@ -142,14 +142,9 @@ setDBVersion c = execute c sql params
 -- Schema and operations for the Files table.
 defineFilesTable :: Connection -> IO ()
 defineFilesTable c = execute_ c sql
-  where sql = "create table if not exists Files(         \
-               \ Id integer primary key unique not null, \
-               \ Hash integer not null,                  \
+  where sql = "create table if not exists Files(           \
+               \ Hash integer primary key unique not null, \
                \ Name varchar(2048) not null)"
-
-indexFilesTable :: DBHandle -> IO ()
-indexFilesTable h = execute_ (conn h) sql
-  where sql = "create index if not exists FilesHash on Files(Hash)"
 
 insertFileSQL :: T.Text
 insertFileSQL = "insert or ignore into Files (Name, Hash) values (?, ?)"
@@ -157,14 +152,9 @@ insertFileSQL = "insert or ignore into Files (Name, Hash) values (?, ?)"
 -- Schema and operations for the Paths table.
 definePathsTable :: Connection -> IO ()
 definePathsTable c = execute_ c sql
-  where sql =  "create table if not exists Paths(        \
-               \ Id integer primary key unique not null, \
-               \ Hash integer not null,                  \
+  where sql =  "create table if not exists Paths(   \
+               \ Hash integer primary key unique not null, \
                \ Path varchar(2048) not null)"
-
-indexPathsTable :: DBHandle -> IO ()
-indexPathsTable h = execute_ (conn h) sql
-  where sql = "create index if not exists PathsHash on Paths(Hash)"
 
 insertPathSQL :: T.Text
 insertPathSQL = "insert or ignore into Paths (Path, Hash) values (?, ?)"
@@ -172,14 +162,9 @@ insertPathSQL = "insert or ignore into Paths (Path, Hash) values (?, ?)"
 -- Schema and operations for the BuildCommands table.
 defineBuildCommandsTable :: Connection -> IO ()
 defineBuildCommandsTable c = execute_ c sql
-  where sql =  "create table if not exists BuildCommands( \
-               \ Id integer primary key unique not null,  \
-               \ Hash integer not null,                   \
+  where sql =  "create table if not exists BuildCommands(  \
+               \ Hash integer primary key unique not null, \
                \ Command varchar(2048) not null)"
-
-indexBuildCommandsTable :: DBHandle -> IO ()
-indexBuildCommandsTable h = execute_ (conn h) sql
-  where sql = "create index if not exists BuildCommandsHash on BuildCommands(Hash)"
 
 insertCommandSQL :: T.Text
 insertCommandSQL = "insert or ignore into BuildCommands (Command, Hash) values (?, ?)"
@@ -187,14 +172,9 @@ insertCommandSQL = "insert or ignore into BuildCommands (Command, Hash) values (
 -- Schema and operations for the BuildArgs table.
 defineBuildArgsTable :: Connection -> IO ()
 defineBuildArgsTable c = execute_ c sql
-  where sql =  "create table if not exists BuildArgs(    \
-               \ Id integer primary key unique not null, \
-               \ Hash integer not null,                  \
+  where sql =  "create table if not exists BuildArgs(      \
+               \ Hash integer primary key unique not null, \
                \ Args varchar(2048) not null)"
-
-indexBuildArgsTable :: DBHandle -> IO ()
-indexBuildArgsTable h = execute_ (conn h) sql
-  where sql = "create index if not exists BuildArgsHash on BuildArgs(Hash)"
 
 insertArgsSQL :: T.Text
 insertArgsSQL = "insert or ignore into BuildArgs (Args, Hash) values (?, ?)"
@@ -270,14 +250,9 @@ getSimilarCommandInfo h sf = do
 -- Schema and operations for the Kinds table.
 defineKindsTable :: Connection -> IO ()
 defineKindsTable c = execute_ c sql
-  where sql =  "create table if not exists Kinds(        \
-               \ Id integer primary key unique not null, \
-               \ Hash integer not null,                  \
+  where sql =  "create table if not exists Kinds(          \
+               \ Hash integer primary key unique not null, \
                \ Kind varchar(2048) not null)"
-
-indexKindsTable :: DBHandle -> IO () 
-indexKindsTable h = execute_ (conn h) sql
-  where sql = "create index if not exists KindsHash on Kinds(Hash)"
 
 insertKindSQL :: T.Text
 insertKindSQL = "insert or ignore into Kinds (Kind, Hash) values (?, ?)"
