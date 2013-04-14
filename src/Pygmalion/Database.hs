@@ -3,6 +3,7 @@
 module Pygmalion.Database
 ( ensureDB
 , withDB
+, withTransaction
 , updateSourceFile
 , getAllSourceFiles
 , getCommandInfo
@@ -31,6 +32,8 @@ import Pygmalion.Core
 -- configured according to the correct schema and enable foreign keys.
 data DBHandle = DBHandle {
                   conn :: Connection,
+                  beginTransactionStmt :: Statement,
+                  endTransactionStmt :: Statement,
                   updateSourceFileStmt :: Statement,
                   updateDefStmt :: Statement,
                   insertFileStmt :: Statement,
@@ -46,24 +49,31 @@ ensureDB = withDB (const . return $ ())
 withDB :: (DBHandle -> IO a) -> IO a
 withDB f = bracket (openDB dbFile) closeDB f
 
+withTransaction :: DBHandle -> IO a -> IO a
+withTransaction h f = bracket (execStatement h beginTransactionStmt ())
+                              (const $ execStatement h endTransactionStmt ())
+                              (const f)
+
 openDB :: FilePath -> IO DBHandle
 openDB db = labeledCatch "openDB" $ do
   c <- open db
   tuneDB c
   ensureSchema c
-  h <- DBHandle c <$> openStatement c (mkQueryT updateSourceFileSQL)
+  h <- DBHandle c <$> openStatement c (mkQueryT beginTransactionSQL)
+                  <*> openStatement c (mkQueryT endTransactionSQL)
+                  <*> openStatement c (mkQueryT updateSourceFileSQL)
                   <*> openStatement c (mkQueryT updateDefSQL)
                   <*> openStatement c (mkQueryT insertFileSQL)
                   <*> openStatement c (mkQueryT insertPathSQL)
                   <*> openStatement c (mkQueryT insertCommandSQL)
                   <*> openStatement c (mkQueryT insertArgsSQL)
                   <*> openStatement c (mkQueryT insertKindSQL)
-  beginTransaction h
   return h
 
 closeDB :: DBHandle -> IO ()
 closeDB h = do
-  endTransaction h
+  closeStatement (beginTransactionStmt h)
+  closeStatement (endTransactionStmt h)
   closeStatement (updateSourceFileStmt h)
   closeStatement (updateDefStmt h)
   closeStatement (insertFileStmt h)
@@ -89,11 +99,11 @@ tuneDB c = do
   execute_ c "pragma page_size = 4096"
   execute_ c "pragma cache_size = 10000"
 
-beginTransaction :: DBHandle -> IO ()
-beginTransaction h = execute_ (conn h) "begin transaction"
+beginTransactionSQL :: T.Text
+beginTransactionSQL = "begin transaction"
 
-endTransaction :: DBHandle -> IO ()
-endTransaction h = execute_ (conn h) "end transaction"
+endTransactionSQL :: T.Text
+endTransactionSQL = "end transaction"
 
 voidNextRow :: Statement -> IO (Maybe (Only Int64))
 voidNextRow = nextRow
