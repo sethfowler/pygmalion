@@ -54,10 +54,8 @@ getLookupInfo ci sl = do
     Right r                 -> return r
     Left (ClangException e) -> putStrLn ("Clang exception: " ++ e ) >> return GotNothing
 
-includesAnalysis :: IORef [SourceFile] -> WorkingDirectory -> ClangApp ()
-includesAnalysis isRef wd = do
-    tu <- getTranslationUnit
-    void $ getInclusions tu visitInclusions
+includesAnalysis :: IORef [SourceFile] -> WorkingDirectory -> TranslationUnit -> ClangApp ()
+includesAnalysis isRef wd tu = void $ getInclusions tu visitInclusions
   where
     visitInclusions :: InclusionVisitor
     visitInclusions file _  = do
@@ -71,9 +69,8 @@ isLocalHeader wd p = (wd `T.isPrefixOf`) .&&.
                      hasHeaderExtensionText .&&.
                      (not . T.null) $ p
 
-defsAnalysis :: IORef [DefInfo] -> WorkingDirectory -> SourceFile -> ClangApp ()
-defsAnalysis dsRef wd thisFile = do
-    tu <- getTranslationUnit
+defsAnalysis :: IORef [DefInfo] -> WorkingDirectory -> SourceFile -> TranslationUnit -> ClangApp ()
+defsAnalysis dsRef wd thisFile tu = do
     cursor <- getCursor tu
     fileCache <- liftIO $ mkCache CS.unpackText T.unpack
     void $ visitChildren cursor (kidVisitor fileCache)
@@ -157,10 +154,9 @@ cursorName c = C.getDisplayName c >>= CS.unpackText >>= anonymize
   where anonymize s | T.null s  = return "<anonymous>"
                     | otherwise = return s
 
-inspectIdentifier :: SourceLocation -> ClangApp LookupInfo
-inspectIdentifier (SourceLocation f ln col) = do
-    dumpDiagnostics
-    tu <- getTranslationUnit
+inspectIdentifier :: SourceLocation -> TranslationUnit -> ClangApp LookupInfo
+inspectIdentifier (SourceLocation f ln col) tu = do
+    dumpDiagnostics tu
     file <- File.getFile tu (unSourceFile f)
     loc <- Source.getLocation tu file ln col
     cursor <- Source.getCursor tu loc
@@ -194,9 +190,8 @@ inspectIdentifier (SourceLocation f ln col) = do
 
 -- We need to decide on a policy, but it'd be good to figure out a way to let
 -- the user display these, and maybe always display errors.
-dumpDiagnostics :: ClangApp ()
-dumpDiagnostics = do
-    tu <- getTranslationUnit
+dumpDiagnostics :: TranslationUnit -> ClangApp ()
+dumpDiagnostics tu = do
     opts <- Diag.defaultDisplayOptions
     dias <- Diag.getDiagnostics tu
     forM_ dias $ \dia -> do
@@ -231,7 +226,7 @@ dumpSubtree cursor = do
                               (show startLn) ++ "," ++ (show startCol) ++ " -> " ++
                               (show endLn) ++ "," ++ (show endCol)
 
-withTranslationUnit :: CommandInfo -> ClangApp a -> IO a
+withTranslationUnit :: CommandInfo -> (TranslationUnit -> ClangApp a) -> IO a
 withTranslationUnit (CommandInfo sf _ (Command _ args) _) f = do
     withCreateIndex False False $ \index -> do
       withParse index (Just . unSourceFile $ sf) clangArgs [] [TranslationUnit_None] f bail

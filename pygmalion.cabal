@@ -34,7 +34,7 @@ library
                    time,
                    transformers,
                    unordered-containers,
-                   LibClang,
+                   LibClang >= 0.2,
                    MissingH
   exposed-modules: Pygmalion.Analyze,
                    Pygmalion.Analyze.Command,
