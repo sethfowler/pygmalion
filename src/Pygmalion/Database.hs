@@ -51,7 +51,6 @@ openDB db = labeledCatch "openDB" $ do
   c <- open db
   disableSynchronousWrites c
   enableMemoryJournaling c
-  -- enableForeignKeyConstraints c
   ensureSchema c
   h <- DBHandle c <$> openStatement c (mkQueryT updateSourceFileSQL)
                   <*> openStatement c (mkQueryT updateDefSQL)
@@ -74,9 +73,6 @@ closeDB h = do
   closeStatement (insertArgsStmt h)
   closeStatement (insertKindStmt h)
   close (conn h)
-
-enableForeignKeyConstraints :: Connection -> IO ()
-enableForeignKeyConstraints c = execute_ c "pragma foreign_keys = on"
 
 enableTracing :: Connection -> IO ()
 enableTracing c = setTrace c (Just $ putStrLn . T.unpack)
@@ -117,7 +113,7 @@ dbMinorVersion = 6
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c sql
   where sql = "create table if not exists Metadata(               \
-              \ Tool varchar(2048) primary key not null,          \
+              \ Tool varchar(16) primary key not null,            \
               \ MajorVersion integer zerofill unsigned not null,  \
               \ MinorVersion integer zerofill unsigned not null)"
 
@@ -189,12 +185,11 @@ insertArgsSQL = "insert or ignore into BuildArgs (Args, Hash) values (?, ?)"
 defineSourceFilesTable :: Connection -> IO ()
 defineSourceFilesTable c = execute_ c sql
   where sql =  "create table if not exists SourceFiles(        \
-               \ File integer unique not null,                 \
+               \ File integer primary key unique not null,     \
                \ WorkingDirectory integer not null,            \
                \ BuildCommand integer not null,                \
                \ BuildArgs integer not null,                   \
-               \ LastBuilt integer zerofill unsigned not null, \
-               \ primary key(File))"
+               \ LastBuilt integer zerofill unsigned not null)"
 
 updateSourceFileSQL :: T.Text
 updateSourceFileSQL = "replace into SourceFiles                                     \
