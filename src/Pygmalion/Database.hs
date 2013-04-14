@@ -83,7 +83,7 @@ tuneDB c = do
   -- especially given libclang's instability, we do want to avoid corruption
   -- because of crashes. We try to optimize as much as possible within those
   -- constraints.
-  execute_ c "pragma synchronous = off"
+  execute_ c "pragma synchronous = normal"
   execute_ c "pragma journal_mode = wal"
   execute_ c "pragma locking_mode = exclusive"
   execute_ c "pragma page_size = 4096"
