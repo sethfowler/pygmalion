@@ -26,7 +26,9 @@ main = do
   dbChan <- newChan
   putStrLn $ "Launching database thread"
   dbThread <- asyncBound (runDatabaseThread dbChan)
-  threads <- forM [1..numCapabilities] $ \i -> do
+  --let maxThreads = numCapabilities
+  let maxThreads = 1
+  threads <- forM [1..maxThreads] $ \i -> do
     putStrLn $ "Launching analysis thread #" ++ (show i)
     asyncBound (runAnalysisThread chan dbChan)
   ensureSuccess =<< (race (runRPCServer cf port chan) (executeMake cf port args))
