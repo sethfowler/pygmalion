@@ -65,6 +65,10 @@ printDef f (Just line) (Just col) = withDB $ \h -> do
     info <- getLookupInfo cmd (SourceLocation f line col)
     case info of
       GotDef di  -> putDef di
+      -- FIXME Clean this up
+      GotDecl usr di -> do def <- getDef h usr
+                           if isJust def then putDef (fromJust def)
+                                         else putDecl di
       GotUSR usr -> do def <- getDef h usr
                        unless (isJust def) $ bailWith (defErr usr)
                        putDef (fromJust def)
@@ -77,6 +81,9 @@ printDef f (Just line) (Just col) = withDB $ \h -> do
     putDef (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Definition: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
+    putDecl (DefInfo n _ (SourceLocation idF idLine idCol) k) =
+      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
+                 ": Declaration: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
 printDef _ _ _ = usage
 
 bail :: IO ()

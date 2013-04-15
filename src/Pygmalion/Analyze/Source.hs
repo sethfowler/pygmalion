@@ -21,6 +21,7 @@ import Control.Applicative
 import Control.Exception
 import Control.Monad
 import Control.Monad.IO.Class
+import Data.Maybe
 import Data.IORef
 import qualified Data.HashMap.Strict as Map
 import qualified Data.Text as T
@@ -43,6 +44,7 @@ runSourceAnalyses wd ci@(CommandInfo sf _ _ _) = do
     Left (ClangException e) -> putStrLn ("Clang exception: " ++ e) >> return Nothing
 
 data LookupInfo = GotDef DefInfo
+                | GotDecl USR DefInfo
                 | GotUSR USR
                 | GotNothing
                 deriving (Eq, Show)
@@ -175,18 +177,21 @@ inspectIdentifier (SourceLocation f ln col) tu = do
         False -> do usr <- XRef.getUSR cursor >>= CS.unpackText
                     kind <- C.getKind cursor 
                     cursorIsDef <- isDef cursor kind
-                    if cursorIsDef then reportDef cursor usr kind
-                                   else return (GotUSR usr)
+                    di <- createDefInfo cursor usr kind
+                    if cursorIsDef && isJust di
+                      then return (GotDef $ fromJust di)
+                      else if isJust di then return (GotDecl usr $ fromJust di)
+                                        else return (GotUSR usr)
         True -> return GotNothing
-    reportDef cursor usr k = do
+    createDefInfo cursor usr k = do
       name <- C.getDisplayName cursor >>= CS.unpackText
       kind <- C.getCursorKindSpelling k >>= CS.unpackText
       loc <- C.getLocation cursor
       (df, dl, dc, _) <- Source.getSpellingLocation loc
       file <- case df of Just valid -> File.getName valid >>= CS.unpackText
                          Nothing    -> return ""
-      return $ if (not $ T.null file) then GotDef (DefInfo name usr (SourceLocation file dl dc) kind)
-                                      else GotUSR usr
+      return $ if (not $ T.null file) then Just (DefInfo name usr (SourceLocation file dl dc) kind)
+                                      else Nothing
 
 -- We need to decide on a policy, but it'd be good to figure out a way to let
 -- the user display these, and maybe always display errors.
