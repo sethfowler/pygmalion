@@ -29,7 +29,6 @@ library
                    mtl,
                    network,
                    network-conduit,
-                   random,
                    sqlite-simple,
                    text,
                    time,
@@ -61,7 +60,7 @@ executable pygmalion
   hs-source-dirs: tools
 
 executable pygmake
-  ghc-options:    -Wall -O -threaded -prof -fprof-auto -rtsopts -with-rtsopts=-N
+  ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N
   main-is:        Pygmake.hs 
   build-depends:  base >= 4,
                   async,

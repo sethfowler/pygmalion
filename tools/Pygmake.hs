@@ -4,6 +4,7 @@ import Control.Concurrent.Async
 import Control.Exception (Exception, throw)
 import Control.Monad
 import Data.List
+import GHC.Conc
 import System.Environment
 import System.Exit
 import System.Process
@@ -21,20 +22,21 @@ main = do
   ensureDB
   cf <- getConfiguration
   port <- newEmptyMVar
-  chanA <- newChan
-  chanB <- newChan
+  chan <- newChan
   dbChan <- newChan
-  let chans = [chanA, chanB]
-  withAsyncBound (runDatabaseThread dbChan) $ \database -> do
-    withAsyncBound (runAnalysisThread chanA dbChan) $ \analysisA -> do
-      withAsyncBound (runAnalysisThread chanB dbChan) $ \analysisB -> do
-        ensureSuccess =<< (race (runRPCServer cf port chans) (executeMake cf port args))
-        writeChan chanB Nothing  -- Signifies end of data.
-        ensureNoException =<< waitCatch analysisB
-      writeChan chanA Nothing
-      ensureNoException =<< waitCatch analysisA
-    writeChan dbChan Nothing
-    ensureNoException =<< waitCatch database
+  putStrLn $ "Launching database thread"
+  dbThread <- asyncBound (runDatabaseThread dbChan)
+  threads <- forM [1..numCapabilities] $ \i -> do
+    putStrLn $ "Launching analysis thread #" ++ (show i)
+    asyncBound (runAnalysisThread chan dbChan)
+  ensureSuccess =<< (race (runRPCServer cf port chan) (executeMake cf port args))
+  forM_ threads $ \_ -> writeChan chan Nothing  -- Signifies end of data.
+  forM_ (zip threads [1..numCapabilities]) $ \(thread, i) -> do
+    ensureNoException =<< waitCatch thread
+    putStrLn $ "Termination of thread #" ++ (show i)
+  writeChan dbChan Nothing  -- Terminate the database thread.
+  ensureNoException =<< waitCatch dbThread
+  putStrLn $ "Termination of database thread"
   when (makeCDB cf) writeCompileCommands
 
 usage :: IO a
