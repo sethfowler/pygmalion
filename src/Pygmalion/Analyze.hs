@@ -17,12 +17,13 @@ import Pygmalion.Database
 runAnalysisThread :: Chan (Maybe CommandInfo) -> Chan (Maybe (CommandInfo, [SourceFile], [DefInfo])) -> IO ()
 runAnalysisThread chan dbChan = do
     wd <- T.pack <$> getCurrentDirectory
-    go wd
-  where go :: T.Text -> IO ()
-        go wd = {-# SCC "analysisThread" #-}
+    sas <- mkSAS wd
+    go sas
+  where go :: SourceAnalysisState -> IO ()
+        go sas = {-# SCC "analysisThread" #-}
                do mayCmd <- readChan chan
                   case mayCmd of
-                      Just cmd -> scanCommandAndSendToDBThread wd cmd dbChan >> go wd
+                      Just cmd -> scanCommandAndSendToDBThread sas cmd dbChan >> go sas
                       Nothing  -> return ()
 
 runDatabaseThread :: Chan (Maybe (CommandInfo, [SourceFile], [DefInfo])) -> IO ()
@@ -34,17 +35,17 @@ runDatabaseThread chan = withDB go
                     Just info -> updateDB h info >> go h
                     Nothing  -> return ()
 
-scanCommandAndSendToDBThread :: T.Text -> CommandInfo -> Chan (Maybe (CommandInfo, [SourceFile], [DefInfo])) -> IO ()
-scanCommandAndSendToDBThread wd cmdInfo dbChan = do
-  mayResult <- analyzeCode wd cmdInfo
+scanCommandAndSendToDBThread :: SourceAnalysisState -> CommandInfo -> Chan (Maybe (CommandInfo, [SourceFile], [DefInfo])) -> IO ()
+scanCommandAndSendToDBThread sas cmdInfo dbChan = do
+  mayResult <- analyzeCode sas cmdInfo
   case mayResult of
     result@(Just _) -> writeChan dbChan result
     Nothing         -> return ()
 
-analyzeCode :: T.Text -> CommandInfo -> IO (Maybe (CommandInfo, [SourceFile], [DefInfo]))
-analyzeCode wd ci = do
+analyzeCode :: SourceAnalysisState -> CommandInfo -> IO (Maybe (CommandInfo, [SourceFile], [DefInfo]))
+analyzeCode sas ci = do
   --liftIO $ putStrLn $ "Analyzing " ++ (show ci)
-  result <- liftIO $ runSourceAnalyses wd ci
+  result <- liftIO $ runSourceAnalyses sas ci
   case result of
     Just (is, ds) -> return . Just $ (ci, is, ds)
     Nothing       -> return Nothing

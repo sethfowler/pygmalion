@@ -4,6 +4,8 @@ module Pygmalion.Analyze.Source
 ( runSourceAnalyses
 , getLookupInfo
 , LookupInfo (..)
+, SourceAnalysisState
+, mkSAS
 , dumpSubtree -- Just to silence the warnings. Need to move this to another module.
 ) where
 
@@ -32,15 +34,16 @@ import Data.Bool.Predicate
 import Pygmalion.Analyze.Extension
 import Pygmalion.Core
 
-runSourceAnalyses :: T.Text -> CommandInfo -> IO (Maybe ([SourceFile], [DefInfo]))
-runSourceAnalyses wd ci@(CommandInfo sf _ _ _) = do
-  includesRef <- newIORef $! []
-  defsRef <- newIORef $! []
+runSourceAnalyses :: SourceAnalysisState -> CommandInfo -> IO (Maybe ([SourceFile], [DefInfo]))
+runSourceAnalyses sas ci@(CommandInfo sf _ _ _) = do
+  writeIORef (includesRef sas) $! []
+  writeIORef (defsRef sas) $! []
+  writeIORef (sfRef sas) $! sf
   result <- try $ withTranslationUnit ci $ do
                     --includesAnalysis includesRef wd
-                    defsAnalysis defsRef wd sf
+                    defsAnalysis sas
   case result of
-    Right _ -> (,) <$> readIORef includesRef <*> readIORef defsRef >>= return . Just
+    Right _ -> (,) <$> readIORef (includesRef sas) <*> readIORef (defsRef sas) >>= return . Just
     Left (ClangException e) -> putStrLn ("Clang exception: " ++ e) >> return Nothing
 
 data LookupInfo = GotDef DefInfo
@@ -71,34 +74,49 @@ isLocalHeader wd p = (wd `T.isPrefixOf`) .&&.
                      hasHeaderExtensionText .&&.
                      (not . T.null) $ p
 
-defsAnalysis :: IORef [DefInfo] -> WorkingDirectory -> SourceFile -> TranslationUnit -> ClangApp ()
-defsAnalysis dsRef wd thisFile tu = do
+defsAnalysis :: SourceAnalysisState -> TranslationUnit -> ClangApp ()
+defsAnalysis sas tu = do
     cursor <- getCursor tu
-    fileCache <- liftIO $ mkCache CS.unpackText T.unpack
-    void $ visitChildren cursor (kidVisitor fileCache)
-  where
-    kidVisitor :: StringCache SourceFile -> ChildVisitor
-    kidVisitor fileCache cursor _ = do
-      loc <- C.getLocation cursor
-      (f, ln, col, _) <- Source.getSpellingLocation loc
-      file <- case f of Just valid -> File.getName valid >>= fromCache fileCache
-                        Nothing    -> return ""
-      case (file == thisFile) of
-        True -> do  cKind <- C.getKind cursor
-                    cursorIsDef <- isDef cursor cKind
-                    when cursorIsDef $ do
-                      usr <- XRef.getUSR cursor >>= CS.unpackText
-                      name <- fqn cursor
-                      kind <- C.getCursorKindSpelling cKind >>= CS.unpackText
-                      def <- return $! DefInfo name usr
-                                        (SourceLocation file ln col)
-                                        kind
-                      liftIO . modifyIORef' dsRef $! (def :)
-                    return $ case cKind of
-                                C.Cursor_FunctionDecl -> ChildVisit_Continue
-                                C.Cursor_CXXMethod    -> ChildVisit_Continue
-                                _                     -> ChildVisit_Recurse
-        False -> return ChildVisit_Continue
+    --fileCache <- liftIO $ mkCache CS.unpackText T.unpack
+    void $ visitChildren cursor (defsVisitor sas)
+
+data SourceAnalysisState = SourceAnalysisState
+    { defsVisitor :: ChildVisitor
+    , defsRef :: IORef [DefInfo]
+    , includesRef :: IORef [SourceFile]
+    , sfRef :: IORef SourceFile
+    }
+
+mkSAS :: WorkingDirectory -> IO SourceAnalysisState
+mkSAS _ = do
+  newDefsRef <- newIORef $! []
+  newIncludesRef <- newIORef $! []
+  newSFRef <- newIORef $! (mkSourceFile "")
+  return $ SourceAnalysisState (defsVisitorImpl newDefsRef newSFRef) newDefsRef newIncludesRef newSFRef
+
+defsVisitorImpl :: IORef [DefInfo] -> IORef SourceFile -> ChildVisitor
+defsVisitorImpl dsRef sfRef cursor _ = do
+  loc <- C.getLocation cursor
+  (f, ln, col, _) <- Source.getSpellingLocation loc
+  file <- case f of Just valid -> File.getName valid >>= CS.unpackText
+                    Nothing    -> return ""
+  thisFile <- liftIO $ readIORef sfRef
+  case (file == thisFile) of
+    True -> do  cKind <- C.getKind cursor
+                cursorIsDef <- isDef cursor cKind
+                when cursorIsDef $ do
+                  usr <- XRef.getUSR cursor >>= CS.unpackText
+                  name <- fqn cursor
+                  kind <- C.getCursorKindSpelling cKind >>= CS.unpackText
+                  def <- return $! DefInfo name usr
+                                    (SourceLocation file ln col)
+                                    kind
+                  liftIO . modifyIORef' dsRef $! (def :)
+                return $ case cKind of
+                            C.Cursor_FunctionDecl -> ChildVisit_Continue
+                            C.Cursor_CXXMethod    -> ChildVisit_Continue
+                            _                     -> ChildVisit_Recurse
+    False -> return ChildVisit_Continue
 
 {-
 -- Was the following; still evaluating the tradeoffs.
