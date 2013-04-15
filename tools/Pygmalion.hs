@@ -66,14 +66,14 @@ printDef f (Just line) (Just col) = withDB $ \h -> do
     case info of
       GotDef di  -> putDef di
       GotUSR usr -> do def <- getDef h usr
-                       unless (isJust def) $ bailWith defErr
+                       unless (isJust def) $ bailWith (defErr usr)
                        putDef (fromJust def)
       GotNothing -> bailWith idErr
   where 
     errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
     cmdErr = errPrefix ++ "No compilation information for this file."
     idErr = errPrefix ++ "No identifier at this location."
-    defErr = errPrefix ++ "No definition for this identifier."
+    defErr usr = errPrefix ++ "No definition for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
     putDef (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Definition: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
