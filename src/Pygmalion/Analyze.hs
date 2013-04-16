@@ -1,12 +1,17 @@
 module Pygmalion.Analyze
 ( runAnalysisThread
 , runDatabaseThread
+, AnalysisRequest (..)
+, AnalysisChan
+, DBRequest (..)
+, DBChan
 ) where
 
 import Control.Applicative
-import Control.Concurrent.Chan
+import Control.Concurrent
 import Control.Monad
 import Control.Monad.Trans
+import Data.Maybe
 import qualified Data.Text as T
 import System.Directory
 
@@ -14,35 +19,48 @@ import Pygmalion.Analyze.Source
 import Pygmalion.Core
 import Pygmalion.Database
 
-runAnalysisThread :: Chan (Maybe CommandInfo) -> Chan (Maybe (CommandInfo, [SourceFile], [DefInfo])) -> IO ()
+type SourceAnalysisResult = (CommandInfo, [SourceFile], [DefInfo])
+
+data AnalysisRequest = Analyze CommandInfo
+                     | ShutdownAnalysis
+type AnalysisChan = Chan AnalysisRequest
+
+data DBRequest = DBUpdate SourceAnalysisResult
+               | DBGetCommandInfo SourceFile (MVar (Maybe CommandInfo))
+               | DBShutdown
+type DBChan = Chan DBRequest
+    
+
+runAnalysisThread :: AnalysisChan -> DBChan -> IO ()
 runAnalysisThread chan dbChan = do
     wd <- T.pack <$> getCurrentDirectory
     sas <- mkSourceAnalysisState wd
     go sas
   where go :: SourceAnalysisState -> IO ()
         go sas = {-# SCC "analysisThread" #-}
-               do mayCmd <- readChan chan
-                  case mayCmd of
-                      Just cmd -> scanCommandAndSendToDBThread sas cmd dbChan >> go sas
-                      Nothing  -> return ()
+               do req <- readChan chan
+                  case req of
+                      Analyze cmd -> scanCommandAndSendToDBThread sas cmd dbChan >> go sas
+                      ShutdownAnalysis -> return ()
 
-runDatabaseThread :: Chan (Maybe (CommandInfo, [SourceFile], [DefInfo])) -> IO ()
+-- FIXME: It'd be nice to have separate chans for queries and update requests
+-- or something similar, to allow queries to have higher priority.
+runDatabaseThread :: DBChan -> IO ()
 runDatabaseThread chan = withDB go
   where go :: DBHandle -> IO ()
         go h = {-# SCC "databaseThread" #-}
-               do mayInfo <- readChan chan
-                  case mayInfo of
-                    Just info -> updateDB h info >> go h
-                    Nothing  -> return ()
+               do req <- readChan chan
+                  case req of
+                    DBUpdate sar         -> doUpdate h sar >> go h
+                    DBGetCommandInfo f v -> doGetCommandInfo h f v >> go h
+                    DBShutdown           -> return ()
 
-scanCommandAndSendToDBThread :: SourceAnalysisState -> CommandInfo -> Chan (Maybe (CommandInfo, [SourceFile], [DefInfo])) -> IO ()
+scanCommandAndSendToDBThread :: SourceAnalysisState -> CommandInfo -> DBChan -> IO ()
 scanCommandAndSendToDBThread sas cmdInfo dbChan = do
-  mayResult <- analyzeCode sas cmdInfo
-  case mayResult of
-    result@(Just _) -> writeChan dbChan result
-    Nothing         -> return ()
+  result <- analyzeCode sas cmdInfo
+  when (isJust result) $ writeChan dbChan (DBUpdate . fromJust $ result)
 
-analyzeCode :: SourceAnalysisState -> CommandInfo -> IO (Maybe (CommandInfo, [SourceFile], [DefInfo]))
+analyzeCode :: SourceAnalysisState -> CommandInfo -> IO (Maybe SourceAnalysisResult)
 analyzeCode sas ci = do
   --liftIO $ putStrLn $ "Analyzing " ++ (show ci)
   result <- liftIO $ runSourceAnalyses sas ci
@@ -50,8 +68,8 @@ analyzeCode sas ci = do
     Just (is, ds) -> return . Just $ (ci, is, ds)
     Nothing       -> return Nothing
 
-updateDB :: DBHandle -> (CommandInfo, [SourceFile], [DefInfo]) -> IO ()
-updateDB h (ci, includes, defs) = liftIO $ withTransaction h $ do
+doUpdate :: DBHandle -> SourceAnalysisResult -> IO ()
+doUpdate h (ci, includes, defs) = liftIO $ withTransaction h $ do
   updateSourceFile h ci
   -- Update entries for all non-system includes, using the same metadata.
   -- forM_ includes $ \i -> do
@@ -60,3 +78,8 @@ updateDB h (ci, includes, defs) = liftIO $ withTransaction h $ do
   forM_ defs $ \d -> do
     updateDef h d
   --liftIO $ putStrLn $ "Updated DB entries related to " ++ (show ci)
+
+doGetCommandInfo :: DBHandle -> SourceFile -> MVar (Maybe CommandInfo) -> IO ()
+doGetCommandInfo h f v = do
+  ci <- liftM2 (<|>) (getCommandInfo h f) (getSimilarCommandInfo h f)
+  putMVar v $! ci

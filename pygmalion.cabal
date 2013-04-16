@@ -84,11 +84,15 @@ executable pygd
   ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N
   main-is:        Pygd.hs 
   build-depends:  base >= 4
+               ,  async
                ,  directory
+               ,  filepath
                ,  fsnotify
+               ,  mtl
                ,  pygmalion
                ,  system-filepath
                ,  time
+               ,  MissingH
   hs-source-dirs: tools
 
 test-suite pygmalion-quickcheck

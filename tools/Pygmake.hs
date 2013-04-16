@@ -32,11 +32,11 @@ main = do
     putStrLn $ "Launching analysis thread #" ++ (show i)
     asyncBound (runAnalysisThread chan dbChan)
   ensureSuccess =<< (race (runRPCServer cf port chan) (executeMake cf port args))
-  forM_ threads $ \_ -> writeChan chan Nothing  -- Signifies end of data.
+  forM_ threads $ \_ -> writeChan chan ShutdownAnalysis  -- Signifies end of data.
   forM_ (zip threads [1..numCapabilities]) $ \(thread, i) -> do
     ensureNoException =<< waitCatch thread
     putStrLn $ "Termination of thread #" ++ (show i)
-  writeChan dbChan Nothing  -- Terminate the database thread.
+  writeChan dbChan DBShutdown  -- Terminate the database thread.
   ensureNoException =<< waitCatch dbThread
   putStrLn $ "Termination of database thread"
   when (makeCDB cf) writeCompileCommands
