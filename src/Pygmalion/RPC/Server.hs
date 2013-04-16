@@ -15,9 +15,10 @@ import Data.Serialize
 import Data.String
 import Network.Socket
 
-import Pygmalion.Analyze
+import Pygmalion.Analysis.Manager
 import Pygmalion.Config
 import Pygmalion.Core
+import Pygmalion.Database.Manager
 import Pygmalion.RPC.Request
 
 runRPCServer :: Config -> MVar Int -> AnalysisChan -> DBChan -> IO ()

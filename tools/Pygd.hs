@@ -15,11 +15,11 @@ import System.FilePath.Posix
 import System.FSNotify
 import System.Path.NameManip
 
-import Pygmalion.Analyze
-import Pygmalion.Analyze.Extension
+import Pygmalion.Analysis.Extension
+import Pygmalion.Analysis.Manager
 import Pygmalion.Config
 import Pygmalion.Core
-import Pygmalion.Database
+import Pygmalion.Database.Manager
 import Pygmalion.RPC.Server
 
 main :: IO ()
@@ -31,12 +31,12 @@ main = do
   aChan <- newChan
   dbChan <- newChan
   putStrLn $ "Launching database thread"
-  dbThread <- asyncBound (runDatabaseThread dbChan)
+  dbThread <- asyncBound (runDatabaseManager dbChan)
   --let maxThreads = numCapabilities
   let maxThreads = 1 :: Int
   threads <- forM [1..maxThreads] $ \i -> do
     putStrLn $ "Launching analysis thread #" ++ (show i)
-    asyncBound (runAnalysisThread aChan dbChan)
+    asyncBound (runAnalysisManager aChan dbChan)
   void $ race (runRPCServer cf port aChan dbChan) (withManager $ watch aChan dbChan sfMVar)
   forM_ threads $ \_ -> writeChan aChan ShutdownAnalysis  -- Signifies end of data.
   forM_ (zip threads [1..numCapabilities]) $ \(thread, i) -> do

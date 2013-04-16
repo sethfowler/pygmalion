@@ -1,9 +1,10 @@
 {-# LANGUAGE DeriveDataTypeable, OverloadedStrings #-}
 
-module Pygmalion.Analyze.Source
+module Pygmalion.Analysis.Source
 ( runSourceAnalyses
 , getLookupInfo
 , LookupInfo (..)
+, SourceAnalysisResult
 , SourceAnalysisState
 , mkSourceAnalysisState
 , dumpSubtree -- Just to silence the warnings. Need to move this to another module.
@@ -29,8 +30,10 @@ import qualified Data.Text as T
 import Data.Typeable
 
 import Data.Bool.Predicate
-import Pygmalion.Analyze.Extension
+import Pygmalion.Analysis.Extension
 import Pygmalion.Core
+
+type SourceAnalysisResult = (CommandInfo, [SourceFile], [DefInfo])
 
 runSourceAnalyses :: SourceAnalysisState -> CommandInfo -> IO (Maybe ([SourceFile], [DefInfo]))
 runSourceAnalyses sas ci@(CommandInfo sf _ _ _) = do

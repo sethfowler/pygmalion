@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Pygmalion.Database
+module Pygmalion.Database.IO
 ( ensureDB
 , withDB
 , withTransaction

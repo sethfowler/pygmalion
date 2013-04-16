@@ -1,6 +1,6 @@
 {-# LANGUAGE ViewPatterns #-}
 
-module Pygmalion.Analyze.Command
+module Pygmalion.Analysis.Command
 ( getCommandInfo
 ) where
 
@@ -10,7 +10,7 @@ import Data.Time.Clock.POSIX
 import System.Directory
 import System.Path
 
-import Pygmalion.Analyze.Extension
+import Pygmalion.Analysis.Extension
 import Pygmalion.Core
 
 getCommandInfo :: Command -> IO (Maybe CommandInfo)

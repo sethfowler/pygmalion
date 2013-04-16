@@ -7,7 +7,7 @@ import Safe (readMay)
 import System.Environment
 import System.Exit
 
-import Pygmalion.Analyze.Source
+import Pygmalion.Analysis.Source
 import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.RPC.Client

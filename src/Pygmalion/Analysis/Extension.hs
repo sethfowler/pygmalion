@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Pygmalion.Analyze.Extension
+module Pygmalion.Analysis.Extension
 ( hasSourceExtension
 , hasHeaderExtension
 , hasHeaderExtensionText
