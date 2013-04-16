@@ -6,7 +6,7 @@ module Pygmalion.RPC.Client
 , lookupDefInfo
 ) where
 
-import Control.Concurrent (newEmptyMVar, readMVar, putMVar, MVar)
+import Control.Concurrent (newEmptyMVar, takeMVar, putMVar, MVar)
 import Control.Monad.Trans
 import Data.ByteString.Char8 ()
 import Data.Conduit
@@ -40,7 +40,7 @@ lookupCommandInfo :: Port -> SourceFile -> IO (Maybe CommandInfo)
 lookupCommandInfo port sf = do
     result <- newEmptyMVar
     runTCPClient settings (lookupCIApp sf result)
-    readMVar result
+    takeMVar result
   where settings = clientSettings port "127.0.0.1"
 
 lookupCIApp :: SourceFile -> MVar (Maybe CommandInfo) -> Application IO
@@ -60,7 +60,7 @@ lookupDefInfo :: Port -> USR -> IO (Maybe DefInfo)
 lookupDefInfo port usr = do
     result <- newEmptyMVar
     runTCPClient settings (lookupDefApp usr result)
-    readMVar result
+    takeMVar result
   where settings = clientSettings port "127.0.0.1"
 
 lookupDefApp :: USR -> MVar (Maybe DefInfo) -> Application IO

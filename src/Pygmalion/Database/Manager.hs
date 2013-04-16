@@ -31,7 +31,7 @@ runDatabaseManager chan = withDB go
                     DBUpdate sar         -> doUpdate h sar >> go h
                     DBGetCommandInfo f v -> doGetCommandInfo h f v >> go h
                     DBGetDefinition u v  -> doGetDefinition h u v >> go h
-                    DBShutdown           -> return ()
+                    DBShutdown           -> putStrLn "Shutting down DB thread"
 
 doUpdate :: DBHandle -> SourceAnalysisResult -> IO ()
 doUpdate h (ci, includes, defs) = liftIO $ withTransaction h $ do

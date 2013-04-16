@@ -75,7 +75,7 @@ triggerAnalysis :: SourceFile -> EventReader ()
 triggerAnalysis f = do
   (aChan, dbChan, sfVar) <- ask
   liftIO $ writeChan dbChan $! DBGetCommandInfo f sfVar
-  result <- liftIO $ readMVar sfVar
+  result <- liftIO $ takeMVar sfVar
   when (isJust result) $ liftIO $ writeChan aChan (Analyze . fromJust $ result)
 
 isSource :: FilePath -> Bool

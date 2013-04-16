@@ -44,7 +44,7 @@ runSourceAnalyses sas ci@(CommandInfo sf _ _ _) = do
                     --includesAnalysis includesRef wd
                     defsAnalysis sas
   case result of
-    Right _ -> (,) <$> readIORef (includesRef sas) <*> readIORef (defsRef sas) >>= return . Just
+    Right _ -> (,) <$> readIORef (includesRef sas) <*> readIORef (defsRef sas) >>= \x -> return $! Just $! x
     Left (ClangException e) -> putStrLn ("Clang exception: " ++ e) >> return Nothing
 
 data LookupInfo = GotDef DefInfo

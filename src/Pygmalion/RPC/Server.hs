@@ -53,7 +53,7 @@ doGetCommandInfo dbChan f = do
   putStrLn $ "RPCGetCommandInfo: " ++ (show f)
   sfVar <- newEmptyMVar
   writeChan dbChan $! DBGetCommandInfo f sfVar
-  result <- readMVar sfVar
+  result <- takeMVar sfVar
   return $! encode result
 
 doGetDefinition :: DBChan -> USR -> IO ByteString
@@ -61,5 +61,5 @@ doGetDefinition dbChan usr = do
   putStrLn $ "RPCGetDefInfo: " ++ (show usr)
   defVar <- newEmptyMVar
   writeChan dbChan $! DBGetDefinition usr defVar
-  result <- readMVar defVar
+  result <- takeMVar defVar
   return $! encode result

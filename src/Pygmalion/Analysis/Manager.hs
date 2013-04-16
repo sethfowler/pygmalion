@@ -30,7 +30,7 @@ runAnalysisManager chan dbChan = do
                do req <- readChan chan
                   case req of
                       Analyze cmd -> scanCommandAndSendToDB sas cmd dbChan >> go sas
-                      ShutdownAnalysis -> return ()
+                      ShutdownAnalysis -> putStrLn "Shutting down analysis thread"
 
 scanCommandAndSendToDB :: SourceAnalysisState -> CommandInfo -> DBChan -> IO ()
 scanCommandAndSendToDB sas cmdInfo dbChan = do
