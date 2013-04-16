@@ -20,6 +20,7 @@ module Pygmalion.Core
 , queryExecutable
 , scanExecutable
 , makeExecutable
+, daemonExecutable
 , dbFile
 , configFile
 , compileCommandsFile
@@ -82,6 +83,8 @@ type Time = Int64
 data DefInfo = DefInfo !Identifier !USR !SourceLocation !DefKind
   deriving (Eq, Show, Generic)
 
+instance Serialize DefInfo
+
 instance FromRow DefInfo where
   fromRow = do
     ident <- field
@@ -93,6 +96,8 @@ instance FromRow DefInfo where
 data SourceLocation = SourceLocation !SourceFile !SourceLine !SourceColumn
   deriving (Eq, Show, Generic)
 
+instance Serialize SourceLocation
+
 type Identifier = T.Text
 type USR = T.Text
 type SourceLine = Int
@@ -100,10 +105,11 @@ type SourceColumn = Int
 type DefKind = T.Text
 
 -- Tool names.
-queryExecutable, scanExecutable, makeExecutable :: String
-queryExecutable = "pygmalion"
-scanExecutable  = "pygscan"
-makeExecutable  = "pygmake"
+queryExecutable, scanExecutable, makeExecutable, daemonExecutable :: String
+queryExecutable  = "pygmalion"
+scanExecutable   = "pygscan"
+makeExecutable   = "pygmake"
+daemonExecutable = "pygd"
 
 -- Data files.
 dbFile, configFile, compileCommandsFile :: String

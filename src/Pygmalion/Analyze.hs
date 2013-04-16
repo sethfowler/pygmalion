@@ -27,6 +27,7 @@ type AnalysisChan = Chan AnalysisRequest
 
 data DBRequest = DBUpdate SourceAnalysisResult
                | DBGetCommandInfo SourceFile (MVar (Maybe CommandInfo))
+               | DBGetDefinition USR (MVar (Maybe DefInfo))
                | DBShutdown
 type DBChan = Chan DBRequest
     
@@ -53,6 +54,7 @@ runDatabaseThread chan = withDB go
                   case req of
                     DBUpdate sar         -> doUpdate h sar >> go h
                     DBGetCommandInfo f v -> doGetCommandInfo h f v >> go h
+                    DBGetDefinition u v  -> doGetDefinition h u v >> go h
                     DBShutdown           -> return ()
 
 scanCommandAndSendToDBThread :: SourceAnalysisState -> CommandInfo -> DBChan -> IO ()
@@ -83,3 +85,8 @@ doGetCommandInfo :: DBHandle -> SourceFile -> MVar (Maybe CommandInfo) -> IO ()
 doGetCommandInfo h f v = do
   ci <- liftM2 (<|>) (getCommandInfo h f) (getSimilarCommandInfo h f)
   putMVar v $! ci
+
+doGetDefinition :: DBHandle -> USR -> MVar (Maybe DefInfo) -> IO ()
+doGetDefinition h usr v = do
+  def <- getDef h usr
+  putMVar v $! def

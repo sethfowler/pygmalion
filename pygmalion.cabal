@@ -45,6 +45,7 @@ library
                    Pygmalion.Database,
                    Pygmalion.JSON,
                    Pygmalion.RPC.Client,
+                   Pygmalion.RPC.Request,
                    Pygmalion.RPC.Server
   other-modules:   Control.Exception.Labeled,
                    Data.Bool.Predicate
@@ -92,6 +93,7 @@ executable pygd
                ,  pygmalion
                ,  system-filepath
                ,  time
+               ,  void
                ,  MissingH
   hs-source-dirs: tools
 

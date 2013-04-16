@@ -11,7 +11,6 @@ import Data.Time.Clock
 import qualified Filesystem.Path.CurrentOS as FP
 import GHC.Conc
 import System.Directory
-import System.Environment
 import System.FilePath.Posix
 import System.FSNotify
 import System.Path.NameManip
@@ -21,6 +20,7 @@ import Pygmalion.Analyze.Extension
 import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.Database
+import Pygmalion.RPC.Server
 
 main :: IO ()
 main = do
@@ -37,7 +37,7 @@ main = do
   threads <- forM [1..maxThreads] $ \i -> do
     putStrLn $ "Launching analysis thread #" ++ (show i)
     asyncBound (runAnalysisThread aChan dbChan)
-  withManager $ watch aChan dbChan sfMVar
+  void $ race (runRPCServer cf port aChan dbChan) (withManager $ watch aChan dbChan sfMVar)
   forM_ threads $ \_ -> writeChan aChan ShutdownAnalysis  -- Signifies end of data.
   forM_ (zip threads [1..numCapabilities]) $ \(thread, i) -> do
     ensureNoException =<< waitCatch thread

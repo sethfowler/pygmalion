@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-import Control.Applicative
 import Control.Monad
 import Data.Maybe
 import qualified Data.Text as T
@@ -9,9 +8,10 @@ import System.Environment
 import System.Exit
 
 import Pygmalion.Analyze.Source
+import Pygmalion.Config
 import Pygmalion.Core
-import Pygmalion.Database
-import Pygmalion.JSON
+import Pygmalion.RPC.Client
+--import Pygmalion.JSON
 
 main :: IO ()
 main = getArgs
@@ -42,34 +42,39 @@ parseArgs ["--help"] = usage
 parseArgs ["-h"]     = usage
 parseArgs _          = usage
 
+-- FIXME: Reimplement with RPC.
 printCDB :: IO ()
+{-
 printCDB = withDB $ \h -> getAllSourceFiles h >>= putStrLn . sourceRecordsToJSON
+-}
+printCDB = undefined
 
 printFlags :: SourceFile -> IO ()
-printFlags f = withDB (getCommandInfoOr bail f) >>= putFlags
+printFlags f = getConfiguration >>= getCommandInfoOr bail f >>= putFlags
   where putFlags (CommandInfo _ _ (Command _ args) _) = putStrLn . T.unpack . T.intercalate " " $ args
 
 printDir :: SourceFile -> IO ()
-printDir f = withDB (getCommandInfoOr bail f) >>= putDir
+printDir f = getConfiguration >>= getCommandInfoOr bail f >>= putDir
   where putDir (CommandInfo _ wd _ _) = putStrLn . T.unpack $ wd
 
-getCommandInfoOr :: IO () -> SourceFile -> DBHandle -> IO CommandInfo
-getCommandInfoOr a f h = do
-  cmd <- liftM2 (<|>) (getCommandInfo h f) (getSimilarCommandInfo h f)
+getCommandInfoOr :: IO () -> SourceFile -> Config -> IO CommandInfo
+getCommandInfoOr a f cf = do
+  cmd <- lookupCommandInfo (ifPort cf) f
   unless (isJust cmd) a
   return . fromJust $ cmd
 
 printDef :: SourceFile -> Maybe Int -> Maybe Int -> IO ()
-printDef f (Just line) (Just col) = withDB $ \h -> do
-    cmd <- getCommandInfoOr (bailWith cmdErr) f h
+printDef f (Just line) (Just col) = do
+    cf <- getConfiguration
+    cmd <- getCommandInfoOr (bailWith cmdErr) f cf
     info <- getLookupInfo cmd (SourceLocation f line col)
     case info of
       GotDef di  -> putDef di
       -- FIXME Clean this up
-      GotDecl usr di -> do def <- getDef h usr
+      GotDecl usr di -> do def <- lookupDefInfo (ifPort cf) usr
                            if isJust def then putDef (fromJust def)
                                          else putDecl di
-      GotUSR usr -> do def <- getDef h usr
+      GotUSR usr -> do def <- lookupDefInfo (ifPort cf) usr
                        unless (isJust def) $ bailWith (defErr usr)
                        putDef (fromJust def)
       GotNothing -> bailWith idErr
