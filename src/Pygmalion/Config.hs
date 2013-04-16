@@ -29,7 +29,7 @@ defaultConfig :: Config
 defaultConfig = Config
   {
     ifAddr   = "127.0.0.1",
-    ifPort   = 0, -- Meaning to use an arbitrary port.
+    ifPort   = 7999,
     make     = "make",
     makeArgs = [],
     makeCDB  = False,
@@ -60,7 +60,11 @@ getConfiguration = do
     cfCPP       <- confValue conf "cpp.compiler" cpp
     cfCPPArgs   <- confValue conf "cpp.args" cppArgs
 
-    return $ Config cfInterface cfPort
+    -- Forbid port 0 - choosing a port automatically can't work with pygd.
+    let cfFinalPort = if cfPort == 0 then ifPort defaultConfig
+                                     else cfFinalPort
+
+    return $ Config cfInterface cfFinalPort
                     cfMake cfMakeArgs cfMakeCDB
                     cfCC cfCCArgs
                     cfCPP cfCPPArgs
