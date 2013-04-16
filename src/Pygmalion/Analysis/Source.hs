@@ -227,6 +227,7 @@ dumpSubtree cursor = do
 withTranslationUnit :: CommandInfo -> (TranslationUnit -> ClangApp a) -> IO a
 withTranslationUnit (CommandInfo sf _ (Command _ args) _) f = do
     withCreateIndex False False $ \index -> do
+      setGlobalOptions index GlobalOpt_ThreadBackgroundPriorityForAll
       withParse index (Just . unSourceFile $ sf) clangArgs [] [TranslationUnit_None] f bail
   where
     bail = throw . ClangException $ "Libclang couldn't parse " ++ (unSourceFile sf)
