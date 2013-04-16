@@ -7,7 +7,7 @@ module Pygmalion.RPC.Server
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
 import Control.Monad.Trans
-import Data.ByteString.Char8
+import Data.ByteString.Char8 (ByteString)
 import Data.Conduit
 import Data.Conduit.Cereal
 import Data.Conduit.Network
@@ -35,7 +35,6 @@ serverApp aChan dbChan ad =
     getCI = {-# SCC "serverget" #-} get :: Get RPCRequest
     process = do
       result <- await
-      -- liftIO $ putStrLn $ "Server got: " ++ (show result)
       case result of
         Just (RPCSendCommandInfo ci) -> liftIO (doSendCommandInfo aChan ci) >>= yield
         Just (RPCGetCommandInfo sf)  -> liftIO (doGetCommandInfo dbChan sf) >>= yield
@@ -44,11 +43,13 @@ serverApp aChan dbChan ad =
 
 doSendCommandInfo :: AnalysisChan -> CommandInfo -> IO ByteString
 doSendCommandInfo aChan ci = do
+  putStrLn $ "RPCSendCommandInfo: " ++ (show ci)
   writeChan aChan $ Analyze ci
   return "OK"
 
 doGetCommandInfo :: DBChan -> SourceFile -> IO ByteString
 doGetCommandInfo dbChan f = do
+  putStrLn $ "RPCGetCommandInfo: " ++ (show f)
   sfVar <- newEmptyMVar
   writeChan dbChan $! DBGetCommandInfo f sfVar
   result <- readMVar sfVar
@@ -56,6 +57,7 @@ doGetCommandInfo dbChan f = do
 
 doGetDefinition :: DBChan -> USR -> IO ByteString
 doGetDefinition dbChan usr = do
+  putStrLn $ "RPCGetDefInfo: " ++ (show usr)
   defVar <- newEmptyMVar
   writeChan dbChan $! DBGetDefinition usr defVar
   result <- readMVar defVar
