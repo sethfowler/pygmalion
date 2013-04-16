@@ -27,7 +27,7 @@ main = do
   putStrLn $ "Launching database thread"
   dbThread <- asyncBound (runDatabaseThread dbChan)
   --let maxThreads = numCapabilities
-  let maxThreads = 1
+  let maxThreads = 1 :: Int
   threads <- forM [1..maxThreads] $ \i -> do
     putStrLn $ "Launching analysis thread #" ++ (show i)
     asyncBound (runAnalysisThread chan dbChan)
