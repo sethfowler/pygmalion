@@ -80,6 +80,17 @@ executable pygscan
                   text
   hs-source-dirs: tools
 
+executable pygd
+  ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N
+  main-is:        Pygd.hs 
+  build-depends:  base >= 4
+               ,  directory
+               ,  fsnotify
+               ,  pygmalion
+               ,  system-filepath
+               ,  time
+  hs-source-dirs: tools
+
 test-suite pygmalion-quickcheck
   ghc-options:    -threaded -rtsopts -with-rtsopts=-N
   type:           exitcode-stdio-1.0
