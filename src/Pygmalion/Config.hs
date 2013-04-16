@@ -62,7 +62,7 @@ getConfiguration = do
 
     -- Forbid port 0 - choosing a port automatically can't work with pygd.
     let cfFinalPort = if cfPort == 0 then ifPort defaultConfig
-                                     else cfFinalPort
+                                     else cfPort
 
     return $ Config cfInterface cfFinalPort
                     cfMake cfMakeArgs cfMakeCDB

@@ -12,7 +12,7 @@ main :: IO ()
 main = do
   args <- (getArgs >>= parseArgs)
   cf <- getConfiguration
-  ensureSuccess =<< executeMake cf (ifPort cf) args
+  ensureSuccess =<< executeMake cf args
   --when (makeCDB cf) writeCompileCommands
 
 usage :: IO a
@@ -24,17 +24,16 @@ parseArgs ["--help"] = usage
 parseArgs ["-h"]     = usage
 parseArgs as         = return as
 
-executeMake:: Config -> Port -> [String] -> IO ExitCode
-executeMake cf p args = do
-    let combinedArgs = newArgs . show $ p
-    (_, _, _, handle) <- createProcess $ proc (make cf) combinedArgs
+executeMake:: Config -> [String] -> IO ExitCode
+executeMake cf args = do
+    (_, _, _, handle) <- createProcess $ proc (make cf) newArgs
     waitForProcess handle
   where
-    newArgs port = [compilerEnvVar "CC" port cc ccArgs,
-                    compilerEnvVar "CXX" port cpp cppArgs]
-                   ++ (makeArgs cf) ++ args
-    compilerEnvVar var port cmd cmdArgs = intercalate " " $
-      [(var ++ "=" ++ scanExecutable), "--make", port, cmd cf] ++ (cmdArgs cf)
+    newArgs = [compilerEnvVar "CC" cc ccArgs,
+               compilerEnvVar "CXX" cpp cppArgs]
+              ++ (makeArgs cf) ++ args
+    compilerEnvVar var cmd cmdArgs = intercalate " " $
+      [(var ++ "=" ++ scanExecutable), "--make", show $ ifPort cf, cmd cf] ++ (cmdArgs cf)
 
 ensureSuccess :: ExitCode -> IO ()
 ensureSuccess code@(ExitFailure _) = exitWith code
