@@ -43,4 +43,4 @@ analyzeCode sas ci = do
   result <- liftIO $ runSourceAnalyses sas ci
   case result of
     Just (is, ds) -> return . Just $! ci `seq` is `seq` ds `seq` (ci, is, ds)
-    Nothing       -> return Nothing
+    Nothing       -> return $! Nothing
