@@ -5,7 +5,7 @@ module Pygmalion.Analyze.Source
 , getLookupInfo
 , LookupInfo (..)
 , SourceAnalysisState
-, mkSAS
+, mkSourceAnalysisState
 , dumpSubtree -- Just to silence the warnings. Need to move this to another module.
 ) where
 
@@ -25,10 +25,8 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Data.Maybe
 import Data.IORef
-import qualified Data.HashMap.Strict as Map
 import qualified Data.Text as T
 import Data.Typeable
-import Data.Word
 
 import Data.Bool.Predicate
 import Pygmalion.Analyze.Extension
@@ -38,7 +36,7 @@ runSourceAnalyses :: SourceAnalysisState -> CommandInfo -> IO (Maybe ([SourceFil
 runSourceAnalyses sas ci@(CommandInfo sf _ _ _) = do
   writeIORef (includesRef sas) $! []
   writeIORef (defsRef sas) $! []
-  writeIORef (sfRef sas) $! sf
+  writeIORef (sourceFileRef sas) $! sf
   result <- try $ withTranslationUnit ci $ do
                     --includesAnalysis includesRef wd
                     defsAnalysis sas
@@ -77,18 +75,17 @@ isLocalHeader wd p = (wd `T.isPrefixOf`) .&&.
 defsAnalysis :: SourceAnalysisState -> TranslationUnit -> ClangApp ()
 defsAnalysis sas tu = do
     cursor <- getCursor tu
-    --fileCache <- liftIO $ mkCache CS.unpackText T.unpack
     void $ visitChildren cursor (defsVisitor sas)
 
 data SourceAnalysisState = SourceAnalysisState
     { defsVisitor :: ChildVisitor
     , defsRef :: IORef [DefInfo]
     , includesRef :: IORef [SourceFile]
-    , sfRef :: IORef SourceFile
+    , sourceFileRef :: IORef SourceFile
     }
 
-mkSAS :: WorkingDirectory -> IO SourceAnalysisState
-mkSAS _ = do
+mkSourceAnalysisState :: WorkingDirectory -> IO SourceAnalysisState
+mkSourceAnalysisState _ = do
   newDefsRef <- newIORef $! []
   newIncludesRef <- newIORef $! []
   newSFRef <- newIORef $! (mkSourceFile "")
@@ -128,31 +125,6 @@ defsVisitorImpl dsRef sfRef cursor _ = do
                   C.Cursor_CXXMethod    -> ChildVisit_Continue
                   _                     -> ChildVisit_Recurse
 -}
-
--- This whole thing needs cleanup; it serves only as a proof of concept.
-data StringCache a = StringCache {
-                        cacheHashMap :: IORef (Map.HashMap Word64 a),
-                        stringPreparer :: CS.ClangString -> ClangApp a,
-                        cachedAsString :: a -> String
-                       }
-
-mkCache :: (CS.ClangString -> ClangApp a) -> (a -> String) -> IO (StringCache a)
-mkCache prep asString = do
-  cacheRef <- newIORef $! Map.empty
-  return $ StringCache cacheRef prep asString
-
-fromCache :: StringCache a -> CS.ClangString -> ClangApp a
-fromCache cache cxStr = do
-  hash <- CS.hash cxStr
-  -- liftIO $ putStrLn $ "Got hash " ++ (show hash) ++ " for name " ++ name
-  cacheMap <- liftIO $ readIORef (cacheHashMap cache)
-  case hash `Map.lookup` cacheMap of
-    Just s -> do --liftIO $ putStrLn $ "Cache HIT for " ++ (cachedAsString cache s)
-                 return $! s
-    Nothing -> do s <- (stringPreparer cache) cxStr
-                  --liftIO $ putStrLn $ "Cache MISS for " ++ (cachedAsString cache s)
-                  liftIO $ modifyIORef' (cacheHashMap cache) $! (Map.insert hash s)
-                  return $! s
 
 inProject :: WorkingDirectory -> SourceFile -> Bool
 inProject wd p = (wd `T.isPrefixOf`) .&&. (not . T.null) $ p

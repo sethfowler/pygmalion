@@ -17,7 +17,7 @@ import Pygmalion.Database
 runAnalysisThread :: Chan (Maybe CommandInfo) -> Chan (Maybe (CommandInfo, [SourceFile], [DefInfo])) -> IO ()
 runAnalysisThread chan dbChan = do
     wd <- T.pack <$> getCurrentDirectory
-    sas <- mkSAS wd
+    sas <- mkSourceAnalysisState wd
     go sas
   where go :: SourceAnalysisState -> IO ()
         go sas = {-# SCC "analysisThread" #-}
