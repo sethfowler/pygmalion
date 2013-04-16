@@ -247,7 +247,7 @@ getSimilarCommandInfo h sf = do
     let path = (++ "%") . normalise . takeDirectory . unSourceFile $ sf
     row <- query (conn h) sql (Only path)
     return $ case row of
-              (ci : _) -> Just $ withSourceFile ci sf
+              (ci : _) -> Just $ ci { ciSourceFile = sf }
               _        -> Nothing
   where sql = "select F.Name, W.Path, C.Command, A.Args, LastBuilt           \
               \ from SourceFiles                                             \

@@ -39,8 +39,8 @@ scanCommandAndSendToDB sas cmdInfo dbChan = do
 
 analyzeCode :: SourceAnalysisState -> CommandInfo -> IO (Maybe SourceAnalysisResult)
 analyzeCode sas ci = do
-  --liftIO $ putStrLn $ "Analyzing " ++ (show ci)
+  liftIO $ putStrLn $ "Analyzing " ++ (show . ciSourceFile $ ci)
   result <- liftIO $ runSourceAnalyses sas ci
   case result of
-    Just (is, ds) -> return . Just $ (ci, is, ds)
+    Just (is, ds) -> return . Just $! ci `seq` is `seq` ds `seq` (ci, is, ds)
     Nothing       -> return Nothing

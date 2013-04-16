@@ -16,7 +16,6 @@ module Pygmalion.Core
 , mkSourceFile
 , unSourceFile
 , unSourceFileText
-, withSourceFile
 , queryExecutable
 , scanExecutable
 , makeExecutable
@@ -39,8 +38,12 @@ import System.FilePath.Posix
 type Port = Int
 
 -- The information we collect about a compilation command.
-data CommandInfo = CommandInfo !SourceFile !WorkingDirectory !Command !Time
-  deriving (Eq, Show, Generic)
+data CommandInfo = CommandInfo
+  { ciSourceFile :: !SourceFile
+  , ciWorkingPath :: !WorkingDirectory
+  , ciCommand :: !Command
+  , ciBuildTime :: !Time
+  } deriving (Eq, Show, Generic)
 
 instance Serialize T.Text where
   put = put . TE.encodeUtf16BE
@@ -61,9 +64,6 @@ data Command = Command !T.Text ![T.Text]
   deriving (Eq, Show, Generic)
 
 instance Serialize Command
-
-withSourceFile :: CommandInfo -> SourceFile -> CommandInfo
-withSourceFile (CommandInfo _ wd cmd t) sf' = CommandInfo sf' wd cmd t
 
 type SourceFile = T.Text
 
