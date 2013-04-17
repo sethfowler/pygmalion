@@ -26,6 +26,7 @@ import System.FilePath.Posix
 
 import Control.Exception.Labeled
 import Pygmalion.Core
+import Pygmalion.Log
 
 -- General database manipulation functions. These are thin wrappers around the
 -- underlying database implementation that also verify that the database is
@@ -84,7 +85,7 @@ closeDB h = do
   close (conn h)
 
 enableTracing :: Connection -> IO ()
-enableTracing c = setTrace c (Just $ putStrLn . T.unpack)
+enableTracing c = setTrace c (Just $ logDebug . T.unpack)
 
 tuneDB :: Connection -> IO ()
 tuneDB c = do

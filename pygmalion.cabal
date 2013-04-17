@@ -25,6 +25,7 @@ library
                    filepath,
                    ghc-prim,
                    hashable,
+                   hslogger,
                    json,
                    mtl,
                    network,
@@ -48,6 +49,7 @@ library
                    Pygmalion.Database.IO,
                    Pygmalion.Database.Manager,
                    Pygmalion.JSON,
+                   Pygmalion.Log,
                    Pygmalion.RPC.Client,
                    Pygmalion.RPC.Request,
                    Pygmalion.RPC.Server

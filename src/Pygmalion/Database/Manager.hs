@@ -15,6 +15,7 @@ import Control.Concurrent.Chan.Counting
 import Pygmalion.Analysis.Source
 import Pygmalion.Core
 import Pygmalion.Database.IO
+import Pygmalion.Log
 
 data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBUpdateDefInfo DefInfo
@@ -32,41 +33,41 @@ runDatabaseManager chan = withDB go
         go h = {-# SCC "databaseThread" #-}
                do req <- readCountingChan chan
                   newCount <- getChanCount chan
-                  putStrLn $ "Database channel now has " ++ (show newCount) ++ " items waiting"
+                  logDebug $ "Database channel now has " ++ (show newCount) ++ " items waiting"
                   case req of
                     DBUpdateCommandInfo ci      -> doUpdateCommandInfo h ci >> go h
                     DBUpdateDefInfo di          -> doUpdateDefInfo h di >> go h
                     DBGetCommandInfo f v        -> doGetCommandInfo h f v >> go h
                     DBGetSimilarCommandInfo f v -> doGetSimilarCommandInfo h f v >> go h
                     DBGetDefinition u v         -> doGetDefinition h u v >> go h
-                    DBShutdown                  -> putStrLn "Shutting down DB thread"
+                    DBShutdown                  -> logInfo "Shutting down DB thread"
 
 doUpdateCommandInfo :: DBHandle -> CommandInfo -> IO ()
 doUpdateCommandInfo h cmd = liftIO $ withTransaction h $ do
   time <- getPOSIXTime
   let ci = cmd { ciBuildTime = floor time }
-  liftIO $ putStrLn $ "Updating database with command: " ++ (show . ciSourceFile $ ci)
+  liftIO $ logDebug $ "Updating database with command: " ++ (show . ciSourceFile $ ci)
   updateSourceFile h ci
 
 doUpdateDefInfo :: DBHandle -> DefInfo -> IO ()
 doUpdateDefInfo h di = liftIO $ withTransaction h $ do
-  liftIO $ putStrLn $ "Updating database with def: " ++ (show . diUSR $ di)
+  liftIO $ logDebug $ "Updating database with def: " ++ (show . diUSR $ di)
   updateDef h di
 
 doGetCommandInfo :: DBHandle -> SourceFile -> MVar (Maybe CommandInfo) -> IO ()
 doGetCommandInfo h f v = do
-  liftIO $ putStrLn $ "Getting CommandInfo for " ++ (show f)
+  liftIO $ logDebug $ "Getting CommandInfo for " ++ (show f)
   ci <- getCommandInfo h f
   putMVar v $! ci
 
 doGetSimilarCommandInfo :: DBHandle -> SourceFile -> MVar (Maybe CommandInfo) -> IO ()
 doGetSimilarCommandInfo h f v = do
-  liftIO $ putStrLn $ "Getting similar CommandInfo for " ++ (show f)
+  liftIO $ logDebug $ "Getting similar CommandInfo for " ++ (show f)
   ci <- liftM2 (<|>) (getCommandInfo h f) (getSimilarCommandInfo h f)
   putMVar v $! ci
 
 doGetDefinition :: DBHandle -> USR -> MVar (Maybe DefInfo) -> IO ()
 doGetDefinition h usr v = do
-  liftIO $ putStrLn $ "Getting DefInfo for " ++ (show usr)
+  liftIO $ logDebug $ "Getting DefInfo for " ++ (show usr)
   def <- getDef h usr
   putMVar v $! def

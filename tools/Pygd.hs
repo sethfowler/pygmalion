@@ -21,39 +21,41 @@ import Pygmalion.Analysis.Manager
 import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.Database.Manager
+import Pygmalion.Log
 import Pygmalion.RPC.Server
 
 main :: IO ()
 main = do
+  initLogger DEBUG -- Need to make this configurable.
   ensureDB
   cf <- getConfiguration
   sfMVar <- newEmptyMVar
   port <- newEmptyMVar
   aChan <- newCountingChan
   dbChan <- newCountingChan
-  putStrLn $ "Launching database thread"
+  logDebug "Launching database thread"
   dbThread <- asyncBound (runDatabaseManager dbChan)
   --let maxThreads = numCapabilities
   let maxThreads = 1 :: Int
   threads <- forM [1..maxThreads] $ \i -> do
-    putStrLn $ "Launching analysis thread #" ++ (show i)
+    logDebug $ "Launching analysis thread #" ++ (show i)
     asyncBound (runAnalysisManager aChan dbChan)
   void $ race (runRPCServer cf port aChan dbChan) (withManager $ watch aChan dbChan sfMVar)
   forM_ threads $ \_ -> writeCountingChan aChan ShutdownAnalysis  -- Signifies end of data.
   forM_ (zip threads [1..numCapabilities]) $ \(thread, i) -> do
     ensureNoException =<< waitCatch thread
-    putStrLn $ "Termination of thread #" ++ (show i)
+    logDebug $ "Termination of thread #" ++ (show i)
   writeCountingChan dbChan DBShutdown  -- Terminate the database thread.
   ensureNoException =<< waitCatch dbThread
-  putStrLn $ "Termination of database thread"
+  logDebug $ "Termination of database thread"
 
 watch :: AnalysisChan -> DBChan -> MVar (Maybe CommandInfo) -> WatchManager -> IO ()
 watch aChan dbChan sfMVar m = do
     curDir <- getCurrentDirectory
-    putStrLn $ "Started watching " ++ (show curDir) ++ "."
+    logDebug $ "Started watching " ++ (show curDir) ++ "."
     watchTree m (FP.decodeString curDir) (const True) doEvent
     _ <- getLine
-    putStrLn "Stopped watching."
+    logDebug "Stopped watching."
   where
     doEvent e = runReaderT (handleEvent e) (aChan, dbChan, sfMVar)
 
@@ -68,7 +70,7 @@ handleEvent _                                             = return ()
 handleSource :: FP.FilePath -> UTCTime -> EventReader ()
 handleSource f t = do
   let file = FP.encodeString f
-  liftIO $ putStrLn $ (show f) ++ " was touched at " ++ (show t)
+  liftIO $ logInfo $ (show f) ++ " was touched at " ++ (show t)
   exists <- liftIO $ doesFileExist file
   when exists (triggerAnalysis $ mkSourceFile file)
 
@@ -88,4 +90,4 @@ illegalPaths = [".git", ".hg", ".svn", "_darcs"]
 
 ensureNoException :: Exception a => Either a b -> IO b
 ensureNoException (Right v) = return v
-ensureNoException (Left e)  = putStrLn "Analysis thread threw an exception" >> throw e
+ensureNoException (Left e)  = logError "Analysis thread threw an exception" >> throw e

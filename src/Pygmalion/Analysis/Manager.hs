@@ -22,6 +22,7 @@ import qualified Pygmalion.Analysis.ClangRequest as CR
 import Pygmalion.Analysis.Source
 import Pygmalion.Core
 import Pygmalion.Database.Manager
+import Pygmalion.Log
 
 data AnalysisRequest = Analyze CommandInfo
                      | AnalyzeSource SourceFile Time
@@ -36,11 +37,11 @@ runAnalysisManager chan dbChan = do
     go indexer = {-# SCC "analysisThread" #-} do
                   req <- readCountingChan chan
                   newCount <- getChanCount chan
-                  putStrLn $ "Analysis channel now has " ++ (show newCount) ++ " items waiting"
+                  logDebug $ "Analysis channel now has " ++ (show newCount) ++ " items waiting"
                   case req of
                       Analyze cmd        -> doAnalyze indexer cmd dbChan >> go indexer
                       AnalyzeSource sf t -> doAnalyzeSource indexer sf t dbChan >> go indexer
-                      ShutdownAnalysis   -> putStrLn "Shutting down analysis thread"
+                      ShutdownAnalysis   -> logInfo "Shutting down analysis thread"
 
 type Indexer = Conduit ByteString (ResourceT IO) ByteString
 
@@ -51,7 +52,7 @@ doAnalyze indexer ci dbChan = do
     writeCountingChan dbChan (DBGetCommandInfo (ciSourceFile ci) mOldCI)
     oldCI <- takeMVar mOldCI 
     case oldCI of
-      Just (CommandInfo _ _ _ oldT) | (ciBuildTime ci) <= oldT -> putStrLn $ "Skipping analysis for " ++ (show . ciSourceFile $ ci)
+      Just (CommandInfo _ _ _ oldT) | (ciBuildTime ci) <= oldT -> logInfo $ "Skipping analysis for " ++ (show . ciSourceFile $ ci)
       _                                                        -> doAnalyze'
   where
     doAnalyze' = analyzeCode indexer dbChan ci
@@ -63,15 +64,15 @@ doAnalyzeSource indexer sf t dbChan = do
     writeCountingChan dbChan (DBGetSimilarCommandInfo sf mOldCI)
     oldCI <- takeMVar mOldCI 
     case oldCI of
-      Just (CommandInfo _ _ _ oldT) | t <= oldT -> putStrLn $ "Skipping analysis for " ++ (show sf)
+      Just (CommandInfo _ _ _ oldT) | t <= oldT -> logInfo $ "Skipping analysis for " ++ (show sf)
       Just ci                                   -> doAnalyzeSource' $ ci { ciSourceFile = sf }
-      _                                         -> putStrLn $ "Skipping analysis for " ++ (show sf)
+      _                                         -> logInfo $ "Skipping analysis for " ++ (show sf)
   where
     doAnalyzeSource' ci = analyzeCode indexer dbChan ci
 
 analyzeCode ::  Indexer -> DBChan -> CommandInfo -> IO ()
 analyzeCode indexer dbChan ci = do
-    liftIO $ putStrLn $ "Analyzing " ++ (show . ciSourceFile $ ci) ++ " [" ++ (show . ciBuildTime $ ci) ++ "]"
+    liftIO $ logInfo $ "Analyzing " ++ (show . ciSourceFile $ ci)
     runResourceT (source $= conduitPut putReq =$= indexer =$= conduitGet getResp $$ process)
     writeCountingChan dbChan (DBUpdateCommandInfo ci)
   where
@@ -80,9 +81,9 @@ analyzeCode indexer dbChan ci = do
     putReq = put
     getResp = get :: Get CR.ClangResponse
     process = do
-      liftIO $ putStrLn "WAITING"
+      liftIO $ logDebug "WAITING"
       resp <- await
       case resp of
         Just (CR.FoundDef di) -> liftIO (writeCountingChan dbChan (DBUpdateDefInfo di)) >> process
-        Just (CR.EndOfDefs)   -> liftIO (putStrLn "Done reading from clang process") >> return ()
-        Nothing               -> liftIO (putStrLn "Clang process read failed") >> return ()
+        Just (CR.EndOfDefs)   -> liftIO (logDebug "Done reading from clang process") >> return ()
+        Nothing               -> liftIO (logDebug "Clang process read failed") >> return ()

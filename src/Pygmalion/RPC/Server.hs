@@ -20,6 +20,7 @@ import Pygmalion.Analysis.Manager
 import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.Database.Manager
+import Pygmalion.Log
 import Pygmalion.RPC.Request
 
 runRPCServer :: Config -> MVar Int -> AnalysisChan -> DBChan -> IO ()
@@ -46,13 +47,13 @@ serverApp aChan dbChan ad =
 
 doSendCommandInfo :: AnalysisChan -> CommandInfo -> IO ByteString
 doSendCommandInfo aChan ci = do
-  putStrLn $ "RPCSendCommandInfo: " ++ (show ci)
+  logDebug $ "RPCSendCommandInfo: " ++ (show ci)
   writeCountingChan aChan $ Analyze ci
   return "OK"
 
 doGetCommandInfo :: DBChan -> SourceFile -> IO ByteString
 doGetCommandInfo dbChan f = do
-  putStrLn $ "RPCGetCommandInfo: " ++ (show f)
+  logDebug $ "RPCGetCommandInfo: " ++ (show f)
   sfVar <- newEmptyMVar
   writeCountingChan dbChan $! DBGetCommandInfo f sfVar
   result <- takeMVar sfVar
@@ -60,7 +61,7 @@ doGetCommandInfo dbChan f = do
 
 doGetSimilarCommandInfo :: DBChan -> SourceFile -> IO ByteString
 doGetSimilarCommandInfo dbChan f = do
-  putStrLn $ "RPCGetSimilarCommandInfo: " ++ (show f)
+  logDebug $ "RPCGetSimilarCommandInfo: " ++ (show f)
   sfVar <- newEmptyMVar
   writeCountingChan dbChan $! DBGetSimilarCommandInfo f sfVar
   result <- takeMVar sfVar
@@ -68,7 +69,7 @@ doGetSimilarCommandInfo dbChan f = do
 
 doGetDefinition :: DBChan -> USR -> IO ByteString
 doGetDefinition dbChan usr = do
-  putStrLn $ "RPCGetDefInfo: " ++ (show usr)
+  logDebug $ "RPCGetDefInfo: " ++ (show usr)
   defVar <- newEmptyMVar
   writeCountingChan dbChan $! DBGetDefinition usr defVar
   result <- takeMVar defVar

@@ -32,6 +32,7 @@ import Data.Typeable
 import Data.Bool.Predicate
 import Pygmalion.Analysis.Extension
 import Pygmalion.Core
+import Pygmalion.Log
 
 type SourceAnalysisResult = (CommandInfo, [SourceFile], [DefInfo])
 
@@ -45,7 +46,7 @@ runSourceAnalyses sas ci@(CommandInfo sf _ _ _) = do
                     defsAnalysis sas
   case result of
     Right _ -> (,) <$> readIORef (includesRef sas) <*> readIORef (defsRef sas) >>= \x -> return $! Just $! x
-    Left (ClangException e) -> putStrLn ("Clang exception: " ++ e) >> return Nothing
+    Left (ClangException e) -> logWarn ("Clang exception: " ++ e) >> return Nothing
 
 data LookupInfo = GotDef DefInfo
                 | GotDecl USR DefInfo
@@ -58,7 +59,7 @@ getLookupInfo ci sl = do
   result <- try $ withTranslationUnit ci $ inspectIdentifier sl
   case result of
     Right r                 -> return r
-    Left (ClangException e) -> putStrLn ("Clang exception: " ++ e ) >> return GotNothing
+    Left (ClangException e) -> logWarn ("Clang exception: " ++ e ) >> return GotNothing
 
 includesAnalysis :: IORef [SourceFile] -> WorkingDirectory -> TranslationUnit -> ClangApp ()
 includesAnalysis isRef wd tu = void $ getInclusions tu visitInclusions
@@ -156,7 +157,7 @@ inspectIdentifier (SourceLocation f ln col) tu = do
     loc <- Source.getLocation tu file ln col
     cursor <- Source.getCursor tu loc
     -- kind <- C.getKind cursor >>= C.getCursorKindSpelling >>= CS.unpack
-    -- liftIO $ putStrLn $ "Cursor kind is " ++ kind
+    -- liftIO $ logDebug $ "Cursor kind is " ++ kind
     defCursor <- C.getDefinition cursor
     isNullDef <- C.isNullCursor defCursor
     if isNullDef then do C.getReferenced cursor >>= reportIdentifier
@@ -164,7 +165,7 @@ inspectIdentifier (SourceLocation f ln col) tu = do
   where
     reportIdentifier cursor = do
       -- dumpSubtree cursor
-      -- liftIO $ putStrLn $ "In file: " ++ (T.unpack f) ++ ":" ++ (show ln) ++ ":" ++ (show col) ++ " got name: " ++ name ++ " usr: " ++ usr
+      -- liftIO $ logDebug $ "In file: " ++ (T.unpack f) ++ ":" ++ (show ln) ++ ":" ++ (show col) ++ " got name: " ++ name ++ " usr: " ++ usr
       isNull <- C.isNullCursor cursor
       case isNull of
         False -> do usr <- XRef.getUSR cursor >>= CS.unpackText
@@ -196,7 +197,7 @@ dumpDiagnostics tu = do
       severity <- Diag.getSeverity dia
       when (isError severity) $ do
         diaStr <- Diag.formatDiagnostic opts dia >>= CS.unpack
-        liftIO $ putStrLn $ "Diagnostic: " ++ diaStr
+        liftIO $ logInfo $ "Diagnostic: " ++ diaStr
   where
     isError = (== Diag.Diagnostic_Error) .||. (== Diag.Diagnostic_Fatal)
 
@@ -220,7 +221,7 @@ dumpSubtree cursor = do
           kind <- C.getKind c >>= C.getCursorKindSpelling >>= CS.unpack
 
           -- Display.
-          liftIO $ putStrLn $ (replicate i ' ') ++"[" ++ kind ++ "] " ++ name ++ " (" ++ usr ++ ") @ " ++
+          liftIO $ logDebug $ (replicate i ' ') ++"[" ++ kind ++ "] " ++ name ++ " (" ++ usr ++ ") @ " ++
                               (show startLn) ++ "," ++ (show startCol) ++ " -> " ++
                               (show endLn) ++ "," ++ (show endCol)
 

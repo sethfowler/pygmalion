@@ -14,10 +14,12 @@ import System.IO
 import Pygmalion.Analysis.ClangRequest
 import Pygmalion.Analysis.Source
 import Pygmalion.Core
+import Pygmalion.Log
 
 main :: IO ()
 main = do
-    logMsg "Starting clang analysis process"
+    initLogger EMERGENCY
+    logDebug "Starting clang analysis process"
     wd <- T.pack <$> getCurrentDirectory
     sas <- mkSourceAnalysisState wd
     runResourceT (sourceHandle stdin $= conduitGet getReq =$= process sas =$= conduitPut putResp $$ sinkHandle stdout)
@@ -34,16 +36,13 @@ main = do
                                   mapM_ (yield . FoundDef) (fromJust results)
                                 yield EndOfDefs
                                 process sas
-        Just Shutdown     -> liftIO (logMsg "Shutting down clang analysis process") >> return ()
-        Nothing           -> liftIO (logMsg "Clang analysis process encountered an error") >> return ()
+        Just Shutdown     -> liftIO (logDebug "Shutting down clang analysis process") >> return ()
+        Nothing           -> liftIO (logError "Clang analysis process encountered an error") >> return ()
 
 doAnalyze :: SourceAnalysisState -> CommandInfo -> IO (Maybe [DefInfo])
 doAnalyze sas ci = do
-  liftIO $ logMsg $ "Analyzing " ++ (show . ciSourceFile $ ci) ++ " [" ++ (show . ciBuildTime $ ci) ++ "]"
+  liftIO $ logDebug $ "Analyzing " ++ (show . ciSourceFile $ ci)
   result <- liftIO $ runSourceAnalyses sas ci
   case result of
     Just (_, ds) -> return $! (Just ds)
     Nothing      -> return $! Nothing
-
-logMsg :: String -> IO ()
-logMsg = hPutStrLn stderr
