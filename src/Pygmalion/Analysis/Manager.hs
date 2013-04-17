@@ -64,9 +64,9 @@ doAnalyzeSource indexer sf t dbChan = do
     writeCountingChan dbChan (DBGetSimilarCommandInfo sf mOldCI)
     oldCI <- takeMVar mOldCI 
     case oldCI of
-      Just (CommandInfo _ _ _ oldT) | t <= oldT -> logInfo $ "Skipping analysis for " ++ (show sf)
-      Just ci                                   -> doAnalyzeSource' $ ci { ciSourceFile = sf }
-      _                                         -> logInfo $ "Skipping analysis for " ++ (show sf)
+      Just ci | t <= (ciBuildTime ci) -> logInfo $ "Skipping analysis for " ++ (show sf)
+              | otherwise             -> doAnalyzeSource' ci
+      _                               -> logInfo $ "Skipping analysis for " ++ (show sf)
   where
     doAnalyzeSource' ci = analyzeCode indexer dbChan ci
 
