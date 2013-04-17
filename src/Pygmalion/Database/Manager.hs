@@ -35,6 +35,7 @@ runDatabaseManager chan = withDB go
 
 doUpdate :: DBHandle -> SourceAnalysisResult -> IO ()
 doUpdate h (ci, includes, defs) = liftIO $ withTransaction h $ do
+  liftIO $ putStrLn $ "Updating database for " ++ (show . ciSourceFile $ ci) ++ "[" ++ (show . ciBuildTime $ ci) ++ "]"
   updateSourceFile h ci
   -- Update entries for all non-system includes, using the same metadata.
   -- forM_ includes $ \i -> do
@@ -46,10 +47,12 @@ doUpdate h (ci, includes, defs) = liftIO $ withTransaction h $ do
 
 doGetCommandInfo :: DBHandle -> SourceFile -> MVar (Maybe CommandInfo) -> IO ()
 doGetCommandInfo h f v = do
+  liftIO $ putStrLn $ "Getting CommandInfo for " ++ (show sf)
   ci <- liftM2 (<|>) (getCommandInfo h f) (getSimilarCommandInfo h f)
   putMVar v $! ci
 
 doGetDefinition :: DBHandle -> USR -> MVar (Maybe DefInfo) -> IO ()
 doGetDefinition h usr v = do
+  liftIO $ putStrLn $ "Getting DefInfo for " ++ (show usr)
   def <- getDef h usr
   putMVar v $! def

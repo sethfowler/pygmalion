@@ -28,18 +28,19 @@ runAnalysisManager chan dbChan = do
   where go :: SourceAnalysisState -> IO ()
         go sas = {-# SCC "analysisThread" #-}
                do req <- readChan chan
+                  modifyMVar_
                   case req of
                       Analyze cmd -> scanCommandAndSendToDB sas cmd dbChan >> go sas
                       ShutdownAnalysis -> putStrLn "Shutting down analysis thread"
 
 scanCommandAndSendToDB :: SourceAnalysisState -> CommandInfo -> DBChan -> IO ()
-scanCommandAndSendToDB sas cmdInfo dbChan = do
-  result <- analyzeCode sas cmdInfo
+scanCommandAndSendToDB sas ci dbChan = do
+  result <- analyzeCode sas ci
   when (isJust result) $ writeChan dbChan (DBUpdate . fromJust $ result)
 
 analyzeCode :: SourceAnalysisState -> CommandInfo -> IO (Maybe SourceAnalysisResult)
 analyzeCode sas ci = do
-  liftIO $ putStrLn $ "Analyzing " ++ (show . ciSourceFile $ ci)
+  liftIO $ putStrLn $ "Analyzing " ++ (show . ciSourceFile $ ci) ++ "[" ++ (show . ciBuildTime $ ci) ++ "]"
   result <- liftIO $ runSourceAnalyses sas ci
   case result of
     Just (is, ds) -> return . Just $! ci `seq` is `seq` ds `seq` (ci, is, ds)
