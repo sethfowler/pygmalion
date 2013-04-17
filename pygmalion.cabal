@@ -37,6 +37,7 @@ library
                    LibClang >= 0.2,
                    MissingH
   exposed-modules: Control.Concurrent.Chan.Counting,
+                   Pygmalion.Analysis.ClangRequest,
                    Pygmalion.Analysis.Command,
                    Pygmalion.Analysis.Extension,
                    Pygmalion.Analysis.Manager,
@@ -97,6 +98,19 @@ executable pygd
                ,  time
                ,  void
                ,  MissingH
+  hs-source-dirs: tools
+
+executable pygclangindex
+  ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N
+  main-is:        Pygclangindex.hs 
+  build-depends:  base >= 4
+               ,  cereal
+               ,  cereal-conduit
+               ,  conduit
+               ,  directory
+               ,  mtl
+               ,  pygmalion
+               ,  text
   hs-source-dirs: tools
 
 test-suite pygmalion-quickcheck

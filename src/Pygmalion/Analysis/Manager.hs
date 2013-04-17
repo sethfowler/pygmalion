@@ -13,6 +13,7 @@ import qualified Data.Text as T
 import System.Directory
 
 import Control.Concurrent.Chan.Counting
+import qualified Pygmalion.Analysis.ClangRequest as CR
 import Pygmalion.Analysis.Source
 import Pygmalion.Core
 import Pygmalion.Database.Manager
@@ -24,21 +25,22 @@ type AnalysisChan = CountingChan AnalysisRequest
 
 runAnalysisManager :: AnalysisChan -> DBChan -> IO ()
 runAnalysisManager chan dbChan = do
-    wd <- T.pack <$> getCurrentDirectory
-    sas <- mkSourceAnalysisState wd
-    go sas
-  where go :: SourceAnalysisState -> IO ()
-        go sas = {-# SCC "analysisThread" #-}
-               do req <- readCountingChan chan
-                  newCount <- getChanCount chan
-                  putStrLn $ "Analysis channel now has " ++ (show newCount) ++ " items waiting"
-                  case req of
-                      Analyze cmd        -> doAnalyze sas cmd dbChan >> go sas
-                      AnalyzeSource sf t -> doAnalyzeSource sas sf t dbChan >> go sas
-                      ShutdownAnalysis   -> putStrLn "Shutting down analysis thread"
+    indexer <- conduitProcess (proc { cmdspec = "pygclangindex" })
+    go indexer
+  where
+    go indexer = do {-# SCC "analysisThread" #-}
+      req <- readCountingChan chan
+      newCount <- getChanCount chan
+      putStrLn $ "Analysis channel now has " ++ (show newCount) ++ " items waiting"
+      case req of
+          Analyze cmd        -> doAnalyze indexer cmd dbChan >> go indexer
+          AnalyzeSource sf t -> doAnalyzeSource indexer sf t dbChan >> go indexer
+          ShutdownAnalysis   -> putStrLn "Shutting down analysis thread"
 
-doAnalyze :: SourceAnalysisState -> CommandInfo -> DBChan -> IO ()
-doAnalyze sas ci dbChan = do
+type Indexer = Conduit ByteString IO ByteString
+
+doAnalyze :: Indexer -> CommandInfo -> DBChan -> IO ()
+doAnalyze indexer ci dbChan = do
     -- FIXME: Add an abstraction over this pattern.
     mOldCI <- newEmptyMVar
     writeCountingChan dbChan (DBGetCommandInfo (ciSourceFile ci) mOldCI)
@@ -47,12 +49,10 @@ doAnalyze sas ci dbChan = do
       Just (CommandInfo _ _ _ oldT) | (ciBuildTime ci) <= oldT -> putStrLn $ "Skipping analysis for " ++ (show . ciSourceFile $ ci)
       _                                                        -> doAnalyze'
   where
-    doAnalyze' = do
-      result <- analyzeCode sas ci
-      when (isJust result) $ writeCountingChan dbChan (DBUpdate . fromJust $ result)
+    doAnalyze' = analyzeCode indexer dbChan ci
 
-doAnalyzeSource :: SourceAnalysisState -> SourceFile -> Time -> DBChan -> IO ()
-doAnalyzeSource sas sf t dbChan = do
+doAnalyzeSource :: Indexer -> SourceFile -> Time -> DBChan -> IO ()
+doAnalyzeSource indexer sf t dbChan = do
     -- FIXME: Add an abstraction over this pattern.
     mOldCI <- newEmptyMVar
     writeCountingChan dbChan (DBGetSimilarCommandInfo sf mOldCI)
@@ -62,14 +62,18 @@ doAnalyzeSource sas sf t dbChan = do
       Just ci                                   -> doAnalyzeSource' $ ci { ciSourceFile = sf }
       _                                         -> putStrLn $ "Skipping analysis for " ++ (show sf)
   where
-    doAnalyzeSource' ci = do
-      result <- analyzeCode sas ci
-      when (isJust result) $ writeCountingChan dbChan (DBUpdate . fromJust $ result)
+    doAnalyzeSource' ci = analyzeCode indexer dbChan ci
 
-analyzeCode :: SourceAnalysisState -> CommandInfo -> IO (Maybe SourceAnalysisResult)
-analyzeCode sas ci = do
-  liftIO $ putStrLn $ "Analyzing " ++ (show . ciSourceFile $ ci) ++ " [" ++ (show . ciBuildTime $ ci) ++ "]"
-  result <- liftIO $ runSourceAnalyses sas ci
-  case result of
-    Just (is, ds) -> return . Just $! ci `seq` is `seq` ds `seq` (ci, is, ds)
-    Nothing       -> return $! Nothing
+analyzeCode ::  Indexer -> DBChan -> CommandInfo -> IO ()
+analyzeCode indexer dbChan ci = do
+    liftIO $ putStrLn $ "Analyzing " ++ (show . ciSourceFile $ ci) ++ " [" ++ (show . ciBuildTime $ ci) ++ "]"
+    (yield $ CR.Analyze ci) $= conduitPut putReq =$= indexer =$= conduitGet getResp =$ process
+  where
+    putReq = put :: Put CR.ClangRequest
+    getResp = get :: Get CR.ClangResponse
+    process = do
+      resp <- await
+      case resp of
+        Just (CR.FoundDef di) -> liftIO (writeCountingChan dbChan (DBUpdate di)) >> process
+        Just (CR.EndOfDefs)   -> putStrLn "Done reading from clang process" >> return ()
+        Nothing               -> putStrLn "Clang process read failed" >> return ()
