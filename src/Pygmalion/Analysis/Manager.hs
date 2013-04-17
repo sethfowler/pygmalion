@@ -5,10 +5,15 @@ module Pygmalion.Analysis.Manager
 ) where
 
 import Control.Applicative
-import Control.Concurrent
+import Control.Concurrent.MVar
 import Control.Monad
 import Control.Monad.Trans
+import Data.ByteString.Char8 (ByteString)
+import Data.Conduit
+import Data.Conduit.Cereal
+import Data.Conduit.Process
 import Data.Maybe
+import Data.Serialize
 import qualified Data.Text as T
 import System.Directory
 
@@ -25,19 +30,19 @@ type AnalysisChan = CountingChan AnalysisRequest
 
 runAnalysisManager :: AnalysisChan -> DBChan -> IO ()
 runAnalysisManager chan dbChan = do
-    indexer <- conduitProcess (proc { cmdspec = "pygclangindex" })
+    let indexer = conduitProcess (proc "pygclangindex" []) :: Indexer
     go indexer
   where
-    go indexer = do {-# SCC "analysisThread" #-}
-      req <- readCountingChan chan
-      newCount <- getChanCount chan
-      putStrLn $ "Analysis channel now has " ++ (show newCount) ++ " items waiting"
-      case req of
-          Analyze cmd        -> doAnalyze indexer cmd dbChan >> go indexer
-          AnalyzeSource sf t -> doAnalyzeSource indexer sf t dbChan >> go indexer
-          ShutdownAnalysis   -> putStrLn "Shutting down analysis thread"
+    go indexer = {-# SCC "analysisThread" #-} do
+                  req <- readCountingChan chan
+                  newCount <- getChanCount chan
+                  putStrLn $ "Analysis channel now has " ++ (show newCount) ++ " items waiting"
+                  case req of
+                      Analyze cmd        -> doAnalyze indexer cmd dbChan >> go indexer
+                      AnalyzeSource sf t -> doAnalyzeSource indexer sf t dbChan >> go indexer
+                      ShutdownAnalysis   -> putStrLn "Shutting down analysis thread"
 
-type Indexer = Conduit ByteString IO ByteString
+type Indexer = Conduit ByteString (ResourceT IO) ByteString
 
 doAnalyze :: Indexer -> CommandInfo -> DBChan -> IO ()
 doAnalyze indexer ci dbChan = do
@@ -67,13 +72,13 @@ doAnalyzeSource indexer sf t dbChan = do
 analyzeCode ::  Indexer -> DBChan -> CommandInfo -> IO ()
 analyzeCode indexer dbChan ci = do
     liftIO $ putStrLn $ "Analyzing " ++ (show . ciSourceFile $ ci) ++ " [" ++ (show . ciBuildTime $ ci) ++ "]"
-    (yield $ CR.Analyze ci) $= conduitPut putReq =$= indexer =$= conduitGet getResp =$ process
+    runResourceT (sourcePut putReq =$= indexer =$= conduitGet getResp $$ process)
   where
-    putReq = put :: Put CR.ClangRequest
+    putReq = put $ CR.Analyze ci
     getResp = get :: Get CR.ClangResponse
     process = do
       resp <- await
       case resp of
-        Just (CR.FoundDef di) -> liftIO (writeCountingChan dbChan (DBUpdate di)) >> process
-        Just (CR.EndOfDefs)   -> putStrLn "Done reading from clang process" >> return ()
-        Nothing               -> putStrLn "Clang process read failed" >> return ()
+        Just (CR.FoundDef di) -> liftIO (writeCountingChan dbChan (DBUpdate (ci, [], [di]))) >> process
+        Just (CR.EndOfDefs)   -> liftIO (putStrLn "Done reading from clang process") >> return ()
+        Nothing               -> liftIO (putStrLn "Clang process read failed") >> return ()

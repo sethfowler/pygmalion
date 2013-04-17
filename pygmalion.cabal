@@ -29,6 +29,7 @@ library
                    mtl,
                    network,
                    network-conduit,
+                   process-conduit,
                    sqlite-simple,
                    text,
                    time,

@@ -21,7 +21,7 @@ main = do
     sourceHandle stdin $= conduitGet getReq =$= process sas =$= conduitPut putResp $$ sinkHandle stdout
   where
     getReq = get :: Get ClangRequest
-    putResp = put :: Put ClangResponse
+    putResp p = put p
     process sas = do
       req <- await
       case req of
