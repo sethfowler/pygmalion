@@ -38,10 +38,11 @@ serverApp aChan dbChan ad =
     process = do
       result <- await
       case result of
-        Just (RPCSendCommandInfo ci) -> liftIO (doSendCommandInfo aChan ci) >>= yield
-        Just (RPCGetCommandInfo sf)  -> liftIO (doGetCommandInfo dbChan sf) >>= yield
-        Just (RPCGetDefinition usr)  -> liftIO (doGetDefinition dbChan usr) >>= yield
-        _                            -> yield "ERROR"
+        Just (RPCSendCommandInfo ci)       -> liftIO (doSendCommandInfo aChan ci) >>= yield
+        Just (RPCGetCommandInfo sf)        -> liftIO (doGetCommandInfo dbChan sf) >>= yield
+        Just (RPCGetSimilarCommandInfo sf) -> liftIO (doGetSimilarCommandInfo dbChan sf) >>= yield
+        Just (RPCGetDefinition usr)        -> liftIO (doGetDefinition dbChan usr) >>= yield
+        _                                  -> yield "ERROR"
 
 doSendCommandInfo :: AnalysisChan -> CommandInfo -> IO ByteString
 doSendCommandInfo aChan ci = do
@@ -54,6 +55,14 @@ doGetCommandInfo dbChan f = do
   putStrLn $ "RPCGetCommandInfo: " ++ (show f)
   sfVar <- newEmptyMVar
   writeCountingChan dbChan $! DBGetCommandInfo f sfVar
+  result <- takeMVar sfVar
+  return $! encode result
+
+doGetSimilarCommandInfo :: DBChan -> SourceFile -> IO ByteString
+doGetSimilarCommandInfo dbChan f = do
+  putStrLn $ "RPCGetSimilarCommandInfo: " ++ (show f)
+  sfVar <- newEmptyMVar
+  writeCountingChan dbChan $! DBGetSimilarCommandInfo f sfVar
   result <- takeMVar sfVar
   return $! encode result
 

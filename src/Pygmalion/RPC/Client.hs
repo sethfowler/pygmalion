@@ -2,7 +2,7 @@
 
 module Pygmalion.RPC.Client
 ( sendScanMessage
-, lookupCommandInfo
+, lookupSimilarCommandInfo
 , lookupDefInfo
 ) where
 
@@ -36,21 +36,21 @@ scanApp ci ad = ensureCompleted =<< timeout hundredSeconds app
         _            -> error "Unexpected result from server"
 
 -- FIXME: This can be made much more efficient and cleaned up.
-lookupCommandInfo :: Port -> SourceFile -> IO (Maybe CommandInfo)
-lookupCommandInfo port sf = do
+lookupSimilarCommandInfo :: Port -> SourceFile -> IO (Maybe CommandInfo)
+lookupSimilarCommandInfo port sf = do
     result <- newEmptyMVar
-    runTCPClient settings (lookupCIApp sf result)
+    runTCPClient settings (lookupSimilarCIApp sf result)
     takeMVar result
   where settings = clientSettings port "127.0.0.1"
 
-lookupCIApp :: SourceFile -> MVar (Maybe CommandInfo) -> Application IO
-lookupCIApp sf v ad = ensureCompleted =<< timeout hundredSeconds app
+lookupSimilarCIApp :: SourceFile -> MVar (Maybe CommandInfo) -> Application IO
+lookupSimilarCIApp sf v ad = ensureCompleted =<< timeout hundredSeconds app
   where 
     hundredSeconds = 100000000
     app = (appSource ad) $= conduitGet getCI =$= process $$ (appSink ad)
     getCI = get :: Get (Maybe CommandInfo)
     process = do
-      yield (encode $ RPCGetCommandInfo sf)
+      yield (encode $ RPCGetSimilarCommandInfo sf)
       result <- await
       case result of
         Just mayCI -> liftIO $ putMVar v $! mayCI

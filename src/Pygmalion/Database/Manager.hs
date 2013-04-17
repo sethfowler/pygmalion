@@ -9,6 +9,7 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Monad
 import Control.Monad.Trans
+import Data.Time.Clock.POSIX
 
 import Control.Concurrent.Chan.Counting
 import Pygmalion.Analysis.Source
@@ -17,6 +18,7 @@ import Pygmalion.Database.IO
 
 data DBRequest = DBUpdate SourceAnalysisResult
                | DBGetCommandInfo SourceFile (MVar (Maybe CommandInfo))
+               | DBGetSimilarCommandInfo SourceFile (MVar (Maybe CommandInfo))
                | DBGetDefinition USR (MVar (Maybe DefInfo))
                | DBShutdown
 type DBChan = CountingChan DBRequest
@@ -31,13 +33,16 @@ runDatabaseManager chan = withDB go
                   newCount <- getChanCount chan
                   putStrLn $ "Database channel now has " ++ (show newCount) ++ " items waiting"
                   case req of
-                    DBUpdate sar         -> doUpdate h sar >> go h
-                    DBGetCommandInfo f v -> doGetCommandInfo h f v >> go h
-                    DBGetDefinition u v  -> doGetDefinition h u v >> go h
-                    DBShutdown           -> putStrLn "Shutting down DB thread"
+                    DBUpdate sar                -> doUpdate h sar >> go h
+                    DBGetCommandInfo f v        -> doGetCommandInfo h f v >> go h
+                    DBGetSimilarCommandInfo f v -> doGetSimilarCommandInfo h f v >> go h
+                    DBGetDefinition u v         -> doGetDefinition h u v >> go h
+                    DBShutdown                  -> putStrLn "Shutting down DB thread"
 
 doUpdate :: DBHandle -> SourceAnalysisResult -> IO ()
-doUpdate h (ci, includes, defs) = liftIO $ withTransaction h $ do
+doUpdate h (cmd, includes, defs) = liftIO $ withTransaction h $ do
+  time <- getPOSIXTime
+  let ci = cmd { ciBuildTime = floor time }
   liftIO $ putStrLn $ "Updating database for " ++ (show . ciSourceFile $ ci) ++ " [" ++ (show . ciBuildTime $ ci) ++ "]"
   updateSourceFile h ci
   -- Update entries for all non-system includes, using the same metadata.
@@ -51,6 +56,12 @@ doUpdate h (ci, includes, defs) = liftIO $ withTransaction h $ do
 doGetCommandInfo :: DBHandle -> SourceFile -> MVar (Maybe CommandInfo) -> IO ()
 doGetCommandInfo h f v = do
   liftIO $ putStrLn $ "Getting CommandInfo for " ++ (show f)
+  ci <- getCommandInfo h f
+  putMVar v $! ci
+
+doGetSimilarCommandInfo :: DBHandle -> SourceFile -> MVar (Maybe CommandInfo) -> IO ()
+doGetSimilarCommandInfo h f v = do
+  liftIO $ putStrLn $ "Getting similar CommandInfo for " ++ (show f)
   ci <- liftM2 (<|>) (getCommandInfo h f) (getSimilarCommandInfo h f)
   putMVar v $! ci
 

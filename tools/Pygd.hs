@@ -5,9 +5,9 @@ import Control.Concurrent.Async
 import Control.Exception (Exception, throw)
 import Control.Monad
 import Control.Monad.Reader
-import Data.Maybe
 import Data.List
 import Data.Time.Clock
+import Data.Time.Clock.POSIX
 import qualified Filesystem.Path.CurrentOS as FP
 import GHC.Conc
 import System.Directory
@@ -74,10 +74,9 @@ handleSource f t = do
 
 triggerAnalysis :: SourceFile -> EventReader ()
 triggerAnalysis f = do
-  (aChan, dbChan, sfVar) <- ask
-  liftIO $ writeCountingChan dbChan $! DBGetCommandInfo f sfVar
-  result <- liftIO $ takeMVar sfVar
-  when (isJust result) $ liftIO $ writeCountingChan aChan (Analyze . fromJust $ result)
+  (aChan, dbChan, _) <- ask
+  time <- liftIO $ getPOSIXTime
+  liftIO $ writeCountingChan aChan (AnalyzeSource f (floor time))
 
 isSource :: FilePath -> Bool
 isSource f = (hasSourceExtension f || hasHeaderExtension f) &&

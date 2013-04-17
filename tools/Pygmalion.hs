@@ -59,7 +59,7 @@ printDir f = getConfiguration >>= getCommandInfoOr bail f >>= putDir
 
 getCommandInfoOr :: IO () -> SourceFile -> Config -> IO CommandInfo
 getCommandInfoOr a f cf = do
-  cmd <- lookupCommandInfo (ifPort cf) f
+  cmd <- lookupSimilarCommandInfo (ifPort cf) f
   unless (isJust cmd) a
   return . fromJust $ cmd
 

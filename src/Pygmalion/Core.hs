@@ -4,6 +4,7 @@ module Pygmalion.Core
 ( CommandInfo (..)
 , SourceFile
 , WorkingDirectory
+, Time
 , Command (..)
 , DefInfo (..)
 , SourceLocation (..)

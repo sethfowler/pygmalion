@@ -11,6 +11,7 @@ import Pygmalion.Core
 
 data RPCRequest = RPCSendCommandInfo CommandInfo
                 | RPCGetCommandInfo SourceFile
+                | RPCGetSimilarCommandInfo SourceFile
                 | RPCGetDefinition USR
                 deriving (Eq, Show, Generic)
 
