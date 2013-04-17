@@ -105,6 +105,7 @@ executable pygclangindex
   ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N
   main-is:        Pygclangindex.hs 
   build-depends:  base >= 4
+               ,  bytestring
                ,  cereal
                ,  cereal-conduit
                ,  conduit

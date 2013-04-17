@@ -81,8 +81,12 @@ type WorkingDirectory = T.Text
 type Time = Int64
 
 -- The information we collect about definitions in source code.
-data DefInfo = DefInfo !Identifier !USR !SourceLocation !DefKind
-  deriving (Eq, Show, Generic)
+data DefInfo = DefInfo
+    { diIdentifier :: !Identifier
+    , diUSR :: !USR
+    , diSourceLocation :: !SourceLocation
+    , diDefKind :: !DefKind
+    } deriving (Eq, Show, Generic)
 
 instance Serialize DefInfo
 

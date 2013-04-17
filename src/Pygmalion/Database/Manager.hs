@@ -16,7 +16,8 @@ import Pygmalion.Analysis.Source
 import Pygmalion.Core
 import Pygmalion.Database.IO
 
-data DBRequest = DBUpdate SourceAnalysisResult
+data DBRequest = DBUpdateCommandInfo CommandInfo
+               | DBUpdateDefInfo DefInfo
                | DBGetCommandInfo SourceFile (MVar (Maybe CommandInfo))
                | DBGetSimilarCommandInfo SourceFile (MVar (Maybe CommandInfo))
                | DBGetDefinition USR (MVar (Maybe DefInfo))
@@ -33,25 +34,24 @@ runDatabaseManager chan = withDB go
                   newCount <- getChanCount chan
                   putStrLn $ "Database channel now has " ++ (show newCount) ++ " items waiting"
                   case req of
-                    DBUpdate sar                -> doUpdate h sar >> go h
+                    DBUpdateCommandInfo ci      -> doUpdateCommandInfo h ci >> go h
+                    DBUpdateDefInfo di          -> doUpdateDefInfo h di >> go h
                     DBGetCommandInfo f v        -> doGetCommandInfo h f v >> go h
                     DBGetSimilarCommandInfo f v -> doGetSimilarCommandInfo h f v >> go h
                     DBGetDefinition u v         -> doGetDefinition h u v >> go h
                     DBShutdown                  -> putStrLn "Shutting down DB thread"
 
-doUpdate :: DBHandle -> SourceAnalysisResult -> IO ()
-doUpdate h (cmd, includes, defs) = liftIO $ withTransaction h $ do
+doUpdateCommandInfo :: DBHandle -> CommandInfo -> IO ()
+doUpdateCommandInfo h cmd = liftIO $ withTransaction h $ do
   time <- getPOSIXTime
   let ci = cmd { ciBuildTime = floor time }
-  liftIO $ putStrLn $ "Updating database for " ++ (show . ciSourceFile $ ci) ++ " [" ++ (show . ciBuildTime $ ci) ++ "]"
+  liftIO $ putStrLn $ "Updating database with command: " ++ (show . ciSourceFile $ ci)
   updateSourceFile h ci
-  -- Update entries for all non-system includes, using the same metadata.
-  -- forM_ includes $ \i -> do
-    -- updateSourceFile h $ withSourceFile ci i
-  -- Update entries for all definitions.
-  forM_ defs $ \d -> do
-    updateDef h d
-  --liftIO $ putStrLn $ "Updated DB entries related to " ++ (show ci)
+
+doUpdateDefInfo :: DBHandle -> DefInfo -> IO ()
+doUpdateDefInfo h di = liftIO $ withTransaction h $ do
+  liftIO $ putStrLn $ "Updating database with def: " ++ (show . diUSR $ di)
+  updateDef h di
 
 doGetCommandInfo :: DBHandle -> SourceFile -> MVar (Maybe CommandInfo) -> IO ()
 doGetCommandInfo h f v = do

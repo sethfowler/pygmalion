@@ -72,13 +72,17 @@ doAnalyzeSource indexer sf t dbChan = do
 analyzeCode ::  Indexer -> DBChan -> CommandInfo -> IO ()
 analyzeCode indexer dbChan ci = do
     liftIO $ putStrLn $ "Analyzing " ++ (show . ciSourceFile $ ci) ++ " [" ++ (show . ciBuildTime $ ci) ++ "]"
-    runResourceT (sourcePut putReq =$= indexer =$= conduitGet getResp $$ process)
+    runResourceT (source $= conduitPut putReq =$= indexer =$= conduitGet getResp $$ process)
+    writeCountingChan dbChan (DBUpdateCommandInfo ci)
   where
-    putReq = put $ CR.Analyze ci
+    source = yield (CR.Analyze ci) >> yield (CR.Shutdown)
+    putReq :: Putter CR.ClangRequest
+    putReq = put
     getResp = get :: Get CR.ClangResponse
     process = do
+      liftIO $ putStrLn "WAITING"
       resp <- await
       case resp of
-        Just (CR.FoundDef di) -> liftIO (writeCountingChan dbChan (DBUpdate (ci, [], [di]))) >> process
+        Just (CR.FoundDef di) -> liftIO (writeCountingChan dbChan (DBUpdateDefInfo di)) >> process
         Just (CR.EndOfDefs)   -> liftIO (putStrLn "Done reading from clang process") >> return ()
         Nothing               -> liftIO (putStrLn "Clang process read failed") >> return ()
