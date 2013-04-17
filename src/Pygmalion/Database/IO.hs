@@ -109,7 +109,9 @@ voidNextRow :: Statement -> IO (Maybe (Only Int64))
 voidNextRow = nextRow
 
 execStatement :: ToRow a => DBHandle -> (DBHandle -> Statement) -> a -> IO ()
-execStatement h q params  = void $ withBind stmt params $ (voidNextRow stmt)
+execStatement h q params  = do 
+    void $ withBind stmt params $ (voidNextRow stmt)
+    reset stmt
   where stmt = q h
 
 mkQuery :: String -> Query
