@@ -36,7 +36,10 @@ data DBHandle = DBHandle {
                   beginTransactionStmt :: Statement,
                   endTransactionStmt :: Statement,
                   updateSourceFileStmt :: Statement,
+                  getCommandInfoStmt :: Statement,
+                  getSimilarCommandInfoStmt :: Statement,
                   updateDefStmt :: Statement,
+                  getDefStmt :: Statement,
                   insertFileStmt :: Statement,
                   insertPathStmt :: Statement,
                   insertCommandStmt :: Statement,
@@ -63,7 +66,10 @@ openDB db = labeledCatch "openDB" $ do
   h <- DBHandle c <$> openStatement c (mkQueryT beginTransactionSQL)
                   <*> openStatement c (mkQueryT endTransactionSQL)
                   <*> openStatement c (mkQueryT updateSourceFileSQL)
+                  <*> openStatement c (mkQueryT getCommandInfoSQL)
+                  <*> openStatement c (mkQueryT getSimilarCommandInfoSQL)
                   <*> openStatement c (mkQueryT updateDefSQL)
+                  <*> openStatement c (mkQueryT getDefSQL)
                   <*> openStatement c (mkQueryT insertFileSQL)
                   <*> openStatement c (mkQueryT insertPathSQL)
                   <*> openStatement c (mkQueryT insertCommandSQL)
@@ -76,7 +82,10 @@ closeDB h = do
   closeStatement (beginTransactionStmt h)
   closeStatement (endTransactionStmt h)
   closeStatement (updateSourceFileStmt h)
+  closeStatement (getCommandInfoStmt h)
+  closeStatement (getSimilarCommandInfoStmt h)
   closeStatement (updateDefStmt h)
+  closeStatement (getDefStmt h)
   closeStatement (insertFileStmt h)
   closeStatement (insertPathStmt h)
   closeStatement (insertCommandStmt h)
@@ -110,9 +119,16 @@ voidNextRow :: Statement -> IO (Maybe (Only Int64))
 voidNextRow = nextRow
 
 execStatement :: ToRow a => DBHandle -> (DBHandle -> Statement) -> a -> IO ()
-execStatement h q params  = do 
+execStatement h q params = do 
     void $ withBind stmt params $ (voidNextRow stmt)
     reset stmt
+  where stmt = q h
+
+execSingleRowQuery :: (ToRow a, FromRow r) => DBHandle -> (DBHandle -> Statement) -> a -> IO (Maybe r)
+execSingleRowQuery h q params = do
+    res <- withBind stmt params $ (nextRow stmt)
+    reset stmt
+    return res
   where stmt = q h
 
 mkQuery :: String -> Query
@@ -230,35 +246,35 @@ getAllSourceFiles h = query_ (conn h) sql
               \ join BuildArgs as A on SourceFiles.BuildArgs = A.Hash"
 
 getCommandInfo :: DBHandle -> SourceFile -> IO (Maybe CommandInfo)
-getCommandInfo h sf = do
-    row <- query (conn h) sql (Only $ hash sf)
-    return $ case row of
-              (ci : _) -> Just ci
-              _        -> Nothing
-  where sql = "select F.Name, W.Path, C.Command, A.Args, LastBuilt           \
-              \ from SourceFiles                                             \
-              \ join Files as F on SourceFiles.File = F.Hash                 \
-              \ join Paths as W on SourceFiles.WorkingDirectory = W.Hash     \
-              \ join BuildCommands as C on SourceFiles.BuildCommand = C.Hash \
-              \ join BuildArgs as A on SourceFiles.BuildArgs = A.Hash        \
-              \ where F.Hash = ? limit 1"
+getCommandInfo h sf = execSingleRowQuery h getCommandInfoStmt (Only $ hash sf)
+
+getCommandInfoSQL :: T.Text
+getCommandInfoSQL = "select F.Name, W.Path, C.Command, A.Args, LastBuilt           \
+                    \ from SourceFiles                                             \
+                    \ join Files as F on SourceFiles.File = F.Hash                 \
+                    \ join Paths as W on SourceFiles.WorkingDirectory = W.Hash     \
+                    \ join BuildCommands as C on SourceFiles.BuildCommand = C.Hash \
+                    \ join BuildArgs as A on SourceFiles.BuildArgs = A.Hash        \
+                    \ where F.Hash = ? limit 1"
 
 -- Eventually this should be more statistical, but right now it will just
 -- return an arbitrary file from the same directory.
 getSimilarCommandInfo :: DBHandle -> SourceFile -> IO (Maybe CommandInfo)
 getSimilarCommandInfo h sf = do
     let path = (++ "%") . normalise . takeDirectory . unSourceFile $ sf
-    row <- query (conn h) sql (Only path)
-    return $ case row of
-              (ci : _) -> Just $ ci { ciSourceFile = sf }
-              _        -> Nothing
-  where sql = "select F.Name, W.Path, C.Command, A.Args, LastBuilt           \
-              \ from SourceFiles                                             \
-              \ join Files as F on SourceFiles.File = F.Hash                 \
-              \ join Paths as W on SourceFiles.WorkingDirectory = W.Hash     \
-              \ join BuildCommands as C on SourceFiles.BuildCommand = C.Hash \
-              \ join BuildArgs as A on SourceFiles.BuildArgs = A.Hash        \
-              \ where F.Name like ? limit 1"
+    res <- execSingleRowQuery h getSimilarCommandInfoStmt (Only path)
+    return $ case res of
+              Just ci -> Just $ ci { ciSourceFile = sf }
+              _       -> Nothing
+
+getSimilarCommandInfoSQL :: T.Text
+getSimilarCommandInfoSQL = "select F.Name, W.Path, C.Command, A.Args, LastBuilt           \
+                           \ from SourceFiles                                             \
+                           \ join Files as F on SourceFiles.File = F.Hash                 \
+                           \ join Paths as W on SourceFiles.WorkingDirectory = W.Hash     \
+                           \ join BuildCommands as C on SourceFiles.BuildCommand = C.Hash \
+                           \ join BuildArgs as A on SourceFiles.BuildArgs = A.Hash        \
+                           \ where F.Name like ? limit 1"
 
 -- Schema and operations for the Kinds table.
 defineKindsTable :: Connection -> IO ()
@@ -297,16 +313,14 @@ updateDefSQL = "replace into Definitions               \
                \ values (?, ?, ?, ?, ?, ?, ?)"
 
 getDef :: DBHandle -> USR -> IO (Maybe DefInfo)
-getDef h usr = do
-    row <- query (conn h) sql (Only $ hash usr)
-    return $ case row of
-              (di : _) -> Just di
-              _        -> Nothing
-  where sql = "select D.Name, D.USR, F.Name, D.Line, D.Column, K.Kind \
-              \ from Definitions as D                                 \
-              \ join Files as F on D.File = F.Hash                    \
-              \ join Kinds as K on D.Kind = K.Hash                    \
-              \ where D.USRHash = ? limit 1"
+getDef h usr = execSingleRowQuery h getDefStmt (Only $ hash usr)
+
+getDefSQL :: T.Text
+getDefSQL = "select D.Name, D.USR, F.Name, D.Line, D.Column, K.Kind \
+            \ from Definitions as D                                 \
+            \ join Files as F on D.File = F.Hash                    \
+            \ join Kinds as K on D.Kind = K.Hash                    \
+            \ where D.USRHash = ? limit 1"
   
 
 -- Checks that the database has the correct schema and sets it up if needed.
