@@ -4,9 +4,7 @@ import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception (Exception, throw)
 import Control.Monad
-import Control.Monad.Reader
 import Data.List
-import Data.Time.Clock
 import Data.Time.Clock.POSIX
 import qualified Filesystem.Path.CurrentOS as FP
 import GHC.Conc
@@ -29,7 +27,7 @@ main = do
   initLogger DEBUG -- Need to make this configurable.
   ensureDB
   cf <- getConfiguration
-  sfMVar <- newEmptyMVar
+  stopWatching <- newEmptyMVar
   port <- newEmptyMVar
   aChan <- newCountingChan
   dbChan <- newCountingChan
@@ -40,7 +38,16 @@ main = do
   threads <- forM [1..maxThreads] $ \i -> do
     logDebug $ "Launching analysis thread #" ++ (show i)
     asyncBound (runAnalysisManager aChan dbChan)
-  void $ race (runRPCServer cf port aChan dbChan) (withManager $ watch aChan dbChan sfMVar)
+  rpcThread <- async (runRPCServer cf port aChan dbChan)
+  watchThread <- async (doWatch aChan stopWatching)
+  _ <- getLine
+  cancel rpcThread
+  logDebug "Just terminated RPC thread."
+  _ <- getLine
+  putMVar stopWatching ()
+  wait watchThread
+  logDebug "Just terminated watch thread."
+  _ <- getLine
   forM_ threads $ \_ -> writeCountingChan aChan ShutdownAnalysis  -- Signifies end of data.
   forM_ (zip threads [1..numCapabilities]) $ \(thread, i) -> do
     ensureNoException =<< waitCatch thread
@@ -49,36 +56,36 @@ main = do
   ensureNoException =<< waitCatch dbThread
   logDebug $ "Termination of database thread"
 
-watch :: AnalysisChan -> DBChan -> MVar (Maybe CommandInfo) -> WatchManager -> IO ()
-watch aChan dbChan sfMVar m = do
+doWatch :: AnalysisChan -> MVar () -> IO ()
+doWatch aChan stopWatching = forever $ do
+  -- Restart every 10 minutes until a better fix is found. =(
+  race (withManager $ watch aChan stopWatching) (threadDelay $ 10 * 60 * 1000000)
+
+watch :: AnalysisChan -> MVar () -> WatchManager -> IO ()
+watch aChan stopWatching m = do
     curDir <- getCurrentDirectory
     logDebug $ "Started watching " ++ (show curDir) ++ "."
-    watchTree m (FP.decodeString curDir) (const True) doEvent
-    _ <- getLine
-    logDebug "Stopped watching."
-  where
-    doEvent e = runReaderT (handleEvent e) (aChan, dbChan, sfMVar)
+    watchTree m (FP.decodeString curDir) (checkEvent) (handleEvent aChan)
+    readMVar stopWatching
 
-type EventReader a = ReaderT (AnalysisChan, DBChan, MVar (Maybe CommandInfo)) IO a
+checkEvent :: Event -> Bool
+checkEvent (Added f _)    = isSource $! FP.encodeString $! f
+checkEvent (Modified f _) = isSource $! FP.encodeString $! f
+checkEvent (Removed f _)  = isSource $! FP.encodeString $! f
 
-handleEvent :: Event -> EventReader ()
-handleEvent (Added f t)    | isSource (FP.encodeString f) = handleSource f t
-handleEvent (Modified f t) | isSource (FP.encodeString f) = handleSource f t
-handleEvent (Removed f t)  | isSource (FP.encodeString f) = handleSource f t
-handleEvent _                                             = return ()
+handleEvent :: AnalysisChan -> Event -> IO ()
+handleEvent aChan (Added f _)    = handleSource aChan f
+handleEvent aChan (Modified f _) = handleSource aChan f
+handleEvent aChan (Removed f _)  = handleSource aChan f
 
-handleSource :: FP.FilePath -> UTCTime -> EventReader ()
-handleSource f t = do
+handleSource :: AnalysisChan -> FP.FilePath -> IO ()
+handleSource aChan f = do
   let file = FP.encodeString f
-  liftIO $ logInfo $ (show f) ++ " was touched at " ++ (show t)
-  exists <- liftIO $ doesFileExist file
-  when exists (triggerAnalysis $ mkSourceFile file)
-
-triggerAnalysis :: SourceFile -> EventReader ()
-triggerAnalysis f = do
-  (aChan, dbChan, _) <- ask
-  time <- liftIO $ getPOSIXTime
-  liftIO $ writeCountingChan aChan (AnalyzeSource f (floor time))
+  fileExists <- doesFileExist file
+  when (isSource file && fileExists) $ do
+    -- Use the current time instead of the time when the event was generated.
+    time <- getPOSIXTime
+    writeCountingChan aChan (AnalyzeSource (mkSourceFile file) (floor time))
 
 isSource :: FilePath -> Bool
 isSource f = (hasSourceExtension f || hasHeaderExtension f) &&
@@ -90,4 +97,4 @@ illegalPaths = [".git", ".hg", ".svn", "_darcs"]
 
 ensureNoException :: Exception a => Either a b -> IO b
 ensureNoException (Right v) = return v
-ensureNoException (Left e)  = logError "Analysis thread threw an exception" >> throw e
+ensureNoException (Left e)  = logError "Thread threw an exception" >> throw e
