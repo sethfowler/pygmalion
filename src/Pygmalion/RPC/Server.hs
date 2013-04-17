@@ -15,6 +15,7 @@ import Data.Serialize
 import Data.String
 import Network.Socket
 
+import Control.Concurrent.Chan.Counting
 import Pygmalion.Analysis.Manager
 import Pygmalion.Config
 import Pygmalion.Core
@@ -45,14 +46,14 @@ serverApp aChan dbChan ad =
 doSendCommandInfo :: AnalysisChan -> CommandInfo -> IO ByteString
 doSendCommandInfo aChan ci = do
   putStrLn $ "RPCSendCommandInfo: " ++ (show ci)
-  writeChan aChan $ Analyze ci
+  writeCountingChan aChan $ Analyze ci
   return "OK"
 
 doGetCommandInfo :: DBChan -> SourceFile -> IO ByteString
 doGetCommandInfo dbChan f = do
   putStrLn $ "RPCGetCommandInfo: " ++ (show f)
   sfVar <- newEmptyMVar
-  writeChan dbChan $! DBGetCommandInfo f sfVar
+  writeCountingChan dbChan $! DBGetCommandInfo f sfVar
   result <- takeMVar sfVar
   return $! encode result
 
@@ -60,6 +61,6 @@ doGetDefinition :: DBChan -> USR -> IO ByteString
 doGetDefinition dbChan usr = do
   putStrLn $ "RPCGetDefInfo: " ++ (show usr)
   defVar <- newEmptyMVar
-  writeChan dbChan $! DBGetDefinition usr defVar
+  writeCountingChan dbChan $! DBGetDefinition usr defVar
   result <- takeMVar defVar
   return $! encode result

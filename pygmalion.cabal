@@ -36,7 +36,8 @@ library
                    unordered-containers,
                    LibClang >= 0.2,
                    MissingH
-  exposed-modules: Pygmalion.Analysis.Command,
+  exposed-modules: Control.Concurrent.Chan.Counting,
+                   Pygmalion.Analysis.Command,
                    Pygmalion.Analysis.Extension,
                    Pygmalion.Analysis.Manager,
                    Pygmalion.Analysis.Source,

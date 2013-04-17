@@ -15,6 +15,7 @@ import System.FilePath.Posix
 import System.FSNotify
 import System.Path.NameManip
 
+import Control.Concurrent.Chan.Counting
 import Pygmalion.Analysis.Extension
 import Pygmalion.Analysis.Manager
 import Pygmalion.Config
@@ -28,8 +29,8 @@ main = do
   cf <- getConfiguration
   sfMVar <- newEmptyMVar
   port <- newEmptyMVar
-  aChan <- newChan
-  dbChan <- newChan
+  aChan <- newCountingChan
+  dbChan <- newCountingChan
   putStrLn $ "Launching database thread"
   dbThread <- asyncBound (runDatabaseManager dbChan)
   --let maxThreads = numCapabilities
@@ -38,11 +39,11 @@ main = do
     putStrLn $ "Launching analysis thread #" ++ (show i)
     asyncBound (runAnalysisManager aChan dbChan)
   void $ race (runRPCServer cf port aChan dbChan) (withManager $ watch aChan dbChan sfMVar)
-  forM_ threads $ \_ -> writeChan aChan ShutdownAnalysis  -- Signifies end of data.
+  forM_ threads $ \_ -> writeCountingChan aChan ShutdownAnalysis  -- Signifies end of data.
   forM_ (zip threads [1..numCapabilities]) $ \(thread, i) -> do
     ensureNoException =<< waitCatch thread
     putStrLn $ "Termination of thread #" ++ (show i)
-  writeChan dbChan DBShutdown  -- Terminate the database thread.
+  writeCountingChan dbChan DBShutdown  -- Terminate the database thread.
   ensureNoException =<< waitCatch dbThread
   putStrLn $ "Termination of database thread"
 
@@ -74,9 +75,9 @@ handleSource f t = do
 triggerAnalysis :: SourceFile -> EventReader ()
 triggerAnalysis f = do
   (aChan, dbChan, sfVar) <- ask
-  liftIO $ writeChan dbChan $! DBGetCommandInfo f sfVar
+  liftIO $ writeCountingChan dbChan $! DBGetCommandInfo f sfVar
   result <- liftIO $ takeMVar sfVar
-  when (isJust result) $ liftIO $ writeChan aChan (Analyze . fromJust $ result)
+  when (isJust result) $ liftIO $ writeCountingChan aChan (Analyze . fromJust $ result)
 
 isSource :: FilePath -> Bool
 isSource f = (hasSourceExtension f || hasHeaderExtension f) &&
