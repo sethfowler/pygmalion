@@ -28,6 +28,58 @@ import Control.Exception.Labeled
 import Pygmalion.Core
 import Pygmalion.Log
 
+{-
+ - Summary of database changes and new tables that we need:
+ -
+ - Inclusions, which maps File -> File. Each inclusion must be marked as
+ - direct or indirect, because sometimes we need the transitive closure and
+ - sometimes we don't and good luck computing the transitive closure efficiently
+ - with SQL. This is the most urgent need as we will do much duplicate parsing
+ - until we have this.
+ -
+ - Rename SourceFiles's LastBuilt field to LastIndexed. That's really what we
+ - care about now.
+ -
+ - Up to now all the information about declarations we've recorded has been
+ - generic. But now we need some additional metadata that's different for
+ - different types of declarations.
+ -
+ - Methods need information about overrides. I'm not sure there's any point in
+ - storing the transitive closure because we generally need to walk this
+ - downwards instead of upwards. We'll just have to be inefficient about this
+ - for now. (We could post-process if we find that this is unacceptable from a
+ - performance standpoint, and if there are enough queries to justify it we
+ - could consider storing the transitive closure also.) Basically we need an
+ - Overrides table that maps Definition -> Definition.
+ -
+ - We need to store information about the functions/methods that a function or
+ - method calls. Transitive closure for this is too expensive to compute at
+ - index time. We could post-process, but for now forget it. Just need a Callers
+ - table that maps Definition -> Definition.
+ -
+ - We need class hierarchy information. It almost seems logical in a perverse
+ - way to store this in the Overrides table. Maybe I'll just do that for now
+ - until I find an issue with that approach.
+ -
+ - For now, I think the final thing we need is a table storing references. This
+ - basically needs to map SourceLocation -> USR, so we can find all places that
+ - a USR is mentioned. This will probably be a big table. Interestingly, this
+ - doesn't just let us implement Find References; it also lets us look things up
+ - without parsing the file and without complicated caching mechanisms! We just
+ - need to store the extent of the source location (basically its end point as
+ - well as its beginning point) and then we can query the database directly for
+ - the USR and we don't have to parse anything! Given that we need this for Find
+ - References anyway, I'm actually pretty excited about how this solves the
+ - parsing performance problem as well. The cheapest parsing is the parsing you
+ - don't do at all!
+ -
+ - One last note: we need to keep in mind that we need to be able to _remove_
+ - things for all these tables. The database update model needs to move from an
+ - "insert only" approach to a "remove the old and insert the new" approach. It
+ - causes more database churn, but I don't see an alternative if we don't want
+ - the user to have to periodically wipe out their database.
+ -}
+
 -- General database manipulation functions. These are thin wrappers around the
 -- underlying database implementation that also verify that the database is
 -- configured according to the correct schema and enable foreign keys.
