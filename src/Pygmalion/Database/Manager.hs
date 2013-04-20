@@ -12,7 +12,6 @@ import Control.Monad.Trans
 import Data.Time.Clock.POSIX
 
 import Control.Concurrent.Chan.Counting
-import Pygmalion.Analysis.Source
 import Pygmalion.Core
 import Pygmalion.Database.IO
 import Pygmalion.Log
@@ -45,7 +44,7 @@ runDatabaseManager chan = withDB go
 doUpdateCommandInfo :: DBHandle -> CommandInfo -> IO ()
 doUpdateCommandInfo h cmd = liftIO $ withTransaction h $ do
   time <- getPOSIXTime
-  let ci = cmd { ciBuildTime = floor time }
+  let ci = cmd { ciLastIndexed = floor time }
   liftIO $ logDebug $ "Updating database with command: " ++ (show . ciSourceFile $ ci)
   updateSourceFile h ci
 

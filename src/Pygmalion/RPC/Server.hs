@@ -4,7 +4,7 @@ module Pygmalion.RPC.Server
 ( runRPCServer
 ) where
 
-import Control.Concurrent.Chan
+-- import Control.Concurrent.Chan
 import Control.Concurrent.MVar
 import Control.Monad.Trans
 import Data.ByteString.Char8 (ByteString)

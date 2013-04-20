@@ -4,22 +4,16 @@ module Pygmalion.Analysis.Manager
 , AnalysisChan
 ) where
 
-import Control.Applicative
 import Control.Concurrent.MVar
-import Control.Monad
 import Control.Monad.Trans
 import Data.ByteString.Char8 (ByteString)
 import Data.Conduit
 import Data.Conduit.Cereal
 import Data.Conduit.Process
-import Data.Maybe
 import Data.Serialize
-import qualified Data.Text as T
-import System.Directory
 
 import Control.Concurrent.Chan.Counting
 import qualified Pygmalion.Analysis.ClangRequest as CR
-import Pygmalion.Analysis.Source
 import Pygmalion.Core
 import Pygmalion.Database.Manager
 import Pygmalion.Log
@@ -52,8 +46,8 @@ doAnalyze indexer ci dbChan = do
     writeCountingChan dbChan (DBGetCommandInfo (ciSourceFile ci) mOldCI)
     oldCI <- takeMVar mOldCI 
     case oldCI of
-      Just (CommandInfo _ _ _ oldT) | (ciBuildTime ci) <= oldT -> logInfo $ "Skipping analysis for " ++ (show . ciSourceFile $ ci)
-      _                                                        -> doAnalyze'
+      Just (CommandInfo _ _ _ oldT) | (ciLastIndexed ci) <= oldT -> logInfo $ "Skipping analysis for " ++ (show . ciSourceFile $ ci)
+      _                                                          -> doAnalyze'
   where
     doAnalyze' = analyzeCode indexer dbChan ci
 
@@ -64,9 +58,9 @@ doAnalyzeSource indexer sf t dbChan = do
     writeCountingChan dbChan (DBGetSimilarCommandInfo sf mOldCI)
     oldCI <- takeMVar mOldCI 
     case oldCI of
-      Just ci | t <= (ciBuildTime ci) -> logInfo $ "Skipping analysis for " ++ (show sf)
-              | otherwise             -> doAnalyzeSource' ci
-      _                               -> logInfo $ "Skipping analysis for " ++ (show sf)
+      Just ci | t <= (ciLastIndexed ci) -> logInfo $ "Skipping analysis for " ++ (show sf)
+              | otherwise               -> doAnalyzeSource' ci
+      _                                 -> logInfo $ "Skipping analysis for " ++ (show sf)
   where
     doAnalyzeSource' ci = analyzeCode indexer dbChan ci
 

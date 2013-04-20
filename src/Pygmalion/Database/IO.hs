@@ -4,6 +4,8 @@ module Pygmalion.Database.IO
 ( ensureDB
 , withDB
 , withTransaction
+, updateInclusion
+, getInclusions
 , updateSourceFile
 , getAllSourceFiles
 , getCommandInfo
@@ -36,9 +38,6 @@ import Pygmalion.Log
  - sometimes we don't and good luck computing the transitive closure efficiently
  - with SQL. This is the most urgent need as we will do much duplicate parsing
  - until we have this.
- -
- - Rename SourceFiles's LastBuilt field to LastIndexed. That's really what we
- - care about now.
  -
  - Up to now all the information about declarations we've recorded has been
  - generic. But now we need some additional metadata that's different for
@@ -87,6 +86,8 @@ data DBHandle = DBHandle {
                   conn :: Connection,
                   beginTransactionStmt :: Statement,
                   endTransactionStmt :: Statement,
+                  updateInclusionStmt :: Statement,
+                  getInclusionsStmt :: Statement,
                   updateSourceFileStmt :: Statement,
                   getCommandInfoStmt :: Statement,
                   getSimilarCommandInfoStmt :: Statement,
@@ -117,6 +118,8 @@ openDB db = labeledCatch "openDB" $ do
   ensureSchema c
   h <- DBHandle c <$> openStatement c (mkQueryT beginTransactionSQL)
                   <*> openStatement c (mkQueryT endTransactionSQL)
+                  <*> openStatement c (mkQueryT updateInclusionSQL)
+                  <*> openStatement c (mkQueryT getInclusionsSQL)
                   <*> openStatement c (mkQueryT updateSourceFileSQL)
                   <*> openStatement c (mkQueryT getCommandInfoSQL)
                   <*> openStatement c (mkQueryT getSimilarCommandInfoSQL)
@@ -133,6 +136,8 @@ closeDB :: DBHandle -> IO ()
 closeDB h = do
   closeStatement (beginTransactionStmt h)
   closeStatement (endTransactionStmt h)
+  closeStatement (updateInclusionStmt h)
+  closeStatement (getInclusionsStmt h)
   closeStatement (updateSourceFileStmt h)
   closeStatement (getCommandInfoStmt h)
   closeStatement (getSimilarCommandInfoStmt h)
@@ -176,12 +181,26 @@ execStatement h q params = do
     reset stmt
   where stmt = q h
 
-execSingleRowQuery :: (ToRow a, FromRow r) => DBHandle -> (DBHandle -> Statement) -> a -> IO (Maybe r)
-execSingleRowQuery h q params = do
-    res <- withBind stmt params $ (nextRow stmt)
+execQuery :: (ToRow a, FromRow r) => DBHandle -> (DBHandle -> Statement) -> a -> IO [r]
+execQuery h q params = do
+    res <- withBind stmt params go
     reset stmt
     return res
-  where stmt = q h
+  where
+    stmt = q h
+    go = do
+      row <- nextRow stmt
+      case row of
+        Just r  -> (:) <$> (return r) <*> go
+        Nothing -> return []
+  
+execSingleRowQuery :: (ToRow a, FromRow r) => DBHandle -> (DBHandle -> Statement) -> a -> IO (Maybe r)
+execSingleRowQuery h q params = do
+    res <- withBind stmt params $ nextRow stmt
+    reset stmt
+    return res
+  where
+    stmt = q h
 
 mkQuery :: String -> Query
 mkQuery = fromString
@@ -195,7 +214,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int64
 dbMajorVersion = 0
-dbMinorVersion = 7
+dbMinorVersion = 8
 
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c sql
@@ -230,10 +249,42 @@ defineFilesTable c = execute_ c sql
 insertFileSQL :: T.Text
 insertFileSQL = "insert or ignore into Files (Name, Hash) values (?, ?)"
 
+-- Schema and operations for the Inclusions table.
+defineInclusionsTable :: Connection -> IO ()
+defineInclusionsTable c = execute_ c sql
+  where sql = "create table if not exists Inclusions(    \
+               \ Id integer primary key unique not null, \
+               \ File integer not null,                  \
+               \ Inclusion integer not null,             \
+               \ Direct integer not null)"
+
+updateInclusion :: DBHandle -> Inclusion -> IO ()
+updateInclusion h (Inclusion sf hf d) = do
+    let sfHash = hash sf
+    let hfHash = hash hf
+    execStatement h updateInclusionStmt (sfHash, hfHash, d)
+
+updateInclusionSQL :: T.Text
+updateInclusionSQL = "replace into Inclusions (File, Inclusion, Direct) \
+                    \ values (?, ?, ?)"
+
+getInclusions :: DBHandle -> SourceFile -> IO [CommandInfo]
+getInclusions h sf = execQuery h getInclusionsStmt (Only $ hash sf)
+
+getInclusionsSQL :: T.Text
+getInclusionsSQL = "select F.Name, W.Path, C.Command, A.Args, S.LastIndexed \
+                   \ from Inclusions                                        \
+                   \ join SourceFiles as S on Inclusions.Inclusion = S.File \
+                   \ join Files as F on Inclusions.Inclusion = F.Hash       \
+                   \ join Paths as W on S.WorkingDirectory = W.Hash         \
+                   \ join BuildCommands as C on S.BuildCommand = C.Hash     \
+                   \ join BuildArgs as A on S.BuildArgs = A.Hash            \
+                   \ where Inclusions.File = ? limit 1"
+
 -- Schema and operations for the Paths table.
 definePathsTable :: Connection -> IO ()
 definePathsTable c = execute_ c sql
-  where sql =  "create table if not exists Paths(   \
+  where sql =  "create table if not exists Paths(          \
                \ Hash integer primary key unique not null, \
                \ Path varchar(2048) not null)"
 
@@ -268,11 +319,11 @@ defineSourceFilesTable c = execute_ c sql
                \ WorkingDirectory integer not null,            \
                \ BuildCommand integer not null,                \
                \ BuildArgs integer not null,                   \
-               \ LastBuilt integer zerofill unsigned not null)"
+               \ LastIndexed integer zerofill unsigned not null)"
 
 updateSourceFileSQL :: T.Text
-updateSourceFileSQL = "replace into SourceFiles                                     \
-                      \(File, WorkingDirectory, BuildCommand, BuildArgs, LastBuilt) \
+updateSourceFileSQL = "replace into SourceFiles                                       \
+                      \(File, WorkingDirectory, BuildCommand, BuildArgs, LastIndexed) \
                       \values (?, ?, ?, ?, ?)"
 
 updateSourceFile :: DBHandle -> CommandInfo -> IO ()
@@ -290,7 +341,7 @@ updateSourceFile h (CommandInfo sf wd (Command cmd args) t) = do
 
 getAllSourceFiles :: DBHandle -> IO [CommandInfo]
 getAllSourceFiles h = query_ (conn h) sql
-  where sql = "select F.Name, W.Path, C.Command, A.Args, LastBuilt           \
+  where sql = "select F.Name, W.Path, C.Command, A.Args, LastIndexed         \
               \ from SourceFiles                                             \
               \ join Files as F on SourceFiles.File = F.Hash                 \
               \ join Paths as W on SourceFiles.WorkingDirectory = W.Hash     \
@@ -301,7 +352,7 @@ getCommandInfo :: DBHandle -> SourceFile -> IO (Maybe CommandInfo)
 getCommandInfo h sf = execSingleRowQuery h getCommandInfoStmt (Only $ hash sf)
 
 getCommandInfoSQL :: T.Text
-getCommandInfoSQL = "select F.Name, W.Path, C.Command, A.Args, LastBuilt           \
+getCommandInfoSQL = "select F.Name, W.Path, C.Command, A.Args, LastIndexed         \
                     \ from SourceFiles                                             \
                     \ join Files as F on SourceFiles.File = F.Hash                 \
                     \ join Paths as W on SourceFiles.WorkingDirectory = W.Hash     \
@@ -320,7 +371,7 @@ getSimilarCommandInfo h sf = do
               _       -> Nothing
 
 getSimilarCommandInfoSQL :: T.Text
-getSimilarCommandInfoSQL = "select F.Name, W.Path, C.Command, A.Args, LastBuilt           \
+getSimilarCommandInfoSQL = "select F.Name, W.Path, C.Command, A.Args, LastIndexed         \
                            \ from SourceFiles                                             \
                            \ join Files as F on SourceFiles.File = F.Hash                 \
                            \ join Paths as W on SourceFiles.WorkingDirectory = W.Hash     \

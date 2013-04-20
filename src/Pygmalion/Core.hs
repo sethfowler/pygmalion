@@ -6,6 +6,7 @@ module Pygmalion.Core
 , WorkingDirectory
 , Time
 , Command (..)
+, Inclusion (..)
 , DefInfo (..)
 , SourceLocation (..)
 , Identifier
@@ -21,6 +22,7 @@ module Pygmalion.Core
 , scanExecutable
 , makeExecutable
 , daemonExecutable
+, clangExecutable
 , dbFile
 , configFile
 , compileCommandsFile
@@ -40,10 +42,10 @@ type Port = Int
 
 -- The information we collect about a compilation command.
 data CommandInfo = CommandInfo
-  { ciSourceFile :: !SourceFile
+  { ciSourceFile  :: !SourceFile
   , ciWorkingPath :: !WorkingDirectory
-  , ciCommand :: !Command
-  , ciBuildTime :: !Time
+  , ciCommand     :: !Command
+  , ciLastIndexed :: !Time
   } deriving (Eq, Show, Generic)
 
 instance Serialize T.Text where
@@ -80,12 +82,24 @@ unSourceFile = T.unpack
 type WorkingDirectory = T.Text
 type Time = Int64
 
+-- Inclusion metadata.
+data Inclusion = Inclusion
+    { inSourceFile :: !SourceFile
+    , inHeaderFile :: !SourceFile
+    , inDirect     :: !Bool
+    } deriving (Eq, Show, Generic)
+
+instance Serialize Inclusion
+
+instance FromRow Inclusion where
+  fromRow = Inclusion <$> field <*> field <*> field
+
 -- The information we collect about definitions in source code.
 data DefInfo = DefInfo
-    { diIdentifier :: !Identifier
-    , diUSR :: !USR
+    { diIdentifier     :: !Identifier
+    , diUSR            :: !USR
     , diSourceLocation :: !SourceLocation
-    , diDefKind :: !DefKind
+    , diDefKind        :: !DefKind
     } deriving (Eq, Show, Generic)
 
 instance Serialize DefInfo
@@ -103,18 +117,19 @@ data SourceLocation = SourceLocation !SourceFile !SourceLine !SourceColumn
 
 instance Serialize SourceLocation
 
-type Identifier = T.Text
-type USR = T.Text
-type SourceLine = Int
+type Identifier   = T.Text
+type USR          = T.Text
+type SourceLine   = Int
 type SourceColumn = Int
-type DefKind = T.Text
+type DefKind      = T.Text
 
 -- Tool names.
-queryExecutable, scanExecutable, makeExecutable, daemonExecutable :: String
+queryExecutable, scanExecutable, makeExecutable, daemonExecutable, clangExecutable :: String
 queryExecutable  = "pygmalion"
 scanExecutable   = "pygscan"
 makeExecutable   = "pygmake"
 daemonExecutable = "pygd"
+clangExecutable  = "pygclangindex"
 
 -- Data files.
 dbFile, configFile, compileCommandsFile :: String
