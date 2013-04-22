@@ -30,6 +30,7 @@ usage = do
   putStrLn   " --directory-for-file [file] Prints the working directory at the time"
   putStrLn   "                             the file was compiled. Guesses if needed."
   putStrLn   " --definition-for [file] [line] [col]"
+  putStrLn   " --callers [file] [line] [col]"
   putStrLn   " --display-ast [file]"
   bail
 
@@ -39,6 +40,8 @@ parseArgs ["--flags-for-file", f] = printFlags (mkSourceFile f)
 parseArgs ["--directory-for-file", f] = printDir (mkSourceFile f)
 parseArgs ["--definition-for", f, line, col] = printDef (mkSourceFile f)
                                                         (readMay line) (readMay col)
+parseArgs ["--callers", f, line, col] = printCallers (mkSourceFile f)
+                                                     (readMay line) (readMay col)
 parseArgs ["--display-ast", f] = printAST (mkSourceFile f)
 parseArgs ["--help"] = usage
 parseArgs ["-h"]     = usage
@@ -92,6 +95,32 @@ printDef f (Just line) (Just col) = do
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Declaration: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
 printDef _ _ _ = usage
+
+printCallers :: SourceFile -> Maybe Int -> Maybe Int -> IO ()
+printCallers f (Just line) (Just col) = do
+    cf <- getConfiguration
+    cmd <- getCommandInfoOr (bailWith cmdErr) f cf
+    info <- getLookupInfo cmd (SourceLocation f line col)
+    case info of
+      GotDef di  -> printCallers' (diUSR di) cf
+      GotDecl usr _ -> printCallers' usr cf
+      GotUSR usr -> printCallers' usr cf
+      GotNothing -> bailWith idErr
+  where 
+    errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
+    cmdErr = errPrefix ++ "No compilation information for this file."
+    idErr = errPrefix ++ "No identifier at this location."
+    defErr usr = errPrefix ++ "No callers for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
+    printCallers' usr cf = do
+      callers <- lookupCallers (ifPort cf) usr
+      case (null callers) of
+        True  -> bailWith (defErr usr)
+        False -> mapM_ putCaller callers
+    putCaller (DefInfo n _ (SourceLocation idF idLine idCol) k) =
+      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
+                 ": Caller: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
+printCallers _ _ _ = usage
+
 
 printAST :: SourceFile -> IO ()
 printAST f = getConfiguration >>= getCommandInfoOr bail f >>= displayAST

@@ -45,6 +45,7 @@ serverApp aChan dbQueryChan ad =
         Just (RPCGetCommandInfo sf)        -> liftIO (doGetCommandInfo dbQueryChan sf) >>= yield
         Just (RPCGetSimilarCommandInfo sf) -> liftIO (doGetSimilarCommandInfo dbQueryChan sf) >>= yield
         Just (RPCGetDefinition usr)        -> liftIO (doGetDefinition dbQueryChan usr) >>= yield
+        Just (RPCGetCallers usr)           -> liftIO (doGetCallers dbQueryChan usr) >>= yield
         Just RPCPing                       -> yield . encode $ RPCOK ()
         _                                  -> yield . encode $ (RPCError :: RPCResponse ())
 
@@ -70,4 +71,10 @@ doGetDefinition :: DBChan -> USR -> IO ByteString
 doGetDefinition dbQueryChan usr = do
   logDebug $ "RPCGetDefInfo: " ++ (show usr)
   result <- callLenChan dbQueryChan $! DBGetDefinition usr
+  return $! encode $ RPCOK result
+
+doGetCallers :: DBChan -> USR -> IO ByteString
+doGetCallers dbQueryChan usr = do
+  logDebug $ "RPCGetCallers: " ++ (show usr)
+  result <- callLenChan dbQueryChan $! DBGetCallers usr
   return $! encode $ RPCOK result

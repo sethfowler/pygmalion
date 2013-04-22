@@ -5,6 +5,7 @@ module Pygmalion.RPC.Client
 , sendScanMessage
 , lookupSimilarCommandInfo
 , lookupDefInfo
+, lookupCallers
 ) where
 
 import Control.Concurrent (newEmptyMVar, takeMVar, putMVar, MVar)
@@ -94,6 +95,26 @@ lookupDefApp usr v ad = ensureCompleted =<< timeout hundredSeconds app
       result <- await
       case result of
         Just (RPCOK mayDef) -> liftIO $ putMVar v $! mayDef
+        _                   -> error "Unexpected result from server"
+
+lookupCallers :: Port -> USR -> IO [DefInfo]
+lookupCallers port usr = do
+    result <- newEmptyMVar
+    runTCPClient settings (lookupCallerApp usr result)
+    takeMVar result
+  where settings = clientSettings port "127.0.0.1"
+
+lookupCallerApp :: USR -> MVar [DefInfo] -> Application IO
+lookupCallerApp usr v ad = ensureCompleted =<< timeout hundredSeconds app
+  where 
+    hundredSeconds = 100000000
+    app = (appSource ad) $= conduitGet getDI =$= process $$ (appSink ad)
+    getDI = get :: Get (RPCResponse [DefInfo])
+    process = do
+      yield (encode $ RPCGetCallers usr)
+      result <- await
+      case result of
+        Just (RPCOK callers) -> liftIO $ putMVar v $! callers
         _                   -> error "Unexpected result from server"
 
 ensureCompleted :: Maybe a -> IO a

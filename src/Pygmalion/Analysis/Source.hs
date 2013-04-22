@@ -60,7 +60,7 @@ mkSourceAnalysisState wd = do
   newCallersRef    <- newIORef $! []
   newRefsRef       <- newIORef $! []
   newInclusionsRef <- newIORef $! []
-  return $ SourceAnalysisState (defsVisitorImpl wd newDefsRef)
+  return $ SourceAnalysisState (defsVisitorImpl wd newDefsRef newCallersRef)
                                (inclusionsVisitorImpl wd newSFRef newInclusionsRef)
                                newSFRef
                                newDefsRef
@@ -129,14 +129,27 @@ defsAnalysis sas tu = do
     cursor <- getCursor tu
     void $ visitChildren cursor (defsVisitor sas)
 
-defsVisitorImpl :: WorkingDirectory -> IORef [DefInfo] -> ChildVisitor
-defsVisitorImpl wd dsRef cursor _ = do
+defsVisitorImpl :: WorkingDirectory -> IORef [DefInfo] -> IORef [Caller] -> ChildVisitor
+defsVisitorImpl wd dsRef csRef cursor _ = do
   loc <- C.getLocation cursor
   (f, ln, col, _) <- Source.getSpellingLocation loc
   file <- case f of Just valid -> File.getName valid >>= CS.unpackText
                     Nothing    -> return ""
   case inProject wd file of
     True -> do  cKind <- C.getKind cursor
+                when (cKind == C.Cursor_CallExpr) $ do
+                  liftIO $ logDebug "Got CallExpr"
+                  refC <- C.getReferenced cursor
+                  refIsNull <- C.isNullCursor refC
+                  when (not refIsNull) $ do
+                    refUSR <- XRef.getUSR refC >>= CS.unpackText
+                    parC <- parentFunction cursor
+                    parUSR <- XRef.getUSR parC >>= CS.unpackText
+                    caller <- return $! Caller parUSR refUSR
+                    liftIO . modifyIORef' csRef $! (caller :)
+                    parName <- cursorName parC
+                    refName <- cursorName refC
+                    liftIO $ logDebug $ "Caller: " ++ (T.unpack parName) ++ " calls " ++ (T.unpack refName)
                 cursorIsDef <- isDef cursor cKind
                 when cursorIsDef $ do
                   usr <- XRef.getUSR cursor >>= CS.unpackText
@@ -147,8 +160,8 @@ defsVisitorImpl wd dsRef cursor _ = do
                                     kind
                   liftIO . modifyIORef' dsRef $! (def :)
                 return $ case cKind of
-                            C.Cursor_FunctionDecl -> ChildVisit_Continue
-                            C.Cursor_CXXMethod    -> ChildVisit_Continue
+                            C.Cursor_FunctionDecl -> ChildVisit_Recurse
+                            C.Cursor_CXXMethod    -> ChildVisit_Recurse
                             _                     -> ChildVisit_Recurse
     False -> return ChildVisit_Continue
 
@@ -166,6 +179,14 @@ fqn cursor = (T.intercalate "::" . reverse) <$> go cursor
                   isTU <- C.getKind c >>= C.isTranslationUnit
                   if isNull || isTU then return [] else go' c
         go' c =  (:) <$> (cursorName c) <*> (C.getSemanticParent c >>= go)
+
+parentFunction :: C.Cursor -> ClangApp C.Cursor
+parentFunction cursor = do
+  isNull <- C.isNullCursor cursor
+  cKind <- C.getKind cursor
+  case (isNull || cKind `elem` [C.Cursor_FunctionDecl, C.Cursor_CXXMethod, C.Cursor_TranslationUnit]) of
+    True -> return cursor
+    False -> C.getSemanticParent cursor >>= parentFunction
 
 cursorName :: C.Cursor -> ClangApp Identifier
 cursorName c = C.getDisplayName c >>= CS.unpackText >>= anonymize

@@ -464,7 +464,7 @@ getOverrided h usr = execQuery h getOverridedStmt (Only $ hash usr)
 getOverridedSQL :: T.Text
 getOverridedSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
                   \ from Overrides as O                                \
-                  \ join Definitions as D on O.Overrided               \
+                  \ join Definitions as D on O.Overrided = D.USRHash   \
                   \ join Files as F on D.File = F.Hash                 \
                   \ join Kinds as K on D.Kind = K.Hash                 \
                   \ where O.Definition = ?"
@@ -475,7 +475,7 @@ getOverriders h usr = execQuery h getOverridersStmt (Only $ hash usr)
 getOverridersSQL :: T.Text
 getOverridersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
                    \ from Overrides as O                                \
-                   \ join Definitions as D on O.Definition              \
+                   \ join Definitions as D on O.Definition = D.USRHash  \
                    \ join Files as F on D.File = F.Hash                 \
                    \ join Kinds as K on D.Kind = K.Hash                 \
                    \ where O.Overrided = ?"
@@ -483,10 +483,13 @@ getOverridersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
 -- Schema and operations for the Callers table.
 defineCallersTable :: Connection -> IO ()
 defineCallersTable c = execute_ c sql
-  where sql = "create table if not exists Callers(       \
-               \ Id integer primary key unique not null, \
-               \ Caller integer not null,                \
-               \ Callee integer not null)"
+  where sql = "create table if not exists Callers(           \
+               \ Id integer primary key unique not null,     \
+               \ Caller integer not null,                    \
+               \ Callee integer not null,                    \
+               \ unique (Caller, Callee) on conflict replace)"
+
+-- FIXME: The unique constraint is temporary. What we really want is file/line/col.
 
 updateCaller :: DBHandle -> Caller -> IO ()
 updateCaller h (Caller callerUSR calleeUSR) = do
@@ -504,7 +507,7 @@ getCallers h usr = execQuery h getCallersStmt (Only $ hash usr)
 getCallersSQL :: T.Text
 getCallersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
                 \ from Callers as C                                  \
-                \ join Definitions as D on C.Caller                  \
+                \ join Definitions as D on C.Caller = D.USRHash      \
                 \ join Files as F on D.File = F.Hash                 \
                 \ join Kinds as K on D.Kind = K.Hash                 \
                 \ where C.Callee = ?"
@@ -515,7 +518,7 @@ getCallees h usr = execQuery h getCalleesStmt (Only $ hash usr)
 getCalleesSQL :: T.Text
 getCalleesSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
                 \ from Callers as C                                  \
-                \ join Definitions as D on C.Callee                  \
+                \ join Definitions as D on C.Callee = D.USRHash      \
                 \ join Files as F on D.File = F.Hash                 \
                 \ join Kinds as K on D.Kind = K.Hash                 \
                 \ where C.Caller = ?"
@@ -549,7 +552,7 @@ getReferenced h (SourceLocation sf l c) =
 getReferencedSQL :: T.Text
 getReferencedSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
                    \ from Refs as R                                     \
-                   \ join Definitions as D on R.Ref                     \
+                   \ join Definitions as D on R.Ref = D.USRHash         \
                    \ join Files as F on D.File = F.Hash                 \
                    \ join Kinds as K on D.Kind = K.Hash                 \
                    \ where R.File = ? and                               \
@@ -563,7 +566,7 @@ getReferences h usr = execQuery h getReferencesStmt (Only $ hash usr)
 getReferencesSQL :: T.Text
 getReferencesSQL = "select R.File, R.Line, R.Col, R.EndLine, R.EndCol \
                    \ from Refs as R                                   \
-                   \ join Definitions as D on R.Ref                   \
+                   \ join Definitions as D on R.Ref = D.USRHash       \
                    \ join Files as F on D.File = F.Hash               \
                    \ join Kinds as K on D.Kind = K.Hash               \
                    \ where R.Ref = ?"
