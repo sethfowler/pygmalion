@@ -27,6 +27,7 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBGetDefinition USR (MVar (Maybe DefInfo))
                | DBGetIncluders SourceFile (MVar [CommandInfo])
                | DBGetCallers USR (MVar [Invocation])
+               | DBGetCallees USR (MVar [DefInfo])
                | DBShutdown
 type DBChan = LenChan DBRequest
     
@@ -49,6 +50,7 @@ runDatabaseManager chan queryChan = withDB go
                     DBGetDefinition u v         -> doGetDefinition h u v >> go h
                     DBGetIncluders sf v         -> doGetIncluders h sf v >> go h
                     DBGetCallers usr v          -> doGetCallers h usr v >> go h
+                    DBGetCallees usr v          -> doGetCallees h usr v >> go h
                     DBShutdown                  -> logInfo "Shutting down DB thread"
 
 doUpdateCommandInfo :: DBHandle -> CommandInfo -> IO ()
@@ -115,3 +117,9 @@ doGetCallers h usr v = do
   liftIO $ logDebug $ "Getting callers for " ++ (show usr)
   callers <- getCallers h usr
   putMVar v $! callers
+
+doGetCallees :: DBHandle -> USR -> MVar [DefInfo] -> IO ()
+doGetCallees h usr v = do
+  liftIO $ logDebug $ "Getting callees for " ++ (show usr)
+  callees <- getCallees h usr
+  putMVar v $! callees

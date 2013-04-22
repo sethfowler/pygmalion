@@ -31,6 +31,7 @@ usage = do
   putStrLn   "                             the file was compiled. Guesses if needed."
   putStrLn   " --definition-for [file] [line] [col]"
   putStrLn   " --callers [file] [line] [col]"
+  putStrLn   " --callees [file] [line] [col]"
   putStrLn   " --display-ast [file]"
   bail
 
@@ -41,6 +42,8 @@ parseArgs ["--directory-for-file", f] = printDir (mkSourceFile f)
 parseArgs ["--definition-for", f, line, col] = printDef (mkSourceFile f)
                                                         (readMay line) (readMay col)
 parseArgs ["--callers", f, line, col] = printCallers (mkSourceFile f)
+                                                     (readMay line) (readMay col)
+parseArgs ["--callees", f, line, col] = printCallees (mkSourceFile f)
                                                      (readMay line) (readMay col)
 parseArgs ["--display-ast", f] = printAST (mkSourceFile f)
 parseArgs ["--help"] = usage
@@ -121,6 +124,30 @@ printCallers f (Just line) (Just col) = do
                  ": Caller: " ++ (T.unpack n)
 printCallers _ _ _ = usage
 
+printCallees :: SourceFile -> Maybe Int -> Maybe Int -> IO ()
+printCallees f (Just line) (Just col) = do
+    cf <- getConfiguration
+    cmd <- getCommandInfoOr (bailWith cmdErr) f cf
+    info <- getLookupInfo cmd (SourceLocation f line col)
+    case info of
+      GotDef di     -> printCallees' (diUSR di) cf
+      GotDecl usr _ -> printCallees' usr cf
+      GotUSR usr    -> printCallees' usr cf
+      GotNothing    -> bailWith idErr
+  where 
+    errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
+    cmdErr = errPrefix ++ "No compilation information for this file."
+    idErr = errPrefix ++ "No identifier at this location."
+    defErr usr = errPrefix ++ "No callees for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
+    printCallees' usr cf = do
+      callees <- rpcGetCallees (ifPort cf) usr
+      case (null callees) of
+        True  -> bailWith (defErr usr)
+        False -> mapM_ putCallee callees
+    putCallee (DefInfo n _ (SourceLocation idF idLine idCol) k) =
+      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
+                 ": Callee: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
+printCallees _ _ _ = usage
 
 printAST :: SourceFile -> IO ()
 printAST f = getConfiguration >>= getCommandInfoOr bail f >>= displayAST
