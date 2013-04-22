@@ -30,18 +30,20 @@ main = do
     process sas = do
       req <- await
       case req of
-        Just (Analyze ci) -> do results <- liftIO $ doAnalyze sas ci
-                                when (isJust results) $
-                                  mapM_ (yield . FoundDef) (fromJust results)
+        Just (Analyze ci) -> do maySar <- liftIO $ doAnalyze sas ci
+                                when (isJust maySar) $ do
+                                  let sar = fromJust maySar
+                                  mapM_ (yield . FoundDef) (sarDefs sar)
+                                  mapM_ (yield . FoundOverride) (sarOverrides sar)
+                                  mapM_ (yield . FoundCaller) (sarCallers sar)
+                                  mapM_ (yield . FoundRef) (sarRefs sar)
+                                  mapM_ (yield . FoundInclusion) (sarInclusions sar)
                                 yield EndOfAnalysis
                                 process sas
         Just Shutdown     -> liftIO (logDebug "Shutting down clang analysis process") >> return ()
         Nothing           -> liftIO (logError "Clang analysis process encountered an error") >> return ()
 
-doAnalyze :: SourceAnalysisState -> CommandInfo -> IO (Maybe [DefInfo])
+doAnalyze :: SourceAnalysisState -> CommandInfo -> IO (Maybe SourceAnalysisResult)
 doAnalyze sas ci = do
-  liftIO $ logDebug $ "Analyzing " ++ (show . ciSourceFile $ ci)
-  result <- liftIO $ runSourceAnalyses sas ci
-  case result of
-    Just (_, ds) -> return $! (Just ds)
-    Nothing      -> return $! Nothing
+  logDebug $ "Analyzing " ++ (show . ciSourceFile $ ci)
+  runSourceAnalyses sas ci

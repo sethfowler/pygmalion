@@ -4,7 +4,7 @@ module Pygmalion.Analysis.Source
 ( runSourceAnalyses
 , getLookupInfo
 , LookupInfo (..)
-, SourceAnalysisResult
+, SourceAnalysisResult (..)
 , SourceAnalysisState
 , mkSourceAnalysisState
 , dumpSubtree -- Just to silence the warnings. Need to move this to another module.
@@ -30,22 +30,62 @@ import qualified Data.Text as T
 import Data.Typeable
 
 import Data.Bool.Predicate
-import Pygmalion.Analysis.Extension
 import Pygmalion.Core
 import Pygmalion.Log
 
-type SourceAnalysisResult = (CommandInfo, [SourceFile], [DefInfo])
+data SourceAnalysisResult = SourceAnalysisResult
+    { sarDefs       :: ![DefInfo]
+    , sarOverrides  :: ![Override]
+    , sarCallers    :: ![Caller]
+    , sarRefs       :: ![Reference]
+    , sarInclusions :: ![Inclusion]
+    }
 
-runSourceAnalyses :: SourceAnalysisState -> CommandInfo -> IO (Maybe ([SourceFile], [DefInfo]))
+data SourceAnalysisState = SourceAnalysisState
+    { defsVisitor       :: ChildVisitor
+    , inclusionsVisitor :: InclusionVisitor
+    , sourceFileRef     :: IORef SourceFile
+    , defsRef           :: IORef [DefInfo]
+    , overridesRef      :: IORef [Override]
+    , callersRef        :: IORef [Caller]
+    , refsRef           :: IORef [Reference]
+    , inclusionsRef     :: IORef [Inclusion]
+    }
+
+mkSourceAnalysisState :: WorkingDirectory -> IO SourceAnalysisState
+mkSourceAnalysisState wd = do
+  newSFRef         <- newIORef $! (mkSourceFile "")
+  newDefsRef       <- newIORef $! []
+  newOverridesRef  <- newIORef $! []
+  newCallersRef    <- newIORef $! []
+  newRefsRef       <- newIORef $! []
+  newInclusionsRef <- newIORef $! []
+  return $ SourceAnalysisState (defsVisitorImpl newSFRef newDefsRef)
+                               (inclusionsVisitorImpl wd newSFRef newInclusionsRef)
+                               newSFRef
+                               newDefsRef
+                               newOverridesRef
+                               newCallersRef
+                               newRefsRef
+                               newInclusionsRef
+
+runSourceAnalyses :: SourceAnalysisState -> CommandInfo -> IO (Maybe SourceAnalysisResult)
 runSourceAnalyses sas ci@(CommandInfo sf _ _ _) = do
-  writeIORef (includesRef sas) $! []
-  writeIORef (defsRef sas) $! []
   writeIORef (sourceFileRef sas) $! sf
-  result <- try $ withTranslationUnit ci $ do
-                    --includesAnalysis includesRef wd
-                    defsAnalysis sas
+  writeIORef (defsRef sas)       $! []
+  writeIORef (overridesRef sas)  $! []
+  writeIORef (callersRef sas)    $! []
+  writeIORef (refsRef sas)       $! []
+  writeIORef (inclusionsRef sas) $! []
+  result <- try $ withTranslationUnit ci $ \tu -> do
+                    inclusionsAnalysis sas tu
+                    defsAnalysis sas tu
   case result of
-    Right _ -> (,) <$> readIORef (includesRef sas) <*> readIORef (defsRef sas) >>= \x -> return $! Just $! x
+    Right _ -> Just <$> (SourceAnalysisResult <$> readIORef (defsRef sas)
+                                              <*> readIORef (overridesRef sas)
+                                              <*> readIORef (callersRef sas)
+                                              <*> readIORef (refsRef sas)
+                                              <*> readIORef (inclusionsRef sas))
     Left (ClangException e) -> logWarn ("Clang exception: " ++ e) >> return Nothing
 
 data LookupInfo = GotDef DefInfo
@@ -61,42 +101,30 @@ getLookupInfo ci sl = do
     Right r                 -> return r
     Left (ClangException e) -> logWarn ("Clang exception: " ++ e ) >> return GotNothing
 
-includesAnalysis :: IORef [SourceFile] -> WorkingDirectory -> TranslationUnit -> ClangApp ()
-includesAnalysis isRef wd tu = void $ getInclusions tu visitInclusions
-  where
-    visitInclusions :: InclusionVisitor
-    visitInclusions file _  = do
-      f <- File.getName file
-      name <- CS.unpackText f
-      when (isLocalHeader wd name) $
-        liftIO . modifyIORef' isRef $! (name :)
+inclusionsAnalysis :: SourceAnalysisState -> TranslationUnit -> ClangApp ()
+inclusionsAnalysis sas tu = void $ getInclusions tu (inclusionsVisitor sas)
+
+inclusionsVisitorImpl :: WorkingDirectory -> IORef SourceFile -> IORef [Inclusion] -> InclusionVisitor
+inclusionsVisitorImpl wd sfRef isRef file iStack  = do
+  ic <- File.getName file >>= CS.unpackText
+  when (isLocalHeader wd ic) $ do
+    sf <- liftIO $ readIORef sfRef
+    (f, _, _, _) <- Source.getSpellingLocation (head iStack)
+    includer <- case f of Just valid -> File.getName valid >>= CS.unpackText
+                          Nothing    -> return ""
+    let isDirect = sf == includer
+    liftIO . modifyIORef' isRef $! ((Inclusion sf ic isDirect) :)
 
 isLocalHeader :: WorkingDirectory -> SourceFile -> Bool
-isLocalHeader wd p = (wd `T.isPrefixOf`) .&&.
-                     hasHeaderExtensionText .&&.
-                     (not . T.null) $ p
+isLocalHeader wd p = (wd `T.isPrefixOf`) .&&. (not . T.null) $ p
 
 defsAnalysis :: SourceAnalysisState -> TranslationUnit -> ClangApp ()
 defsAnalysis sas tu = do
     cursor <- getCursor tu
     void $ visitChildren cursor (defsVisitor sas)
 
-data SourceAnalysisState = SourceAnalysisState
-    { defsVisitor :: ChildVisitor
-    , defsRef :: IORef [DefInfo]
-    , includesRef :: IORef [SourceFile]
-    , sourceFileRef :: IORef SourceFile
-    }
-
-mkSourceAnalysisState :: WorkingDirectory -> IO SourceAnalysisState
-mkSourceAnalysisState _ = do
-  newDefsRef <- newIORef $! []
-  newIncludesRef <- newIORef $! []
-  newSFRef <- newIORef $! (mkSourceFile "")
-  return $ SourceAnalysisState (defsVisitorImpl newDefsRef newSFRef) newDefsRef newIncludesRef newSFRef
-
-defsVisitorImpl :: IORef [DefInfo] -> IORef SourceFile -> ChildVisitor
-defsVisitorImpl dsRef sfRef cursor _ = do
+defsVisitorImpl :: IORef SourceFile -> IORef [DefInfo] -> ChildVisitor
+defsVisitorImpl sfRef dsRef cursor _ = do
   loc <- C.getLocation cursor
   (f, ln, col, _) <- Source.getSpellingLocation loc
   file <- case f of Just valid -> File.getName valid >>= CS.unpackText
