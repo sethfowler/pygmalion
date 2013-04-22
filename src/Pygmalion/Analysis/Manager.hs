@@ -30,8 +30,8 @@ data AnalysisRequest = Analyze CommandInfo
                      | ShutdownAnalysis
 type AnalysisChan = CountingChan AnalysisRequest
 
-runAnalysisManager :: AnalysisChan -> DBChan -> IO ()
-runAnalysisManager aChan dbChan = do
+runAnalysisManager :: AnalysisChan -> DBChan -> DBChan -> IO ()
+runAnalysisManager aChan dbChan dbQueryChan = do
     let indexer = conduitProcess (proc "pygclangindex" []) :: Indexer
     go indexer
   where
@@ -40,8 +40,8 @@ runAnalysisManager aChan dbChan = do
                   newCount <- getChanCount aChan
                   logDebug $ "Analysis channel now has " ++ (show newCount) ++ " items waiting"
                   case req of
-                      Analyze cmd      -> doAnalyze dbChan indexer cmd >> go indexer
-                      AnalyzeSource sf -> doAnalyzeSource dbChan indexer sf >> go indexer
+                      Analyze cmd      -> doAnalyze dbChan dbQueryChan indexer cmd >> go indexer
+                      AnalyzeSource sf -> doAnalyzeSource dbChan dbQueryChan indexer sf >> go indexer
                       ShutdownAnalysis -> logInfo "Shutting down analysis thread"
 
 type Indexer = Conduit ByteString (ResourceT IO) ByteString
@@ -54,11 +54,11 @@ getMTime sf = do
     Left e          -> do logInfo $ "Couldn't read mtime for file " ++ (unSourceFile sf) ++ ": " ++ (show (e :: IOException))
                           return 0  -- Most likely the file has been deleted.
 
-doAnalyze :: DBChan -> Indexer -> CommandInfo -> IO ()
-doAnalyze dbChan indexer ci = do
+doAnalyze :: DBChan -> DBChan -> Indexer -> CommandInfo -> IO ()
+doAnalyze dbChan dbQueryChan indexer ci = do
     -- FIXME: Add an abstraction over this pattern.
     mOldCI <- newEmptyMVar
-    writeCountingChan dbChan (DBGetCommandInfo (ciSourceFile ci) mOldCI)
+    writeCountingChan dbQueryChan (DBGetCommandInfo (ciSourceFile ci) mOldCI)
     oldCI <- takeMVar mOldCI 
     mtime <- getMTime (ciSourceFile ci)
     when (isJust oldCI) $ logInfo ("Deciding whether to analyze file with index time: " ++ (show . ciLastIndexed . fromJust $ oldCI))
@@ -68,31 +68,31 @@ doAnalyze dbChan indexer ci = do
                                                          logInfo $ "Index is up-to-date for built file " ++ (show . ciSourceFile $ ci) ++ " (file mtime: " ++ (show mtime) ++ ")"
       _                                            -> doAnalyze'
   where
-    doAnalyze' = do toReindex <- filesToReindex dbChan ci
+    doAnalyze' = do toReindex <- filesToReindex dbQueryChan ci
                     forM_ toReindex $ \f -> analyzeCode dbChan indexer f
                     updateCommand dbChan ci
 
-doAnalyzeSource :: DBChan -> Indexer -> SourceFile -> IO ()
-doAnalyzeSource dbChan indexer sf = do
+doAnalyzeSource :: DBChan -> DBChan -> Indexer -> SourceFile -> IO ()
+doAnalyzeSource dbChan dbQueryChan indexer sf = do
     -- FIXME: Add an abstraction over this pattern.
     mOldCI <- newEmptyMVar
-    writeCountingChan dbChan (DBGetSimilarCommandInfo sf mOldCI)
+    writeCountingChan dbQueryChan (DBGetSimilarCommandInfo sf mOldCI)
     oldCI <- takeMVar mOldCI 
     case oldCI of
       Just oldCI' -> do mtime <- getMTime (ciSourceFile oldCI')
                         doAnalyzeSource' oldCI' mtime
       _           -> logInfo $ "Not indexing unknown file " ++ (show sf)
   where
-    doAnalyzeSource' ci mt | (ciLastIndexed ci) < mt = do toReindex <- filesToReindex dbChan ci
+    doAnalyzeSource' ci mt | (ciLastIndexed ci) < mt = do toReindex <- filesToReindex dbQueryChan ci
                                                           forM_ toReindex $ \f -> analyzeCode dbChan indexer f
                            | otherwise               = logInfo $ "Index is up-to-date for file " ++ (show sf)
 
 -- If the source file associated with this CommandInfo has changed, what must
 -- we reindex?
 filesToReindex :: DBChan -> CommandInfo -> IO [CommandInfo]
-filesToReindex dbChan ci = do
+filesToReindex dbQueryChan ci = do
   mIncluders <- newEmptyMVar
-  writeCountingChan dbChan (DBGetIncluders (ciSourceFile ci) mIncluders)
+  writeCountingChan dbQueryChan (DBGetIncluders (ciSourceFile ci) mIncluders)
   includers <- takeMVar mIncluders 
   case hasHeaderExtensionText (ciSourceFile ci) of
     True ->  return includers  -- We don't reindex the header file itself.

@@ -24,15 +24,17 @@ import Pygmalion.Log
 import Pygmalion.RPC.Request
 
 runRPCServer :: Config -> MVar Int -> AnalysisChan -> DBChan -> IO ()
-runRPCServer cf port aChan dbChan = runTCPServer settings (serverApp aChan dbChan)
-  where settings = baseSettings { serverAfterBind = notifyPort }
-        baseSettings = (serverSettings confPort confAddr) :: ServerSettings IO
-        confPort = ifPort cf
-        confAddr = fromString (ifAddr cf)
-        notifyPort s = socketPort s >>= (putMVar port) . fromIntegral
+runRPCServer cf port aChan dbQueryChan =
+    runTCPServer settings (serverApp aChan dbQueryChan)
+  where
+    settings = baseSettings { serverAfterBind = notifyPort }
+    baseSettings = (serverSettings confPort confAddr) :: ServerSettings IO
+    confPort = ifPort cf
+    confAddr = fromString (ifAddr cf)
+    notifyPort s = socketPort s >>= (putMVar port) . fromIntegral
 
 serverApp :: AnalysisChan -> DBChan -> Application IO
-serverApp aChan dbChan ad =
+serverApp aChan dbQueryChan ad =
     (appSource ad) $= conduitGet getCI =$= process $$ (appSink ad)
   where
     getCI = {-# SCC "serverget" #-} get :: Get RPCRequest
@@ -40,9 +42,9 @@ serverApp aChan dbChan ad =
       result <- await
       case result of
         Just (RPCSendCommandInfo ci)       -> liftIO (doSendCommandInfo aChan ci) >>= yield
-        Just (RPCGetCommandInfo sf)        -> liftIO (doGetCommandInfo dbChan sf) >>= yield
-        Just (RPCGetSimilarCommandInfo sf) -> liftIO (doGetSimilarCommandInfo dbChan sf) >>= yield
-        Just (RPCGetDefinition usr)        -> liftIO (doGetDefinition dbChan usr) >>= yield
+        Just (RPCGetCommandInfo sf)        -> liftIO (doGetCommandInfo dbQueryChan sf) >>= yield
+        Just (RPCGetSimilarCommandInfo sf) -> liftIO (doGetSimilarCommandInfo dbQueryChan sf) >>= yield
+        Just (RPCGetDefinition usr)        -> liftIO (doGetDefinition dbQueryChan usr) >>= yield
         _                                  -> yield "ERROR"
 
 doSendCommandInfo :: AnalysisChan -> CommandInfo -> IO ByteString
@@ -52,25 +54,25 @@ doSendCommandInfo aChan ci = do
   return "OK"
 
 doGetCommandInfo :: DBChan -> SourceFile -> IO ByteString
-doGetCommandInfo dbChan f = do
+doGetCommandInfo dbQueryChan f = do
   logDebug $ "RPCGetCommandInfo: " ++ (show f)
   sfVar <- newEmptyMVar
-  writeCountingChan dbChan $! DBGetCommandInfo f sfVar
+  writeCountingChan dbQueryChan $! DBGetCommandInfo f sfVar
   result <- takeMVar sfVar
   return $! encode result
 
 doGetSimilarCommandInfo :: DBChan -> SourceFile -> IO ByteString
-doGetSimilarCommandInfo dbChan f = do
+doGetSimilarCommandInfo dbQueryChan f = do
   logDebug $ "RPCGetSimilarCommandInfo: " ++ (show f)
   sfVar <- newEmptyMVar
-  writeCountingChan dbChan $! DBGetSimilarCommandInfo f sfVar
+  writeCountingChan dbQueryChan $! DBGetSimilarCommandInfo f sfVar
   result <- takeMVar sfVar
   return $! encode result
 
 doGetDefinition :: DBChan -> USR -> IO ByteString
-doGetDefinition dbChan usr = do
+doGetDefinition dbQueryChan usr = do
   logDebug $ "RPCGetDefInfo: " ++ (show usr)
   defVar <- newEmptyMVar
-  writeCountingChan dbChan $! DBGetDefinition usr defVar
+  writeCountingChan dbQueryChan $! DBGetDefinition usr defVar
   result <- takeMVar defVar
   return $! encode result

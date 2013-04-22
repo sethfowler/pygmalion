@@ -33,6 +33,7 @@ library
                    network-conduit,
                    process-conduit,
                    sqlite-simple,
+                   stm,
                    text,
                    time,
                    transformers,

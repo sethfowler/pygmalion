@@ -30,14 +30,15 @@ main = do
   port <- newEmptyMVar
   aChan <- newCountingChan
   dbChan <- newCountingChan
+  dbQueryChan <- newCountingChan
   logDebug "Launching database thread"
-  dbThread <- asyncBound (runDatabaseManager dbChan)
+  dbThread <- asyncBound (runDatabaseManager dbChan dbQueryChan)
   --let maxThreads = numCapabilities
   let maxThreads = 4 :: Int
   threads <- forM [1..maxThreads] $ \i -> do
     logDebug $ "Launching analysis thread #" ++ (show i)
-    asyncBound (runAnalysisManager aChan dbChan)
-  rpcThread <- async (runRPCServer cf port aChan dbChan)
+    asyncBound (runAnalysisManager aChan dbChan dbQueryChan)
+  rpcThread <- async (runRPCServer cf port aChan dbQueryChan)
   watchThread <- async (doWatch aChan stopWatching)
   _ <- getLine
   cancel rpcThread

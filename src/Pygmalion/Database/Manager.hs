@@ -29,15 +29,13 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBShutdown
 type DBChan = CountingChan DBRequest
     
--- FIXME: It'd be nice to have separate chans for queries and update requests
--- or something similar, to allow queries to have higher priority.
-runDatabaseManager :: DBChan -> IO ()
-runDatabaseManager chan = withDB go
+runDatabaseManager :: DBChan -> DBChan -> IO ()
+runDatabaseManager chan queryChan = withDB go
   where go :: DBHandle -> IO ()
         go h = {-# SCC "databaseThread" #-}
-               do req <- readCountingChan chan
-                  newCount <- getChanCount chan
-                  logDebug $ "Database channel now has " ++ (show newCount) ++ " items waiting"
+               do (tookFirst, newCount, req) <- readCountingChanPreferFirst queryChan chan
+                  logDebug $ if tookFirst then "Query channel now has " ++ (show newCount) ++ " queries waiting"
+                                          else "Database channel now has " ++ (show newCount) ++ " requests waiting"
                   case req of
                     DBUpdateCommandInfo ci      -> doUpdateCommandInfo h ci >> go h
                     DBUpdateDefInfo di          -> doUpdateDefInfo h di >> go h
