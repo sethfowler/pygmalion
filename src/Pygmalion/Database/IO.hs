@@ -42,7 +42,6 @@ import Pygmalion.Log
 {-
  - Summary of database changes and new tables that we need:
  - * Remove the old before inserting the new (see below).
- - * Switch to using 64-bit hashes.
  -
  - One last note: we need to keep in mind that we need to be able to _remove_
  - things for all these tables. The database update model needs to move from an
