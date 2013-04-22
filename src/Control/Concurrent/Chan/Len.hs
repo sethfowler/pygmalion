@@ -1,40 +1,40 @@
-module Control.Concurrent.Chan.Counting
-( CountingChan
-, newCountingChan
-, writeCountingChan
-, readCountingChan
-, readCountingChanPreferFirst
+module Control.Concurrent.Chan.Len
+( LenChan
+, newLenChan
+, writeLenChan
+, readLenChan
+, readLenChanPreferFirst
 , getChanCount
 ) where
 
 import Control.Concurrent.STM
 
-data CountingChan a = CountingChan
+data LenChan a = LenChan
     { queue   :: TQueue a
     , counter :: TVar Int
     }
 
-newCountingChan :: IO (CountingChan a)
-newCountingChan = do
+newLenChan :: IO (LenChan a)
+newLenChan = do
   ch <- atomically $ newTQueue
   count <- atomically $ newTVar 0
-  return $! CountingChan ch count
+  return $! LenChan ch count
 
-writeCountingChan :: CountingChan a -> a -> IO ()
-writeCountingChan c v = atomically $ do
+writeLenChan :: LenChan a -> a -> IO ()
+writeLenChan c v = atomically $ do
   writeTQueue (queue c) $! v
   curCount <- readTVar (counter c)
   writeTVar (counter c) $! (curCount  +1)
 
-readCountingChan :: CountingChan a -> IO a
-readCountingChan c = atomically $ do
+readLenChan :: LenChan a -> IO a
+readLenChan c = atomically $ do
   v <- readTQueue (queue c)
   curCount <- readTVar (counter c)
   writeTVar (counter c) $! (curCount - 1)
   return $! v
 
-readCountingChanPreferFirst :: CountingChan a -> CountingChan a -> IO (Bool, Int, a)
-readCountingChanPreferFirst c1 c2 = atomically $ do
+readLenChanPreferFirst :: LenChan a -> LenChan a -> IO (Bool, Int, a)
+readLenChanPreferFirst c1 c2 = atomically $ do
   v1 <- tryReadTQueue (queue c1)
   case v1 of
     Just value -> do curCount <- readTVar (counter c1)
@@ -47,5 +47,5 @@ readCountingChanPreferFirst c1 c2 = atomically $ do
                      writeTVar (counter c2) $! newCount
                      return $! (False, newCount, v2)
 
-getChanCount :: CountingChan a -> IO Int
+getChanCount :: LenChan a -> IO Int
 getChanCount c = atomically $ readTVar (counter c)

@@ -12,7 +12,7 @@ import System.FilePath.Posix
 import System.FSNotify
 import System.Path.NameManip
 
-import Control.Concurrent.Chan.Counting
+import Control.Concurrent.Chan.Len
 import Pygmalion.Analysis.Extension
 import Pygmalion.Analysis.Manager
 import Pygmalion.Config
@@ -28,9 +28,9 @@ main = do
   cf <- getConfiguration
   stopWatching <- newEmptyMVar
   port <- newEmptyMVar
-  aChan <- newCountingChan
-  dbChan <- newCountingChan
-  dbQueryChan <- newCountingChan
+  aChan <- newLenChan
+  dbChan <- newLenChan
+  dbQueryChan <- newLenChan
   logDebug "Launching database thread"
   dbThread <- asyncBound (runDatabaseManager dbChan dbQueryChan)
   --let maxThreads = numCapabilities
@@ -48,11 +48,11 @@ main = do
   wait watchThread
   --logDebug "Just terminated watch thread."
   --_ <- getLine
-  forM_ threads $ \_ -> writeCountingChan aChan ShutdownAnalysis  -- Signifies end of data.
+  forM_ threads $ \_ -> writeLenChan aChan ShutdownAnalysis  -- Signifies end of data.
   forM_ (zip threads [1..numCapabilities]) $ \(thread, i) -> do
     ensureNoException =<< waitCatch thread
     logDebug $ "Termination of thread #" ++ (show i)
-  writeCountingChan dbChan DBShutdown  -- Terminate the database thread.
+  writeLenChan dbChan DBShutdown  -- Terminate the database thread.
   ensureNoException =<< waitCatch dbThread
   logDebug $ "Termination of database thread"
 
@@ -87,7 +87,7 @@ handleSource aChan f = do
   let file = FP.encodeString f
   fileExists <- doesFileExist file
   when (isSource file && fileExists) $ do
-    writeCountingChan aChan $ AnalyzeSource (mkSourceFile file)
+    writeLenChan aChan $ AnalyzeSource (mkSourceFile file)
 
 isSource :: FilePath -> Bool
 isSource f = (hasSourceExtension f || hasHeaderExtension f) &&

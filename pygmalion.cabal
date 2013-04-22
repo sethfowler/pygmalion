@@ -40,7 +40,7 @@ library
                    unordered-containers,
                    LibClang >= 0.2,
                    MissingH
-  exposed-modules: Control.Concurrent.Chan.Counting,
+  exposed-modules: Control.Concurrent.Chan.Len,
                    Pygmalion.Analysis.ClangRequest,
                    Pygmalion.Analysis.Command,
                    Pygmalion.Analysis.Extension,

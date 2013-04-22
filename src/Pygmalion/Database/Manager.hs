@@ -11,7 +11,7 @@ import Control.Monad
 import Control.Monad.Trans
 import Data.Time.Clock.POSIX
 
-import Control.Concurrent.Chan.Counting
+import Control.Concurrent.Chan.Len
 import Pygmalion.Core
 import Pygmalion.Database.IO
 import Pygmalion.Log
@@ -27,13 +27,13 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBGetDefinition USR (MVar (Maybe DefInfo))
                | DBGetIncluders SourceFile (MVar [CommandInfo])
                | DBShutdown
-type DBChan = CountingChan DBRequest
+type DBChan = LenChan DBRequest
     
 runDatabaseManager :: DBChan -> DBChan -> IO ()
 runDatabaseManager chan queryChan = withDB go
   where go :: DBHandle -> IO ()
         go h = {-# SCC "databaseThread" #-}
-               do (tookFirst, newCount, req) <- readCountingChanPreferFirst queryChan chan
+               do (tookFirst, newCount, req) <- readLenChanPreferFirst queryChan chan
                   logDebug $ if tookFirst then "Query channel now has " ++ (show newCount) ++ " queries waiting"
                                           else "Database channel now has " ++ (show newCount) ++ " requests waiting"
                   case req of

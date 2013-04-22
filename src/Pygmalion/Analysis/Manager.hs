@@ -18,7 +18,7 @@ import Data.Time.Clock.POSIX
 import Data.Serialize
 import System.Directory
 
-import Control.Concurrent.Chan.Counting
+import Control.Concurrent.Chan.Len
 import qualified Pygmalion.Analysis.ClangRequest as CR
 import Pygmalion.Analysis.Extension
 import Pygmalion.Core
@@ -28,7 +28,7 @@ import Pygmalion.Log
 data AnalysisRequest = Analyze CommandInfo
                      | AnalyzeSource SourceFile
                      | ShutdownAnalysis
-type AnalysisChan = CountingChan AnalysisRequest
+type AnalysisChan = LenChan AnalysisRequest
 
 runAnalysisManager :: AnalysisChan -> DBChan -> DBChan -> IO ()
 runAnalysisManager aChan dbChan dbQueryChan = do
@@ -36,7 +36,7 @@ runAnalysisManager aChan dbChan dbQueryChan = do
     go indexer
   where
     go indexer = {-# SCC "analysisThread" #-} do
-                  req <- readCountingChan aChan
+                  req <- readLenChan aChan
                   newCount <- getChanCount aChan
                   logDebug $ "Analysis channel now has " ++ (show newCount) ++ " items waiting"
                   case req of
@@ -58,7 +58,7 @@ doAnalyze :: DBChan -> DBChan -> Indexer -> CommandInfo -> IO ()
 doAnalyze dbChan dbQueryChan indexer ci = do
     -- FIXME: Add an abstraction over this pattern.
     mOldCI <- newEmptyMVar
-    writeCountingChan dbQueryChan (DBGetCommandInfo (ciSourceFile ci) mOldCI)
+    writeLenChan dbQueryChan (DBGetCommandInfo (ciSourceFile ci) mOldCI)
     oldCI <- takeMVar mOldCI 
     mtime <- getMTime (ciSourceFile ci)
     when (isJust oldCI) $ logInfo ("Deciding whether to analyze file with index time: " ++ (show . ciLastIndexed . fromJust $ oldCI))
@@ -76,7 +76,7 @@ doAnalyzeSource :: DBChan -> DBChan -> Indexer -> SourceFile -> IO ()
 doAnalyzeSource dbChan dbQueryChan indexer sf = do
     -- FIXME: Add an abstraction over this pattern.
     mOldCI <- newEmptyMVar
-    writeCountingChan dbQueryChan (DBGetSimilarCommandInfo sf mOldCI)
+    writeLenChan dbQueryChan (DBGetSimilarCommandInfo sf mOldCI)
     oldCI <- takeMVar mOldCI 
     case oldCI of
       Just oldCI' -> do mtime <- getMTime (ciSourceFile oldCI')
@@ -92,14 +92,14 @@ doAnalyzeSource dbChan dbQueryChan indexer sf = do
 filesToReindex :: DBChan -> CommandInfo -> IO [CommandInfo]
 filesToReindex dbQueryChan ci = do
   mIncluders <- newEmptyMVar
-  writeCountingChan dbQueryChan (DBGetIncluders (ciSourceFile ci) mIncluders)
+  writeLenChan dbQueryChan (DBGetIncluders (ciSourceFile ci) mIncluders)
   includers <- takeMVar mIncluders 
   case hasHeaderExtensionText (ciSourceFile ci) of
     True ->  return includers  -- We don't reindex the header file itself.
     False -> return (ci : includers)
 
 updateCommand :: DBChan -> CommandInfo -> IO ()
-updateCommand dbChan ci = writeCountingChan dbChan (DBUpdateCommandInfo ci)
+updateCommand dbChan ci = writeLenChan dbChan (DBUpdateCommandInfo ci)
 
 analyzeCode :: DBChan -> Indexer -> CommandInfo -> IO ()
 analyzeCode dbChan indexer ci = do
@@ -114,10 +114,10 @@ analyzeCode dbChan indexer ci = do
       liftIO $ logDebug "WAITING"
       resp <- await
       case resp of
-        Just (CR.FoundDef di)       -> liftIO (writeCountingChan dbChan (DBUpdateDefInfo di)) >> process
-        Just (CR.FoundOverride ov)  -> liftIO (writeCountingChan dbChan (DBUpdateOverride ov)) >> process
-        Just (CR.FoundCaller cr)    -> liftIO (writeCountingChan dbChan (DBUpdateCaller cr)) >> process
-        Just (CR.FoundRef rf)       -> liftIO (writeCountingChan dbChan (DBUpdateRef rf)) >> process
-        Just (CR.FoundInclusion ic) -> liftIO (writeCountingChan dbChan (DBUpdateInclusion ci ic)) >> process
+        Just (CR.FoundDef di)       -> liftIO (writeLenChan dbChan (DBUpdateDefInfo di)) >> process
+        Just (CR.FoundOverride ov)  -> liftIO (writeLenChan dbChan (DBUpdateOverride ov)) >> process
+        Just (CR.FoundCaller cr)    -> liftIO (writeLenChan dbChan (DBUpdateCaller cr)) >> process
+        Just (CR.FoundRef rf)       -> liftIO (writeLenChan dbChan (DBUpdateRef rf)) >> process
+        Just (CR.FoundInclusion ic) -> liftIO (writeLenChan dbChan (DBUpdateInclusion ci ic)) >> process
         Just (CR.EndOfAnalysis)     -> liftIO (logDebug "Done reading from clang process") >> return ()
         Nothing                     -> liftIO (logDebug "Clang process read failed") >> return ()

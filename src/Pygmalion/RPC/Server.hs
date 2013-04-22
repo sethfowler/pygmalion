@@ -15,7 +15,7 @@ import Data.Serialize
 import Data.String
 import Network.Socket
 
-import Control.Concurrent.Chan.Counting
+import Control.Concurrent.Chan.Len
 import Pygmalion.Analysis.Manager
 import Pygmalion.Config
 import Pygmalion.Core
@@ -50,14 +50,14 @@ serverApp aChan dbQueryChan ad =
 doSendCommandInfo :: AnalysisChan -> CommandInfo -> IO ByteString
 doSendCommandInfo aChan ci = do
   logDebug $ "RPCSendCommandInfo: " ++ (show ci)
-  writeCountingChan aChan $ Analyze ci
+  writeLenChan aChan $ Analyze ci
   return "OK"
 
 doGetCommandInfo :: DBChan -> SourceFile -> IO ByteString
 doGetCommandInfo dbQueryChan f = do
   logDebug $ "RPCGetCommandInfo: " ++ (show f)
   sfVar <- newEmptyMVar
-  writeCountingChan dbQueryChan $! DBGetCommandInfo f sfVar
+  writeLenChan dbQueryChan $! DBGetCommandInfo f sfVar
   result <- takeMVar sfVar
   return $! encode result
 
@@ -65,7 +65,7 @@ doGetSimilarCommandInfo :: DBChan -> SourceFile -> IO ByteString
 doGetSimilarCommandInfo dbQueryChan f = do
   logDebug $ "RPCGetSimilarCommandInfo: " ++ (show f)
   sfVar <- newEmptyMVar
-  writeCountingChan dbQueryChan $! DBGetSimilarCommandInfo f sfVar
+  writeLenChan dbQueryChan $! DBGetSimilarCommandInfo f sfVar
   result <- takeMVar sfVar
   return $! encode result
 
@@ -73,6 +73,6 @@ doGetDefinition :: DBChan -> USR -> IO ByteString
 doGetDefinition dbQueryChan usr = do
   logDebug $ "RPCGetDefInfo: " ++ (show usr)
   defVar <- newEmptyMVar
-  writeCountingChan dbQueryChan $! DBGetDefinition usr defVar
+  writeLenChan dbQueryChan $! DBGetDefinition usr defVar
   result <- takeMVar defVar
   return $! encode result
