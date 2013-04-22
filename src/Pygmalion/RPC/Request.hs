@@ -2,6 +2,7 @@
 
 module Pygmalion.RPC.Request
 ( RPCRequest (..)
+, RPCResponse (..)
 ) where
 
 import Data.Serialize
@@ -13,6 +14,13 @@ data RPCRequest = RPCSendCommandInfo CommandInfo
                 | RPCGetCommandInfo SourceFile
                 | RPCGetSimilarCommandInfo SourceFile
                 | RPCGetDefinition USR
+                | RPCPing
                 deriving (Eq, Show, Generic)
 
 instance Serialize RPCRequest
+
+data RPCResponse a = RPCOK a
+                   | RPCError
+                   deriving (Eq, Show, Generic)
+
+instance Serialize a => Serialize (RPCResponse a)

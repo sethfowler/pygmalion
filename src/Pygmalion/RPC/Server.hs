@@ -45,28 +45,29 @@ serverApp aChan dbQueryChan ad =
         Just (RPCGetCommandInfo sf)        -> liftIO (doGetCommandInfo dbQueryChan sf) >>= yield
         Just (RPCGetSimilarCommandInfo sf) -> liftIO (doGetSimilarCommandInfo dbQueryChan sf) >>= yield
         Just (RPCGetDefinition usr)        -> liftIO (doGetDefinition dbQueryChan usr) >>= yield
-        _                                  -> yield "ERROR"
+        Just RPCPing                       -> yield . encode $ RPCOK ()
+        _                                  -> yield . encode $ (RPCError :: RPCResponse ())
 
 doSendCommandInfo :: AnalysisChan -> CommandInfo -> IO ByteString
 doSendCommandInfo aChan ci = do
   logDebug $ "RPCSendCommandInfo: " ++ (show ci)
   writeLenChan aChan $ Analyze ci
-  return "OK"
+  return $! encode $ RPCOK ()
 
 doGetCommandInfo :: DBChan -> SourceFile -> IO ByteString
 doGetCommandInfo dbQueryChan f = do
   logDebug $ "RPCGetCommandInfo: " ++ (show f)
   result <- callLenChan dbQueryChan $! DBGetCommandInfo f
-  return $! encode result
+  return $! encode $ RPCOK result
 
 doGetSimilarCommandInfo :: DBChan -> SourceFile -> IO ByteString
 doGetSimilarCommandInfo dbQueryChan f = do
   logDebug $ "RPCGetSimilarCommandInfo: " ++ (show f)
   result <- callLenChan dbQueryChan $! DBGetSimilarCommandInfo f
-  return $! encode result
+  return $! encode $ RPCOK result
 
 doGetDefinition :: DBChan -> USR -> IO ByteString
 doGetDefinition dbQueryChan usr = do
   logDebug $ "RPCGetDefInfo: " ++ (show usr)
   result <- callLenChan dbQueryChan $! DBGetDefinition usr
-  return $! encode result
+  return $! encode $ RPCOK result
