@@ -17,6 +17,7 @@ module Pygmalion.Core
 , DefKind
 , Override (..)
 , Caller (..)
+, Invocation (..)
 , Reference (..)
 , Port
 , mkSourceFile
@@ -59,12 +60,7 @@ instance Serialize T.Text where
 instance Serialize CommandInfo
 
 instance FromRow CommandInfo where
-  fromRow = do
-    sf    <- field
-    wd    <- field
-    cmd   <- Command <$> field <*> (T.words <$> field)
-    time  <- field
-    return $ CommandInfo sf wd cmd time
+  fromRow = CommandInfo <$> field <*> field <*> fromRow <*> field
 
 data Command = Command
     { cmdExecutable :: !T.Text
@@ -72,6 +68,9 @@ data Command = Command
     } deriving (Eq, Show, Generic)
 
 instance Serialize Command
+
+instance FromRow Command where
+  fromRow = Command <$> field <*> (T.words <$> field)
 
 type SourceFile = T.Text
 
@@ -110,12 +109,7 @@ data DefInfo = DefInfo
 instance Serialize DefInfo
 
 instance FromRow DefInfo where
-  fromRow = do
-    ident <- field
-    usr   <- field
-    sl    <- SourceLocation <$> field <*> field <*> field
-    kind  <- field
-    return $ DefInfo ident usr sl kind
+  fromRow = DefInfo <$> field <*> field <*> fromRow <*> field
 
 data SourceLocation = SourceLocation
     { slFile :: !SourceFile
@@ -124,6 +118,9 @@ data SourceLocation = SourceLocation
     } deriving (Eq, Show, Generic)
 
 instance Serialize SourceLocation
+
+instance FromRow SourceLocation where
+  fromRow = SourceLocation <$> field <*> field <*> field
 
 data SourceRange = SourceRange
     { srFile    :: !SourceFile
@@ -152,11 +149,22 @@ data Override = Override
 instance Serialize Override
 
 data Caller = Caller
-    { crCaller :: !USR
-    , crCallee :: !USR
+    { crSourceLocation :: !SourceLocation
+    , crCaller         :: !USR
+    , crCallee         :: !USR
     } deriving (Eq, Show, Generic)
 
 instance Serialize Caller
+
+data Invocation = Invocation
+    { ivDefInfo        :: !DefInfo
+    , ivSourceLocation :: !SourceLocation
+    } deriving (Eq, Show, Generic)
+
+instance Serialize Invocation
+
+instance FromRow Invocation where
+  fromRow = Invocation <$> fromRow <*> fromRow
 
 data Reference = Reference
     { rfRange :: !SourceRange

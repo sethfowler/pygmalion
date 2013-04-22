@@ -131,11 +131,8 @@ defsAnalysis sas tu = do
 
 defsVisitorImpl :: WorkingDirectory -> IORef [DefInfo] -> IORef [Caller] -> ChildVisitor
 defsVisitorImpl wd dsRef csRef cursor _ = do
-  loc <- C.getLocation cursor
-  (f, ln, col, _) <- Source.getSpellingLocation loc
-  file <- case f of Just valid -> File.getName valid >>= CS.unpackText
-                    Nothing    -> return ""
-  case inProject wd file of
+  loc <- getCursorLocation cursor
+  case inProject wd loc of
     True -> do  cKind <- C.getKind cursor
                 when (cKind == C.Cursor_CallExpr) $ do
                   liftIO $ logDebug "Got CallExpr"
@@ -145,7 +142,7 @@ defsVisitorImpl wd dsRef csRef cursor _ = do
                     refUSR <- XRef.getUSR refC >>= CS.unpackText
                     parC <- parentFunction cursor
                     parUSR <- XRef.getUSR parC >>= CS.unpackText
-                    caller <- return $! Caller parUSR refUSR
+                    caller <- return $! Caller loc parUSR refUSR
                     liftIO . modifyIORef' csRef $! (caller :)
                     parName <- cursorName parC
                     refName <- cursorName refC
@@ -155,9 +152,7 @@ defsVisitorImpl wd dsRef csRef cursor _ = do
                   usr <- XRef.getUSR cursor >>= CS.unpackText
                   name <- fqn cursor
                   kind <- C.getCursorKindSpelling cKind >>= CS.unpackText
-                  def <- return $! DefInfo name usr
-                                    (SourceLocation file ln col)
-                                    kind
+                  def <- return $! DefInfo name usr loc kind
                   liftIO . modifyIORef' dsRef $! (def :)
                 return $ case cKind of
                             C.Cursor_FunctionDecl -> ChildVisit_Recurse
@@ -165,8 +160,16 @@ defsVisitorImpl wd dsRef csRef cursor _ = do
                             _                     -> ChildVisit_Recurse
     False -> return ChildVisit_Continue
 
-inProject :: WorkingDirectory -> SourceFile -> Bool
-inProject wd p = (wd `T.isPrefixOf`) .&&. (not . T.null) $ p
+getCursorLocation :: C.Cursor -> ClangApp SourceLocation
+getCursorLocation cursor = do
+  loc <- C.getLocation cursor
+  (f, ln, col, _) <- Source.getSpellingLocation loc
+  file <- case f of Just f' -> File.getName f' >>= CS.unpackText
+                    Nothing -> return ""
+  return $! SourceLocation file ln col
+
+inProject :: WorkingDirectory -> SourceLocation -> Bool
+inProject wd sl = (wd `T.isPrefixOf`) .&&. (not . T.null) $ slFile sl
 
 isDef :: C.Cursor -> C.CursorKind -> ClangApp Bool
 isDef c k = do

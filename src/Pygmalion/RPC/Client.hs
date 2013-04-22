@@ -97,25 +97,25 @@ lookupDefApp usr v ad = ensureCompleted =<< timeout hundredSeconds app
         Just (RPCOK mayDef) -> liftIO $ putMVar v $! mayDef
         _                   -> error "Unexpected result from server"
 
-lookupCallers :: Port -> USR -> IO [DefInfo]
+lookupCallers :: Port -> USR -> IO [Invocation]
 lookupCallers port usr = do
     result <- newEmptyMVar
     runTCPClient settings (lookupCallerApp usr result)
     takeMVar result
   where settings = clientSettings port "127.0.0.1"
 
-lookupCallerApp :: USR -> MVar [DefInfo] -> Application IO
+lookupCallerApp :: USR -> MVar [Invocation] -> Application IO
 lookupCallerApp usr v ad = ensureCompleted =<< timeout hundredSeconds app
   where 
     hundredSeconds = 100000000
     app = (appSource ad) $= conduitGet getDI =$= process $$ (appSink ad)
-    getDI = get :: Get (RPCResponse [DefInfo])
+    getDI = get :: Get (RPCResponse [Invocation])
     process = do
       yield (encode $ RPCGetCallers usr)
       result <- await
       case result of
         Just (RPCOK callers) -> liftIO $ putMVar v $! callers
-        _                   -> error "Unexpected result from server"
+        _                    -> error "Unexpected result from server"
 
 ensureCompleted :: Maybe a -> IO a
 ensureCompleted (Just a) = return a

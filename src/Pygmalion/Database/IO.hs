@@ -216,7 +216,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int64
 dbMajorVersion = 0
-dbMinorVersion = 8
+dbMinorVersion = 9
 
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c sql
@@ -483,34 +483,36 @@ getOverridersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
 -- Schema and operations for the Callers table.
 defineCallersTable :: Connection -> IO ()
 defineCallersTable c = execute_ c sql
-  where sql = "create table if not exists Callers(           \
-               \ Id integer primary key unique not null,     \
-               \ Caller integer not null,                    \
-               \ Callee integer not null,                    \
-               \ unique (Caller, Callee) on conflict replace)"
-
--- FIXME: The unique constraint is temporary. What we really want is file/line/col.
+  where sql = "create table if not exists Callers(       \
+               \ Id integer primary key unique not null, \
+               \ File integer not null,                  \
+               \ Line integer not null,                  \
+               \ Col integer not null,                   \
+               \ Caller integer not null,                \
+               \ Callee integer not null)"
 
 updateCaller :: DBHandle -> Caller -> IO ()
-updateCaller h (Caller callerUSR calleeUSR) = do
+updateCaller h (Caller (SourceLocation sf l c) callerUSR calleeUSR) = do
+    let sfHash = hash sf
     let callerUSRHash = hash callerUSR
     let calleeUSRHash = hash calleeUSR
-    execStatement h updateCallerStmt (callerUSRHash, calleeUSRHash)
+    execStatement h updateCallerStmt (sfHash, l, c, callerUSRHash, calleeUSRHash)
 
 updateCallerSQL :: T.Text
-updateCallerSQL = "replace into Callers (Caller, Callee) \
-                  \ values (?, ?)"
+updateCallerSQL = "replace into Callers (File, Line, Col, Caller, Callee) \
+                  \ values (?, ?, ?, ?, ?)"
 
-getCallers :: DBHandle -> USR -> IO [DefInfo]
+getCallers :: DBHandle -> USR -> IO [Invocation]
 getCallers h usr = execQuery h getCallersStmt (Only $ hash usr)
 
 getCallersSQL :: T.Text
-getCallersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
-                \ from Callers as C                                  \
-                \ join Definitions as D on C.Caller = D.USRHash      \
-                \ join Files as F on D.File = F.Hash                 \
-                \ join Kinds as K on D.Kind = K.Hash                 \
-                \ where C.Callee = ?"
+getCallersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind, FC.Name, C.Line, C.Col \
+                \ from Callers as C                                                          \
+                \ join Files as FC on C.File = FC.Hash                                       \
+                \ join Definitions as D on C.Caller = D.USRHash                              \
+                \ join Files as F on D.File = F.Hash                                         \
+                \ join Kinds as K on D.Kind = K.Hash                                         \
+                \ where C.Callee = ? order by FC.Name, C.Line, C.Col"
 
 getCallees :: DBHandle -> USR -> IO [DefInfo]
 getCallees h usr = execQuery h getCalleesStmt (Only $ hash usr)

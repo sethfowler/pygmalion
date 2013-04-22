@@ -55,7 +55,7 @@ getMTime sf = do
 doAnalyze :: DBChan -> DBChan -> Indexer -> CommandInfo -> IO ()
 doAnalyze dbChan dbQueryChan indexer ci = do
     -- FIXME: Add an abstraction over this pattern.
-    oldCI <- callLenChan dbQueryChan $ DBGetSimilarCommandInfo (ciSourceFile ci)
+    oldCI <- callLenChan dbQueryChan $ DBGetCommandInfo (ciSourceFile ci)
     mtime <- getMTime (ciSourceFile ci)
     when (isJust oldCI) $ logInfo ("Deciding whether to analyze file with index time: " ++ (show . ciLastIndexed . fromJust $ oldCI))
     case oldCI of
@@ -70,7 +70,7 @@ doAnalyze dbChan dbQueryChan indexer ci = do
 
 doAnalyzeSource :: DBChan -> DBChan -> Indexer -> SourceFile -> IO ()
 doAnalyzeSource dbChan dbQueryChan indexer sf = do
-    oldCI <- callLenChan dbQueryChan $ DBGetSimilarCommandInfo sf
+    oldCI <- callLenChan dbQueryChan $ DBGetCommandInfo sf
     case oldCI of
       Just oldCI' -> do mtime <- getMTime (ciSourceFile oldCI')
                         doAnalyzeSource' oldCI' mtime

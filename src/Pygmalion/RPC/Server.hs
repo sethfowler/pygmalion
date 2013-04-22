@@ -77,4 +77,5 @@ doGetCallers :: DBChan -> USR -> IO ByteString
 doGetCallers dbQueryChan usr = do
   logDebug $ "RPCGetCallers: " ++ (show usr)
   result <- callLenChan dbQueryChan $! DBGetCallers usr
+  mapM_ print result
   return $! encode $ RPCOK result

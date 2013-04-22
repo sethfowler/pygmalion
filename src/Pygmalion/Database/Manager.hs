@@ -26,7 +26,7 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBGetSimilarCommandInfo SourceFile (MVar (Maybe CommandInfo))
                | DBGetDefinition USR (MVar (Maybe DefInfo))
                | DBGetIncluders SourceFile (MVar [CommandInfo])
-               | DBGetCallers USR (MVar [DefInfo])
+               | DBGetCallers USR (MVar [Invocation])
                | DBShutdown
 type DBChan = LenChan DBRequest
     
@@ -110,7 +110,7 @@ doGetIncluders h sf v = do
   includers <- getIncluders h sf
   putMVar v $! includers
 
-doGetCallers :: DBHandle -> USR -> MVar [DefInfo] -> IO ()
+doGetCallers :: DBHandle -> USR -> MVar [Invocation] -> IO ()
 doGetCallers h usr v = do
   liftIO $ logDebug $ "Getting callers for " ++ (show usr)
   callers <- getCallers h usr

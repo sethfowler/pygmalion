@@ -102,10 +102,10 @@ printCallers f (Just line) (Just col) = do
     cmd <- getCommandInfoOr (bailWith cmdErr) f cf
     info <- getLookupInfo cmd (SourceLocation f line col)
     case info of
-      GotDef di  -> printCallers' (diUSR di) cf
+      GotDef di     -> printCallers' (diUSR di) cf
       GotDecl usr _ -> printCallers' usr cf
-      GotUSR usr -> printCallers' usr cf
-      GotNothing -> bailWith idErr
+      GotUSR usr    -> printCallers' usr cf
+      GotNothing    -> bailWith idErr
   where 
     errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
     cmdErr = errPrefix ++ "No compilation information for this file."
@@ -116,9 +116,9 @@ printCallers f (Just line) (Just col) = do
       case (null callers) of
         True  -> bailWith (defErr usr)
         False -> mapM_ putCaller callers
-    putCaller (DefInfo n _ (SourceLocation idF idLine idCol) k) =
+    putCaller (Invocation (DefInfo n _ _ _) (SourceLocation idF idLine idCol)) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Caller: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
+                 ": Caller: " ++ (T.unpack n)
 printCallers _ _ _ = usage
 
 
