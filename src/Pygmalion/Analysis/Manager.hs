@@ -4,7 +4,6 @@ module Pygmalion.Analysis.Manager
 , AnalysisChan
 ) where
 
-import Control.Concurrent.MVar
 import Control.Exception
 import Control.Monad
 import Control.Monad.Trans
@@ -36,8 +35,7 @@ runAnalysisManager aChan dbChan dbQueryChan = do
     go indexer
   where
     go indexer = {-# SCC "analysisThread" #-} do
-                  req <- readLenChan aChan
-                  newCount <- getChanCount aChan
+                  (newCount, req) <- readLenChan aChan
                   logDebug $ "Analysis channel now has " ++ (show newCount) ++ " items waiting"
                   case req of
                       Analyze cmd      -> doAnalyze dbChan dbQueryChan indexer cmd >> go indexer
@@ -57,9 +55,7 @@ getMTime sf = do
 doAnalyze :: DBChan -> DBChan -> Indexer -> CommandInfo -> IO ()
 doAnalyze dbChan dbQueryChan indexer ci = do
     -- FIXME: Add an abstraction over this pattern.
-    mOldCI <- newEmptyMVar
-    writeLenChan dbQueryChan (DBGetCommandInfo (ciSourceFile ci) mOldCI)
-    oldCI <- takeMVar mOldCI 
+    oldCI <- callLenChan dbQueryChan $ DBGetSimilarCommandInfo (ciSourceFile ci)
     mtime <- getMTime (ciSourceFile ci)
     when (isJust oldCI) $ logInfo ("Deciding whether to analyze file with index time: " ++ (show . ciLastIndexed . fromJust $ oldCI))
     case oldCI of
@@ -74,10 +70,7 @@ doAnalyze dbChan dbQueryChan indexer ci = do
 
 doAnalyzeSource :: DBChan -> DBChan -> Indexer -> SourceFile -> IO ()
 doAnalyzeSource dbChan dbQueryChan indexer sf = do
-    -- FIXME: Add an abstraction over this pattern.
-    mOldCI <- newEmptyMVar
-    writeLenChan dbQueryChan (DBGetSimilarCommandInfo sf mOldCI)
-    oldCI <- takeMVar mOldCI 
+    oldCI <- callLenChan dbQueryChan $ DBGetSimilarCommandInfo sf
     case oldCI of
       Just oldCI' -> do mtime <- getMTime (ciSourceFile oldCI')
                         doAnalyzeSource' oldCI' mtime
@@ -91,9 +84,7 @@ doAnalyzeSource dbChan dbQueryChan indexer sf = do
 -- we reindex?
 filesToReindex :: DBChan -> CommandInfo -> IO [CommandInfo]
 filesToReindex dbQueryChan ci = do
-  mIncluders <- newEmptyMVar
-  writeLenChan dbQueryChan (DBGetIncluders (ciSourceFile ci) mIncluders)
-  includers <- takeMVar mIncluders 
+  includers <- callLenChan dbQueryChan $ DBGetIncluders (ciSourceFile ci)
   case hasHeaderExtensionText (ciSourceFile ci) of
     True ->  return includers  -- We don't reindex the header file itself.
     False -> return (ci : includers)

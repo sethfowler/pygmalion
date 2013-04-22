@@ -56,23 +56,17 @@ doSendCommandInfo aChan ci = do
 doGetCommandInfo :: DBChan -> SourceFile -> IO ByteString
 doGetCommandInfo dbQueryChan f = do
   logDebug $ "RPCGetCommandInfo: " ++ (show f)
-  sfVar <- newEmptyMVar
-  writeLenChan dbQueryChan $! DBGetCommandInfo f sfVar
-  result <- takeMVar sfVar
+  result <- callLenChan dbQueryChan $! DBGetCommandInfo f
   return $! encode result
 
 doGetSimilarCommandInfo :: DBChan -> SourceFile -> IO ByteString
 doGetSimilarCommandInfo dbQueryChan f = do
   logDebug $ "RPCGetSimilarCommandInfo: " ++ (show f)
-  sfVar <- newEmptyMVar
-  writeLenChan dbQueryChan $! DBGetSimilarCommandInfo f sfVar
-  result <- takeMVar sfVar
+  result <- callLenChan dbQueryChan $! DBGetSimilarCommandInfo f
   return $! encode result
 
 doGetDefinition :: DBChan -> USR -> IO ByteString
 doGetDefinition dbQueryChan usr = do
   logDebug $ "RPCGetDefInfo: " ++ (show usr)
-  defVar <- newEmptyMVar
-  writeLenChan dbQueryChan $! DBGetDefinition usr defVar
-  result <- takeMVar defVar
+  result <- callLenChan dbQueryChan $! DBGetDefinition usr
   return $! encode result

@@ -4,9 +4,11 @@ module Control.Concurrent.Chan.Len
 , writeLenChan
 , readLenChan
 , readLenChanPreferFirst
-, getChanCount
+, callLenChan
+, getLenChanCount
 ) where
 
+import Control.Concurrent.MVar
 import Control.Concurrent.STM
 
 data LenChan a = LenChan
@@ -24,14 +26,15 @@ writeLenChan :: LenChan a -> a -> IO ()
 writeLenChan c v = atomically $ do
   writeTQueue (queue c) $! v
   curCount <- readTVar (counter c)
-  writeTVar (counter c) $! (curCount  +1)
+  writeTVar (counter c) $! (curCount + 1)
 
-readLenChan :: LenChan a -> IO a
+readLenChan :: LenChan a -> IO (Int, a)
 readLenChan c = atomically $ do
   v <- readTQueue (queue c)
   curCount <- readTVar (counter c)
-  writeTVar (counter c) $! (curCount - 1)
-  return $! v
+  let newCount = curCount - 1
+  writeTVar (counter c) $! newCount
+  return $! (newCount, v)
 
 readLenChanPreferFirst :: LenChan a -> LenChan a -> IO (Bool, Int, a)
 readLenChanPreferFirst c1 c2 = atomically $ do
@@ -47,5 +50,11 @@ readLenChanPreferFirst c1 c2 = atomically $ do
                      writeTVar (counter c2) $! newCount
                      return $! (False, newCount, v2)
 
-getChanCount :: LenChan a -> IO Int
-getChanCount c = atomically $ readTVar (counter c)
+callLenChan :: LenChan a -> (MVar b -> a) -> IO b
+callLenChan c cmd = do
+  mResult <- newEmptyMVar
+  writeLenChan c (cmd mResult)
+  takeMVar mResult
+
+getLenChanCount :: LenChan a -> IO Int
+getLenChanCount c = atomically $ readTVar (counter c)
