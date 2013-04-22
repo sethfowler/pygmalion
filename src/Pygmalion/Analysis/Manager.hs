@@ -20,6 +20,7 @@ import System.Directory
 
 import Control.Concurrent.Chan.Counting
 import qualified Pygmalion.Analysis.ClangRequest as CR
+import Pygmalion.Analysis.Extension
 import Pygmalion.Core
 import Pygmalion.Database.Manager
 import Pygmalion.Log
@@ -39,8 +40,8 @@ runAnalysisManager aChan dbChan = do
                   newCount <- getChanCount aChan
                   logDebug $ "Analysis channel now has " ++ (show newCount) ++ " items waiting"
                   case req of
-                      Analyze cmd      -> doAnalyze aChan dbChan indexer cmd >> go indexer
-                      AnalyzeSource sf -> doAnalyzeSource aChan dbChan indexer sf >> go indexer
+                      Analyze cmd      -> doAnalyze dbChan indexer cmd >> go indexer
+                      AnalyzeSource sf -> doAnalyzeSource dbChan indexer sf >> go indexer
                       ShutdownAnalysis -> logInfo "Shutting down analysis thread"
 
 type Indexer = Conduit ByteString (ResourceT IO) ByteString
@@ -53,8 +54,8 @@ getMTime sf = do
     Left e          -> do logInfo $ "Couldn't read mtime for file " ++ (unSourceFile sf) ++ ": " ++ (show (e :: IOException))
                           return 0  -- Most likely the file has been deleted.
 
-doAnalyze :: AnalysisChan -> DBChan -> Indexer -> CommandInfo -> IO ()
-doAnalyze aChan dbChan indexer ci = do
+doAnalyze :: DBChan -> Indexer -> CommandInfo -> IO ()
+doAnalyze dbChan indexer ci = do
     -- FIXME: Add an abstraction over this pattern.
     mOldCI <- newEmptyMVar
     writeCountingChan dbChan (DBGetCommandInfo (ciSourceFile ci) mOldCI)
@@ -68,11 +69,11 @@ doAnalyze aChan dbChan indexer ci = do
       _                                            -> doAnalyze'
   where
     doAnalyze' = do toReindex <- filesToReindex dbChan ci
-                    forM_ toReindex $ \f -> analyzeCode aChan dbChan indexer f
+                    forM_ toReindex $ \f -> analyzeCode dbChan indexer f
                     updateCommand dbChan ci
 
-doAnalyzeSource :: AnalysisChan -> DBChan -> Indexer -> SourceFile -> IO ()
-doAnalyzeSource aChan dbChan indexer sf = do
+doAnalyzeSource :: DBChan -> Indexer -> SourceFile -> IO ()
+doAnalyzeSource dbChan indexer sf = do
     -- FIXME: Add an abstraction over this pattern.
     mOldCI <- newEmptyMVar
     writeCountingChan dbChan (DBGetSimilarCommandInfo sf mOldCI)
@@ -83,7 +84,7 @@ doAnalyzeSource aChan dbChan indexer sf = do
       _           -> logInfo $ "Not indexing unknown file " ++ (show sf)
   where
     doAnalyzeSource' ci mt | (ciLastIndexed ci) < mt = do toReindex <- filesToReindex dbChan ci
-                                                          forM_ toReindex $ \f -> analyzeCode aChan dbChan indexer f
+                                                          forM_ toReindex $ \f -> analyzeCode dbChan indexer f
                            | otherwise               = logInfo $ "Index is up-to-date for file " ++ (show sf)
 
 -- If the source file associated with this CommandInfo has changed, what must
@@ -93,13 +94,15 @@ filesToReindex dbChan ci = do
   mIncluders <- newEmptyMVar
   writeCountingChan dbChan (DBGetIncluders (ciSourceFile ci) mIncluders)
   includers <- takeMVar mIncluders 
-  return (ci : includers)
+  case hasHeaderExtensionText (ciSourceFile ci) of
+    True ->  return includers  -- We don't reindex the header file itself.
+    False -> return (ci : includers)
 
 updateCommand :: DBChan -> CommandInfo -> IO ()
 updateCommand dbChan ci = writeCountingChan dbChan (DBUpdateCommandInfo ci)
 
-analyzeCode :: AnalysisChan -> DBChan -> Indexer -> CommandInfo -> IO ()
-analyzeCode aChan dbChan indexer ci = do
+analyzeCode :: DBChan -> Indexer -> CommandInfo -> IO ()
+analyzeCode dbChan indexer ci = do
     liftIO $ logInfo $ "Indexing " ++ (show . ciSourceFile $ ci)
     runResourceT (source $= conduitPut putReq =$= indexer =$= conduitGet getResp $$ process)
   where
@@ -115,9 +118,6 @@ analyzeCode aChan dbChan indexer ci = do
         Just (CR.FoundOverride ov)  -> liftIO (writeCountingChan dbChan (DBUpdateOverride ov)) >> process
         Just (CR.FoundCaller cr)    -> liftIO (writeCountingChan dbChan (DBUpdateCaller cr)) >> process
         Just (CR.FoundRef rf)       -> liftIO (writeCountingChan dbChan (DBUpdateRef rf)) >> process
-        Just (CR.FoundInclusion ic) -> do liftIO (writeCountingChan dbChan (DBUpdateInclusion ci ic))
-                                          when (icDirect ic) (liftIO $ writeCountingChan aChan $ Analyze
-                                                                ci { ciLastIndexed = 0, ciSourceFile = icHeaderFile ic})
-                                          process
+        Just (CR.FoundInclusion ic) -> liftIO (writeCountingChan dbChan (DBUpdateInclusion ci ic)) >> process
         Just (CR.EndOfAnalysis)     -> liftIO (logDebug "Done reading from clang process") >> return ()
         Nothing                     -> liftIO (logDebug "Clang process read failed") >> return ()
