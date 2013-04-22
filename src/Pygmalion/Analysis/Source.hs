@@ -105,15 +105,14 @@ inclusionsAnalysis :: SourceAnalysisState -> TranslationUnit -> ClangApp ()
 inclusionsAnalysis sas tu = void $ getInclusions tu (inclusionsVisitor sas)
 
 inclusionsVisitorImpl :: WorkingDirectory -> IORef SourceFile -> IORef [Inclusion] -> InclusionVisitor
-inclusionsVisitorImpl wd sfRef isRef file iStack  = do
-  ic <- File.getName file >>= CS.unpackText
-  when (isLocalHeader wd ic) $ do
-    sf <- liftIO $ readIORef sfRef
-    (f, _, _, _) <- Source.getSpellingLocation (head iStack)
-    includer <- case f of Just valid -> File.getName valid >>= CS.unpackText
-                          Nothing    -> return ""
-    let isDirect = sf == includer
-    liftIO . modifyIORef' isRef $! ((Inclusion sf ic isDirect) :)
+inclusionsVisitorImpl wd sfRef isRef file iStack = do
+    ic <- File.getName file >>= CS.unpackText
+    when (isLocalHeader wd ic) $ do
+      sf <- liftIO $ readIORef sfRef
+      case iStack of
+        []       -> return ()                     -- The source file itself.
+        (_ : []) -> liftIO . modifyIORef' isRef $! ((Inclusion sf ic True) :)
+        (_ : _)  -> liftIO . modifyIORef' isRef $! ((Inclusion sf ic False) :)
 
 isLocalHeader :: WorkingDirectory -> SourceFile -> Bool
 isLocalHeader wd p = (wd `T.isPrefixOf`) .&&. (not . T.null) $ p

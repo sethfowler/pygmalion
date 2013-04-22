@@ -5,7 +5,6 @@ import Control.Concurrent.Async
 import Control.Exception (Exception, throw)
 import Control.Monad
 import Data.List
-import Data.Time.Clock.POSIX
 import qualified Filesystem.Path.CurrentOS as FP
 import GHC.Conc
 import System.Directory
@@ -42,12 +41,12 @@ main = do
   watchThread <- async (doWatch aChan stopWatching)
   _ <- getLine
   cancel rpcThread
-  logDebug "Just terminated RPC thread."
-  _ <- getLine
+  --logDebug "Just terminated RPC thread."
+  --_ <- getLine
   putMVar stopWatching ()
   wait watchThread
-  logDebug "Just terminated watch thread."
-  _ <- getLine
+  --logDebug "Just terminated watch thread."
+  --_ <- getLine
   forM_ threads $ \_ -> writeCountingChan aChan ShutdownAnalysis  -- Signifies end of data.
   forM_ (zip threads [1..numCapabilities]) $ \(thread, i) -> do
     ensureNoException =<< waitCatch thread
@@ -57,9 +56,13 @@ main = do
   logDebug $ "Termination of database thread"
 
 doWatch :: AnalysisChan -> MVar () -> IO ()
-doWatch aChan stopWatching = forever $ do
+doWatch aChan stopWatching = do
   -- Restart every 10 minutes until a better fix is found. =(
-  race (withManager $ watch aChan stopWatching) (threadDelay $ 10 * 60 * 1000000)
+  _ <- race (withManager $ watch aChan stopWatching) (threadDelay $ 10 * 60 * 1000000)
+  shouldStop <- tryTakeMVar stopWatching
+  case shouldStop of
+    Just _  -> return ()
+    Nothing -> doWatch aChan stopWatching
 
 watch :: AnalysisChan -> MVar () -> WatchManager -> IO ()
 watch aChan stopWatching m = do
@@ -83,9 +86,7 @@ handleSource aChan f = do
   let file = FP.encodeString f
   fileExists <- doesFileExist file
   when (isSource file && fileExists) $ do
-    -- Use the current time instead of the time when the event was generated.
-    time <- getPOSIXTime
-    writeCountingChan aChan (AnalyzeSource (mkSourceFile file) (floor time))
+    writeCountingChan aChan $ AnalyzeSource (mkSourceFile file)
 
 isSource :: FilePath -> Bool
 isSource f = (hasSourceExtension f || hasHeaderExtension f) &&
@@ -97,4 +98,5 @@ illegalPaths = [".git", ".hg", ".svn", "_darcs"]
 
 ensureNoException :: Exception a => Either a b -> IO b
 ensureNoException (Right v) = return v
-ensureNoException (Left e)  = logError "Thread threw an exception" >> throw e
+ensureNoException (Left e)  = do logError $ "Thread threw an exception: " ++ (show e)
+                                 throw e

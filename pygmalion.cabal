@@ -20,6 +20,7 @@ library
                    cereal-conduit,
                    conduit,
                    configurator,
+                   datetime,
                    direct-sqlite,
                    directory,
                    filepath,

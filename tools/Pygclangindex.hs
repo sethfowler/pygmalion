@@ -17,7 +17,7 @@ import Pygmalion.Log
 
 main :: IO ()
 main = do
-    initLogger EMERGENCY
+    initLogger DEBUG
     logDebug "Starting clang analysis process"
     wd <- T.pack <$> getCurrentDirectory
     sas <- mkSourceAnalysisState wd

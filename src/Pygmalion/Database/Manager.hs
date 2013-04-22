@@ -21,7 +21,7 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBUpdateOverride Override
                | DBUpdateCaller Caller
                | DBUpdateRef Reference
-               | DBUpdateInclusion Inclusion
+               | DBUpdateInclusion CommandInfo Inclusion
                | DBGetCommandInfo SourceFile (MVar (Maybe CommandInfo))
                | DBGetSimilarCommandInfo SourceFile (MVar (Maybe CommandInfo))
                | DBGetDefinition USR (MVar (Maybe DefInfo))
@@ -43,7 +43,7 @@ runDatabaseManager chan = withDB go
                     DBUpdateOverride ov         -> doUpdateOverride h ov >> go h
                     DBUpdateCaller cr           -> doUpdateCaller h cr >> go h
                     DBUpdateRef rf              -> doUpdateRef h rf >> go h
-                    DBUpdateInclusion ic        -> doUpdateInclusion h ic >> go h
+                    DBUpdateInclusion ci ic     -> doUpdateInclusion h ci ic >> go h
                     DBGetCommandInfo f v        -> doGetCommandInfo h f v >> go h
                     DBGetSimilarCommandInfo f v -> doGetSimilarCommandInfo h f v >> go h
                     DBGetDefinition u v         -> doGetDefinition h u v >> go h
@@ -76,9 +76,12 @@ doUpdateRef h rf = liftIO $ withTransaction h $ do
   liftIO $ logDebug $ "Updating database with reference: " ++ (show rf)
   updateReference h rf
 
-doUpdateInclusion :: DBHandle -> Inclusion -> IO ()
-doUpdateInclusion h ic = liftIO $ withTransaction h $ do
+doUpdateInclusion :: DBHandle -> CommandInfo -> Inclusion -> IO ()
+doUpdateInclusion h cmd ic = liftIO $ withTransaction h $ do
   liftIO $ logDebug $ "Updating database with inclusion: " ++ (show ic)
+  time <- getPOSIXTime
+  let ci = cmd { ciLastIndexed = floor time, ciSourceFile = icHeaderFile ic }
+  updateSourceFile h ci
   updateInclusion h ic
 
 doGetCommandInfo :: DBHandle -> SourceFile -> MVar (Maybe CommandInfo) -> IO ()

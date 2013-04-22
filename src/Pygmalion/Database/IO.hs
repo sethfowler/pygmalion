@@ -417,10 +417,10 @@ getDef :: DBHandle -> USR -> IO (Maybe DefInfo)
 getDef h usr = execSingleRowQuery h getDefStmt (Only $ hash usr)
 
 getDefSQL :: T.Text
-getDefSQL = "select D.Name, D.USR, F.Name, D.Offset, K.Kind \
-            \ from Definitions as D                         \
-            \ join Files as F on D.File = F.Hash            \
-            \ join Kinds as K on D.Kind = K.Hash            \
+getDefSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
+            \ from Definitions as D                              \
+            \ join Files as F on D.File = F.Hash                 \
+            \ join Kinds as K on D.Kind = K.Hash                 \
             \ where D.USRHash = ? limit 1"
   
 -- Schema and operations for the Overrides table.
@@ -446,22 +446,22 @@ getOverrided h usr = execQuery h getOverridedStmt (Only $ hash usr)
 
 getOverridedSQL :: T.Text
 getOverridedSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
-                  \ from Overrides                                     \
-                  \ join Definitions as D on Overrides.Overrided       \
+                  \ from Overrides as O                                \
+                  \ join Definitions as D on O.Overrided               \
                   \ join Files as F on D.File = F.Hash                 \
                   \ join Kinds as K on D.Kind = K.Hash                 \
-                  \ where Overrides.Definition = ?"
+                  \ where O.Definition = ?"
 
 getOverriders :: DBHandle -> USR -> IO [DefInfo]
 getOverriders h usr = execQuery h getOverridersStmt (Only $ hash usr)
 
 getOverridersSQL :: T.Text
 getOverridersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
-                   \ from Overrides                                     \
-                   \ join Definitions as D on Overrides.Definition      \
+                   \ from Overrides as O                                \
+                   \ join Definitions as D on O.Definition              \
                    \ join Files as F on D.File = F.Hash                 \
                    \ join Kinds as K on D.Kind = K.Hash                 \
-                   \ where Overrides.Overrided = ?"
+                   \ where O.Overrided = ?"
 
 -- Schema and operations for the Callers table.
 defineCallersTable :: Connection -> IO ()
@@ -486,34 +486,34 @@ getCallers h usr = execQuery h getCallersStmt (Only $ hash usr)
 
 getCallersSQL :: T.Text
 getCallersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
-                \ from Callers                                       \
-                \ join Definitions as D on Callers.Caller            \
+                \ from Callers as C                                  \
+                \ join Definitions as D on C.Caller                  \
                 \ join Files as F on D.File = F.Hash                 \
                 \ join Kinds as K on D.Kind = K.Hash                 \
-                \ where Callers.Callee = ?"
+                \ where C.Callee = ?"
 
 getCallees :: DBHandle -> USR -> IO [DefInfo]
 getCallees h usr = execQuery h getCalleesStmt (Only $ hash usr)
 
 getCalleesSQL :: T.Text
 getCalleesSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
-                \ from Callers                                       \
-                \ join Definitions as D on Callers.Callee            \
+                \ from Callers as C                                  \
+                \ join Definitions as D on C.Callee                  \
                 \ join Files as F on D.File = F.Hash                 \
                 \ join Kinds as K on D.Kind = K.Hash                 \
-                \ where Callers.Caller = ?"
+                \ where C.Caller = ?"
 
 -- Schema and operations for the References table.
 defineReferencesTable :: Connection -> IO ()
 defineReferencesTable c = execute_ c sql
-  where sql = "create table if not exists References(    \
+  where sql = "create table if not exists Refs(    \
                \ Id integer primary key unique not null, \
                \ File integer not null,                  \
                \ Line integer not null,                  \
                \ Col integer not null,                   \
                \ EndLine integer not null,               \
                \ EndCol integer not null,                \
-               \ Reference integer not null)"
+               \ Ref integer not null)"
 
 updateReference :: DBHandle -> Reference -> IO ()
 updateReference h (Reference (SourceRange sf l c el ec) refUSR) = do
@@ -522,7 +522,7 @@ updateReference h (Reference (SourceRange sf l c el ec) refUSR) = do
     execStatement h updateReferenceStmt (sfHash, l, c, el, ec, refUSRHash)
 
 updateReferenceSQL :: T.Text
-updateReferenceSQL = "replace into References (File, Line, Col, EndLine, EndCol, Reference) \
+updateReferenceSQL = "replace into Refs (File, Line, Col, EndLine, EndCol, Ref) \
                      \ values (?, ?, ?, ?, ?, ?)"
 
 getReferenced :: DBHandle -> SourceLocation -> IO [DefInfo]
@@ -531,8 +531,8 @@ getReferenced h (SourceLocation sf l c) =
 
 getReferencedSQL :: T.Text
 getReferencedSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
-                   \ from References as R                               \
-                   \ join Definitions as D on Overrides.Overrided       \
+                   \ from Refs as R                                     \
+                   \ join Definitions as D on R.Ref                     \
                    \ join Files as F on D.File = F.Hash                 \
                    \ join Kinds as K on D.Kind = K.Hash                 \
                    \ where R.File = ? and                               \
@@ -544,12 +544,12 @@ getReferences :: DBHandle -> USR -> IO [SourceRange]
 getReferences h usr = execQuery h getReferencesStmt (Only $ hash usr)
 
 getReferencesSQL :: T.Text
-getReferencesSQL = "select File, Line, Col, EndLine, EndCol       \
-                   \ from References                              \
-                   \ join Definitions as D on Overrides.Overrided \
-                   \ join Files as F on D.File = F.Hash           \
-                   \ join Kinds as K on D.Kind = K.Hash           \
-                   \ where Reference = ?"
+getReferencesSQL = "select R.File, R.Line, R.Col, R.EndLine, R.EndCol \
+                   \ from Refs as R                                   \
+                   \ join Definitions as D on R.Ref                   \
+                   \ join Files as F on D.File = F.Hash               \
+                   \ join Kinds as K on D.Kind = K.Hash               \
+                   \ where R.Ref = ?"
 
 -- Checks that the database has the correct schema and sets it up if needed.
 ensureSchema :: Connection -> IO ()

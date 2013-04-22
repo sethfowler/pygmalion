@@ -6,7 +6,6 @@ module Pygmalion.Analysis.Command
 
 import Data.List
 import qualified Data.Text as T
-import Data.Time.Clock.POSIX
 import System.Directory
 import System.Path
 
@@ -16,12 +15,11 @@ import Pygmalion.Core
 getCommandInfo :: Command -> IO (Maybe CommandInfo)
 getCommandInfo (Command c as) = do
     wd <- getCurrentDirectory
-    time <- getPOSIXTime
     let strAs = map T.unpack as
     let sourceFile = find hasSourceExtension strAs >>= absNormPath wd
     let fas = map T.pack . absArgs wd . filterArgs $ strAs
     case sourceFile of
-      Just sf -> return . Just $ CommandInfo (mkSourceFile sf) (T.pack wd) (Command c fas) (floor time)
+      Just sf -> return . Just $ CommandInfo (mkSourceFile sf) (T.pack wd) (Command c fas) 0
       _       -> return Nothing
 
 -- We need to filter arguments that cause dependency files to be generated,

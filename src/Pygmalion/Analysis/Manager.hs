@@ -5,12 +5,17 @@ module Pygmalion.Analysis.Manager
 ) where
 
 import Control.Concurrent.MVar
+import Control.Monad
 import Control.Monad.Trans
 import Data.ByteString.Char8 (ByteString)
 import Data.Conduit
 import Data.Conduit.Cereal
 import Data.Conduit.Process
+import Data.DateTime
+import Data.Maybe
+import Data.Time.Clock.POSIX
 import Data.Serialize
+import System.Directory
 
 import Control.Concurrent.Chan.Counting
 import qualified Pygmalion.Analysis.ClangRequest as CR
@@ -19,7 +24,7 @@ import Pygmalion.Database.Manager
 import Pygmalion.Log
 
 data AnalysisRequest = Analyze CommandInfo
-                     | AnalyzeSource SourceFile Time
+                     | AnalyzeSource SourceFile
                      | ShutdownAnalysis
 type AnalysisChan = CountingChan AnalysisRequest
 
@@ -33,11 +38,16 @@ runAnalysisManager chan dbChan = do
                   newCount <- getChanCount chan
                   logDebug $ "Analysis channel now has " ++ (show newCount) ++ " items waiting"
                   case req of
-                      Analyze cmd        -> doAnalyze indexer cmd dbChan >> go indexer
-                      AnalyzeSource sf t -> doAnalyzeSource indexer sf t dbChan >> go indexer
-                      ShutdownAnalysis   -> logInfo "Shutting down analysis thread"
+                      Analyze cmd      -> doAnalyze indexer cmd dbChan >> go indexer
+                      AnalyzeSource sf -> doAnalyzeSource indexer sf dbChan >> go indexer
+                      ShutdownAnalysis -> logInfo "Shutting down analysis thread"
 
 type Indexer = Conduit ByteString (ResourceT IO) ByteString
+
+getMTime :: SourceFile -> IO Time
+getMTime sf = do
+  clockTime <- getModificationTime (unSourceFile sf)
+  return $ floor (utcTimeToPOSIXSeconds . fromClockTime $ clockTime)
 
 doAnalyze :: Indexer -> CommandInfo -> DBChan -> IO ()
 doAnalyze indexer ci dbChan = do
@@ -45,30 +55,37 @@ doAnalyze indexer ci dbChan = do
     mOldCI <- newEmptyMVar
     writeCountingChan dbChan (DBGetCommandInfo (ciSourceFile ci) mOldCI)
     oldCI <- takeMVar mOldCI 
+    mtime <- getMTime (ciSourceFile ci)
+    when (isJust oldCI) $ putStrLn ("Deciding whether to analyze file with index time: " ++ (show . ciLastIndexed . fromJust $ oldCI))
     case oldCI of
-      Just (CommandInfo _ _ _ oldT) | (ciLastIndexed ci) <= oldT -> logInfo $ "Skipping analysis for " ++ (show . ciSourceFile $ ci)
-      _                                                          -> doAnalyze'
+      Just oldCI' | (ciLastIndexed oldCI') < mtime -> doAnalyze'
+                  | otherwise                      -> do updateCommand dbChan ci
+                                                         logInfo $ "Index is up-to-date for built file " ++ (show . ciSourceFile $ ci) ++ " (file mtime: " ++ (show mtime) ++ ")"
+      _                                            -> doAnalyze'
   where
-    doAnalyze' = analyzeCode indexer dbChan ci
+    doAnalyze' = analyzeCode indexer dbChan ci >> updateCommand dbChan ci
 
-doAnalyzeSource :: Indexer -> SourceFile -> Time -> DBChan -> IO ()
-doAnalyzeSource indexer sf t dbChan = do
+doAnalyzeSource :: Indexer -> SourceFile -> DBChan -> IO ()
+doAnalyzeSource indexer sf dbChan = do
     -- FIXME: Add an abstraction over this pattern.
     mOldCI <- newEmptyMVar
     writeCountingChan dbChan (DBGetSimilarCommandInfo sf mOldCI)
     oldCI <- takeMVar mOldCI 
     case oldCI of
-      Just ci | t <= (ciLastIndexed ci) -> logInfo $ "Skipping analysis for " ++ (show sf)
-              | otherwise               -> doAnalyzeSource' ci
-      _                                 -> logInfo $ "Skipping analysis for " ++ (show sf)
+      Just oldCI' -> do mtime <- getMTime (ciSourceFile oldCI')
+                        doAnalyzeSource' oldCI' mtime
+      _           -> logInfo $ "Not indexing unknown file " ++ (show sf)
   where
-    doAnalyzeSource' ci = analyzeCode indexer dbChan ci
+    doAnalyzeSource' ci mt | (ciLastIndexed ci) < mt = analyzeCode indexer dbChan ci
+                           | otherwise               = logInfo $ "Index is up-to-date for file " ++ (show sf)
 
-analyzeCode ::  Indexer -> DBChan -> CommandInfo -> IO ()
+updateCommand :: DBChan -> CommandInfo -> IO ()
+updateCommand dbChan ci = writeCountingChan dbChan (DBUpdateCommandInfo ci)
+
+analyzeCode :: Indexer -> DBChan -> CommandInfo -> IO ()
 analyzeCode indexer dbChan ci = do
     liftIO $ logInfo $ "Analyzing " ++ (show . ciSourceFile $ ci)
     runResourceT (source $= conduitPut putReq =$= indexer =$= conduitGet getResp $$ process)
-    writeCountingChan dbChan (DBUpdateCommandInfo ci)
   where
     source = yield (CR.Analyze ci) >> yield (CR.Shutdown)
     putReq :: Putter CR.ClangRequest
@@ -82,6 +99,6 @@ analyzeCode indexer dbChan ci = do
         Just (CR.FoundOverride ov)  -> liftIO (writeCountingChan dbChan (DBUpdateOverride ov)) >> process
         Just (CR.FoundCaller cr)    -> liftIO (writeCountingChan dbChan (DBUpdateCaller cr)) >> process
         Just (CR.FoundRef rf)       -> liftIO (writeCountingChan dbChan (DBUpdateRef rf)) >> process
-        Just (CR.FoundInclusion ic) -> liftIO (writeCountingChan dbChan (DBUpdateInclusion ic)) >> process
+        Just (CR.FoundInclusion ic) -> liftIO (writeCountingChan dbChan (DBUpdateInclusion ci ic)) >> process
         Just (CR.EndOfAnalysis)     -> liftIO (logDebug "Done reading from clang process") >> return ()
         Nothing                     -> liftIO (logDebug "Clang process read failed") >> return ()

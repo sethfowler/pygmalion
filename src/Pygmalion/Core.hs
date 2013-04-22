@@ -89,9 +89,9 @@ type Time = Int64
 
 -- Inclusion metadata.
 data Inclusion = Inclusion
-    { inSourceFile :: !SourceFile
-    , inHeaderFile :: !SourceFile
-    , inDirect     :: !Bool
+    { icSourceFile :: !SourceFile
+    , icHeaderFile :: !SourceFile
+    , icDirect     :: !Bool
     } deriving (Eq, Show, Generic)
 
 instance Serialize Inclusion
