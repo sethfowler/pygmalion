@@ -13,7 +13,7 @@ main :: IO ()
 main = do
   args <- (getArgs >>= parseArgs)
   cf <- getConfiguration
-  sendPing (ifPort cf)  -- Make sure pygd is running.
+  rpcPing (ifPort cf)  -- Make sure pygd is running.
   ensureSuccess =<< executeMake cf args
   --when (makeCDB cf) writeCompileCommands
 

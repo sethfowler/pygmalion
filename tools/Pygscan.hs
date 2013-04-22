@@ -13,7 +13,7 @@ import Pygmalion.RPC.Client
 main :: IO ()
 main = do
   (port, cmd) <- (getArgs >>= parseArgs)
-  void $ concurrently (runCmd cmd) (sendScanMessageIfValid port cmd)
+  void $ concurrently (runCmd cmd) (indexIfValid port cmd)
 
 usage :: IO a
 usage = putStrLn ("Usage: " ++ scanExecutable ++ " --make [port] [command]")
@@ -41,9 +41,9 @@ runCmd (Command c as) = do
     ExitSuccess -> return ()
     _           -> liftIO $ die "Command failed" code
 
-sendScanMessageIfValid :: Port -> Command -> IO ()
-sendScanMessageIfValid port cmd = do
+indexIfValid :: Port -> Command -> IO ()
+indexIfValid port cmd = do
   result <- getCommandInfo cmd
   case result of
-    Just cmdInfo -> sendScanMessage port cmdInfo
+    Just cmdInfo -> rpcIndex port cmdInfo
     _            -> return ()   -- Can't do anything with this command.

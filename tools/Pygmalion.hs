@@ -64,7 +64,7 @@ printDir f = getConfiguration >>= getCommandInfoOr bail f >>= putDir
 
 getCommandInfoOr :: IO () -> SourceFile -> Config -> IO CommandInfo
 getCommandInfoOr a f cf = do
-  cmd <- lookupSimilarCommandInfo (ifPort cf) f
+  cmd <- rpcGetSimilarCommandInfo (ifPort cf) f
   unless (isJust cmd) a
   return . fromJust $ cmd
 
@@ -76,10 +76,10 @@ printDef f (Just line) (Just col) = do
     case info of
       GotDef di  -> putDef di
       -- FIXME Clean this up
-      GotDecl usr di -> do def <- lookupDefInfo (ifPort cf) usr
+      GotDecl usr di -> do def <- rpcGetDefinition (ifPort cf) usr
                            if isJust def then putDef (fromJust def)
                                          else putDecl di
-      GotUSR usr -> do def <- lookupDefInfo (ifPort cf) usr
+      GotUSR usr -> do def <- rpcGetDefinition (ifPort cf) usr
                        unless (isJust def) $ bailWith (defErr usr)
                        putDef (fromJust def)
       GotNothing -> bailWith idErr
@@ -112,7 +112,7 @@ printCallers f (Just line) (Just col) = do
     idErr = errPrefix ++ "No identifier at this location."
     defErr usr = errPrefix ++ "No callers for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
     printCallers' usr cf = do
-      callers <- lookupCallers (ifPort cf) usr
+      callers <- rpcGetCallers (ifPort cf) usr
       case (null callers) of
         True  -> bailWith (defErr usr)
         False -> mapM_ putCaller callers
