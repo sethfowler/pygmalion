@@ -12,6 +12,15 @@ module Pygmalion.Database.IO
 , getSimilarCommandInfo
 , updateDef
 , getDef
+, updateOverride
+, getOverrided
+, getOverriders
+, updateCaller
+, getCallers
+, getCallees
+, updateReference
+, getReferenced
+, getReferences
 , enableTracing
 , DBHandle
 ) where
@@ -32,45 +41,8 @@ import Pygmalion.Log
 
 {-
  - Summary of database changes and new tables that we need:
- -
- - Inclusions, which maps File -> File. Each inclusion must be marked as
- - direct or indirect, because sometimes we need the transitive closure and
- - sometimes we don't and good luck computing the transitive closure efficiently
- - with SQL. This is the most urgent need as we will do much duplicate parsing
- - until we have this.
- -
- - Up to now all the information about declarations we've recorded has been
- - generic. But now we need some additional metadata that's different for
- - different types of declarations.
- -
- - Methods need information about overrides. I'm not sure there's any point in
- - storing the transitive closure because we generally need to walk this
- - downwards instead of upwards. We'll just have to be inefficient about this
- - for now. (We could post-process if we find that this is unacceptable from a
- - performance standpoint, and if there are enough queries to justify it we
- - could consider storing the transitive closure also.) Basically we need an
- - Overrides table that maps Definition -> Definition.
- -
- - We need to store information about the functions/methods that a function or
- - method calls. Transitive closure for this is too expensive to compute at
- - index time. We could post-process, but for now forget it. Just need a Callers
- - table that maps Definition -> Definition.
- -
- - We need class hierarchy information. It almost seems logical in a perverse
- - way to store this in the Overrides table. Maybe I'll just do that for now
- - until I find an issue with that approach.
- -
- - For now, I think the final thing we need is a table storing references. This
- - basically needs to map SourceLocation -> USR, so we can find all places that
- - a USR is mentioned. This will probably be a big table. Interestingly, this
- - doesn't just let us implement Find References; it also lets us look things up
- - without parsing the file and without complicated caching mechanisms! We just
- - need to store the extent of the source location (basically its end point as
- - well as its beginning point) and then we can query the database directly for
- - the USR and we don't have to parse anything! Given that we need this for Find
- - References anyway, I'm actually pretty excited about how this solves the
- - parsing performance problem as well. The cheapest parsing is the parsing you
- - don't do at all!
+ - * Remove the old before inserting the new (see below).
+ - * Switch to using 64-bit hashes.
  -
  - One last note: we need to keep in mind that we need to be able to _remove_
  - things for all these tables. The database update model needs to move from an
@@ -82,23 +54,32 @@ import Pygmalion.Log
 -- General database manipulation functions. These are thin wrappers around the
 -- underlying database implementation that also verify that the database is
 -- configured according to the correct schema and enable foreign keys.
-data DBHandle = DBHandle {
-                  conn :: Connection,
-                  beginTransactionStmt :: Statement,
-                  endTransactionStmt :: Statement,
-                  updateInclusionStmt :: Statement,
-                  getInclusionsStmt :: Statement,
-                  updateSourceFileStmt :: Statement,
-                  getCommandInfoStmt :: Statement,
-                  getSimilarCommandInfoStmt :: Statement,
-                  updateDefStmt :: Statement,
-                  getDefStmt :: Statement,
-                  insertFileStmt :: Statement,
-                  insertPathStmt :: Statement,
-                  insertCommandStmt :: Statement,
-                  insertArgsStmt :: Statement,
-                  insertKindStmt :: Statement
-                }
+data DBHandle = DBHandle
+    { conn                      :: Connection
+    , beginTransactionStmt      :: Statement
+    , endTransactionStmt        :: Statement
+    , updateInclusionStmt       :: Statement
+    , getInclusionsStmt         :: Statement
+    , updateSourceFileStmt      :: Statement
+    , getCommandInfoStmt        :: Statement
+    , getSimilarCommandInfoStmt :: Statement
+    , updateDefStmt             :: Statement
+    , getDefStmt                :: Statement
+    , updateOverrideStmt        :: Statement
+    , getOverridedStmt          :: Statement
+    , getOverridersStmt         :: Statement
+    , updateCallerStmt          :: Statement
+    , getCallersStmt            :: Statement
+    , getCalleesStmt            :: Statement
+    , updateReferenceStmt       :: Statement
+    , getReferencedStmt         :: Statement
+    , getReferencesStmt         :: Statement
+    , insertFileStmt            :: Statement
+    , insertPathStmt            :: Statement
+    , insertCommandStmt         :: Statement
+    , insertArgsStmt            :: Statement
+    , insertKindStmt            :: Statement
+    }
 
 ensureDB :: IO ()
 ensureDB = withDB (const . return $ ())
@@ -125,6 +106,15 @@ openDB db = labeledCatch "openDB" $ do
                   <*> openStatement c (mkQueryT getSimilarCommandInfoSQL)
                   <*> openStatement c (mkQueryT updateDefSQL)
                   <*> openStatement c (mkQueryT getDefSQL)
+                  <*> openStatement c (mkQueryT updateOverrideSQL)
+                  <*> openStatement c (mkQueryT getOverridedSQL)
+                  <*> openStatement c (mkQueryT getOverridersSQL)
+                  <*> openStatement c (mkQueryT updateCallerSQL)
+                  <*> openStatement c (mkQueryT getCallersSQL)
+                  <*> openStatement c (mkQueryT getCalleesSQL)
+                  <*> openStatement c (mkQueryT updateReferenceSQL)
+                  <*> openStatement c (mkQueryT getReferencedSQL)
+                  <*> openStatement c (mkQueryT getReferencesSQL)
                   <*> openStatement c (mkQueryT insertFileSQL)
                   <*> openStatement c (mkQueryT insertPathSQL)
                   <*> openStatement c (mkQueryT insertCommandSQL)
@@ -143,6 +133,15 @@ closeDB h = do
   closeStatement (getSimilarCommandInfoStmt h)
   closeStatement (updateDefStmt h)
   closeStatement (getDefStmt h)
+  closeStatement (updateOverrideStmt h)
+  closeStatement (getOverridedStmt h)
+  closeStatement (getOverridersStmt h)
+  closeStatement (updateCallerStmt h)
+  closeStatement (getCallersStmt h)
+  closeStatement (getCalleesStmt h)
+  closeStatement (updateReferenceStmt h)
+  closeStatement (getReferencedStmt h)
+  closeStatement (getReferencesStmt h)
   closeStatement (insertFileStmt h)
   closeStatement (insertPathStmt h)
   closeStatement (insertCommandStmt h)
@@ -398,44 +397,175 @@ defineDefinitionsTable c = execute_ c sql
                \ USR varchar(2048) not null,                  \
                \ File integer not null,                       \
                \ Line integer not null,                       \
-               \ Column integer not null,                     \
+               \ Col integer not null,                        \
                \ Kind integer not null)"
 
 updateDef :: DBHandle -> DefInfo -> IO ()
 updateDef h (DefInfo n u (SourceLocation sf l c) k) = do
     let usrHash = hash u
     let sfHash = hash sf
-    execStatement h insertFileStmt (sf, sfHash)
+    execStatement h insertFileStmt (sf, sfHash) -- FIXME: Maybe only updateSourceFile should do this?
     let kindHash = hash k
     execStatement h insertKindStmt (k, kindHash)
     execStatement h updateDefStmt (usrHash, n, u, sfHash, l, c, kindHash)
 
 updateDefSQL :: T.Text
 updateDefSQL = "replace into Definitions               \
-               \ (USRHash, Name, USR, File, Line, Column, Kind) \
+               \ (USRHash, Name, USR, File, Line, Col, Kind) \
                \ values (?, ?, ?, ?, ?, ?, ?)"
 
 getDef :: DBHandle -> USR -> IO (Maybe DefInfo)
 getDef h usr = execSingleRowQuery h getDefStmt (Only $ hash usr)
 
 getDefSQL :: T.Text
-getDefSQL = "select D.Name, D.USR, F.Name, D.Line, D.Column, K.Kind \
-            \ from Definitions as D                                 \
-            \ join Files as F on D.File = F.Hash                    \
-            \ join Kinds as K on D.Kind = K.Hash                    \
+getDefSQL = "select D.Name, D.USR, F.Name, D.Offset, K.Kind \
+            \ from Definitions as D                         \
+            \ join Files as F on D.File = F.Hash            \
+            \ join Kinds as K on D.Kind = K.Hash            \
             \ where D.USRHash = ? limit 1"
   
+-- Schema and operations for the Overrides table.
+defineOverridesTable :: Connection -> IO ()
+defineOverridesTable c = execute_ c sql
+  where sql = "create table if not exists Overrides(     \
+               \ Id integer primary key unique not null, \
+               \ Definition integer not null,            \
+               \ Overrided integer not null)"
+
+updateOverride :: DBHandle -> Override -> IO ()
+updateOverride h (Override defUSR overrideUSR) = do
+    let defUSRHash = hash defUSR
+    let overrideUSRHash = hash overrideUSR
+    execStatement h updateOverrideStmt (defUSRHash, overrideUSRHash)
+
+updateOverrideSQL :: T.Text
+updateOverrideSQL = "replace into Overrides (Definition, Overrided) \
+                    \ values (?, ?)"
+
+getOverrided :: DBHandle -> USR -> IO [DefInfo]
+getOverrided h usr = execQuery h getOverridedStmt (Only $ hash usr)
+
+getOverridedSQL :: T.Text
+getOverridedSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
+                  \ from Overrides                                     \
+                  \ join Definitions as D on Overrides.Overrided       \
+                  \ join Files as F on D.File = F.Hash                 \
+                  \ join Kinds as K on D.Kind = K.Hash                 \
+                  \ where Overrides.Definition = ?"
+
+getOverriders :: DBHandle -> USR -> IO [DefInfo]
+getOverriders h usr = execQuery h getOverridersStmt (Only $ hash usr)
+
+getOverridersSQL :: T.Text
+getOverridersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
+                   \ from Overrides                                     \
+                   \ join Definitions as D on Overrides.Definition      \
+                   \ join Files as F on D.File = F.Hash                 \
+                   \ join Kinds as K on D.Kind = K.Hash                 \
+                   \ where Overrides.Overrided = ?"
+
+-- Schema and operations for the Callers table.
+defineCallersTable :: Connection -> IO ()
+defineCallersTable c = execute_ c sql
+  where sql = "create table if not exists Callers(       \
+               \ Id integer primary key unique not null, \
+               \ Caller integer not null,                \
+               \ Callee integer not null)"
+
+updateCaller :: DBHandle -> Caller -> IO ()
+updateCaller h (Caller callerUSR calleeUSR) = do
+    let callerUSRHash = hash callerUSR
+    let calleeUSRHash = hash calleeUSR
+    execStatement h updateCallerStmt (callerUSRHash, calleeUSRHash)
+
+updateCallerSQL :: T.Text
+updateCallerSQL = "replace into Callers (Caller, Callee) \
+                  \ values (?, ?)"
+
+getCallers :: DBHandle -> USR -> IO [DefInfo]
+getCallers h usr = execQuery h getCallersStmt (Only $ hash usr)
+
+getCallersSQL :: T.Text
+getCallersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
+                \ from Callers                                       \
+                \ join Definitions as D on Callers.Caller            \
+                \ join Files as F on D.File = F.Hash                 \
+                \ join Kinds as K on D.Kind = K.Hash                 \
+                \ where Callers.Callee = ?"
+
+getCallees :: DBHandle -> USR -> IO [DefInfo]
+getCallees h usr = execQuery h getCalleesStmt (Only $ hash usr)
+
+getCalleesSQL :: T.Text
+getCalleesSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
+                \ from Callers                                       \
+                \ join Definitions as D on Callers.Callee            \
+                \ join Files as F on D.File = F.Hash                 \
+                \ join Kinds as K on D.Kind = K.Hash                 \
+                \ where Callers.Caller = ?"
+
+-- Schema and operations for the References table.
+defineReferencesTable :: Connection -> IO ()
+defineReferencesTable c = execute_ c sql
+  where sql = "create table if not exists References(    \
+               \ Id integer primary key unique not null, \
+               \ File integer not null,                  \
+               \ Line integer not null,                  \
+               \ Col integer not null,                   \
+               \ EndLine integer not null,               \
+               \ EndCol integer not null,                \
+               \ Reference integer not null)"
+
+updateReference :: DBHandle -> Reference -> IO ()
+updateReference h (Reference (SourceRange sf l c el ec) refUSR) = do
+    let sfHash = hash sf
+    let refUSRHash = hash refUSR
+    execStatement h updateReferenceStmt (sfHash, l, c, el, ec, refUSRHash)
+
+updateReferenceSQL :: T.Text
+updateReferenceSQL = "replace into References (File, Line, Col, EndLine, EndCol, Reference) \
+                     \ values (?, ?, ?, ?, ?, ?)"
+
+getReferenced :: DBHandle -> SourceLocation -> IO [DefInfo]
+getReferenced h (SourceLocation sf l c) =
+  execQuery h getReferencedStmt (hash sf, l, l, c, l, c)
+
+getReferencedSQL :: T.Text
+getReferencedSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
+                   \ from References as R                               \
+                   \ join Definitions as D on Overrides.Overrided       \
+                   \ join Files as F on D.File = F.Hash                 \
+                   \ join Kinds as K on D.Kind = K.Hash                 \
+                   \ where R.File = ? and                               \
+                   \   ((? between R.Line + 1 and R.EndLine - 1) or     \
+                   \    (? = R.Line and ? >= R.Col) or                  \
+                   \    (? = R.EndLine and ? <= R.Col))"
+
+getReferences :: DBHandle -> USR -> IO [SourceRange]
+getReferences h usr = execQuery h getReferencesStmt (Only $ hash usr)
+
+getReferencesSQL :: T.Text
+getReferencesSQL = "select File, Line, Col, EndLine, EndCol       \
+                   \ from References                              \
+                   \ join Definitions as D on Overrides.Overrided \
+                   \ join Files as F on D.File = F.Hash           \
+                   \ join Kinds as K on D.Kind = K.Hash           \
+                   \ where Reference = ?"
 
 -- Checks that the database has the correct schema and sets it up if needed.
 ensureSchema :: Connection -> IO ()
 ensureSchema c = defineMetadataTable c
               >> defineFilesTable c
+              >> defineInclusionsTable c
               >> definePathsTable c
               >> defineBuildCommandsTable c
               >> defineBuildArgsTable c
               >> defineSourceFilesTable c
               >> defineKindsTable c
               >> defineDefinitionsTable c
+              >> defineOverridesTable c
+              >> defineCallersTable c
+              >> defineReferencesTable c
               >> ensureVersion c
 
 ensureVersion :: Connection -> IO ()

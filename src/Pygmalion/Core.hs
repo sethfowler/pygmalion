@@ -9,11 +9,15 @@ module Pygmalion.Core
 , Inclusion (..)
 , DefInfo (..)
 , SourceLocation (..)
+, SourceRange (..)
 , Identifier
 , USR
 , SourceLine
-, SourceColumn
+, SourceCol
 , DefKind
+, Override (..)
+, Caller (..)
+, Reference (..)
 , Port
 , mkSourceFile
 , unSourceFile
@@ -36,7 +40,6 @@ import Data.Int
 import Data.Serialize
 import Database.SQLite.Simple (FromRow(..), field)
 import GHC.Generics
-import System.FilePath.Posix
 
 type Port = Int
 
@@ -63,8 +66,10 @@ instance FromRow CommandInfo where
     time  <- field
     return $ CommandInfo sf wd cmd time
 
-data Command = Command !T.Text ![T.Text]
-  deriving (Eq, Show, Generic)
+data Command = Command
+    { cmdExecutable :: !T.Text
+    , cmdArguments  :: ![T.Text]
+    } deriving (Eq, Show, Generic)
 
 instance Serialize Command
 
@@ -112,16 +117,53 @@ instance FromRow DefInfo where
     kind  <- field
     return $ DefInfo ident usr sl kind
 
-data SourceLocation = SourceLocation !SourceFile !SourceLine !SourceColumn
-  deriving (Eq, Show, Generic)
+data SourceLocation = SourceLocation
+    { slFile :: !SourceFile
+    , slLine :: !SourceLine
+    , slCol  :: !SourceCol
+    } deriving (Eq, Show, Generic)
 
 instance Serialize SourceLocation
 
-type Identifier   = T.Text
-type USR          = T.Text
-type SourceLine   = Int
-type SourceColumn = Int
-type DefKind      = T.Text
+data SourceRange = SourceRange
+    { srFile    :: !SourceFile
+    , srLine    :: !SourceLine
+    , srCol     :: !SourceCol
+    , srEndLine :: !SourceLine
+    , srEndCol  :: !SourceCol
+    } deriving (Eq, Show, Generic)
+
+instance Serialize SourceRange
+
+instance FromRow SourceRange where
+  fromRow = SourceRange <$> field <*> field <*> field <*> field <*> field
+
+type Identifier = T.Text
+type USR        = T.Text
+type SourceLine = Int
+type SourceCol  = Int
+type DefKind    = T.Text
+
+data Override = Override
+    { orDef       :: !USR
+    , orOverrided :: !USR
+    } deriving (Eq, Show, Generic)
+
+instance Serialize Override
+
+data Caller = Caller
+    { crCaller :: !USR
+    , crCallee :: !USR
+    } deriving (Eq, Show, Generic)
+
+instance Serialize Caller
+
+data Reference = Reference
+    { rfRange :: !SourceRange
+    , rfUSR   :: !USR
+    } deriving (Eq, Show, Generic)
+
+instance Serialize Reference
 
 -- Tool names.
 queryExecutable, scanExecutable, makeExecutable, daemonExecutable, clangExecutable :: String
