@@ -32,14 +32,15 @@ usage = do
   putStrLn   " --definition-for [file] [line] [col]"
   putStrLn   " --callers [file] [line] [col]"
   putStrLn   " --callees [file] [line] [col]"
+  putStrLn   " --identify [file] [line] [col]"
   putStrLn   " --display-ast [file]"
   bail
 
 parseArgs :: [String] -> IO ()
-parseArgs ["--compile-commands"] = printCDB
-parseArgs ["--flags-for-file", f] = printFlags (mkSourceFile f)
-parseArgs ["--directory-for-file", f] = printDir (mkSourceFile f)
-parseArgs ["--definition-for", f, line, col] = printDef (mkSourceFile f)
+parseArgs ["--generate-compile-commands"] = printCDB
+parseArgs ["--compile-flags", f] = printFlags (mkSourceFile f)
+parseArgs ["--working-directory", f] = printDir (mkSourceFile f)
+parseArgs ["--definition", f, line, col] = printDef (mkSourceFile f)
                                                         (readMay line) (readMay col)
 parseArgs ["--callers", f, line, col] = printCallers (mkSourceFile f)
                                                      (readMay line) (readMay col)
