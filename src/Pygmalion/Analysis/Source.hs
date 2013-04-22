@@ -7,7 +7,7 @@ module Pygmalion.Analysis.Source
 , SourceAnalysisResult (..)
 , SourceAnalysisState
 , mkSourceAnalysisState
-, dumpSubtree -- Just to silence the warnings. Need to move this to another module.
+, displayAST
 ) where
 
 import Clang.Alloc.Storable()
@@ -60,7 +60,7 @@ mkSourceAnalysisState wd = do
   newCallersRef    <- newIORef $! []
   newRefsRef       <- newIORef $! []
   newInclusionsRef <- newIORef $! []
-  return $ SourceAnalysisState (defsVisitorImpl newSFRef newDefsRef)
+  return $ SourceAnalysisState (defsVisitorImpl wd newDefsRef)
                                (inclusionsVisitorImpl wd newSFRef newInclusionsRef)
                                newSFRef
                                newDefsRef
@@ -101,6 +101,13 @@ getLookupInfo ci sl = do
     Right r                 -> return r
     Left (ClangException e) -> logWarn ("Clang exception: " ++ e ) >> return GotNothing
 
+displayAST :: CommandInfo -> IO ()
+displayAST ci = do
+  result <- try $ withTranslationUnit ci $ doDisplayAST
+  case result of
+    Right _                 -> return ()
+    Left (ClangException e) -> logWarn ("Clang exception: " ++ e )
+
 inclusionsAnalysis :: SourceAnalysisState -> TranslationUnit -> ClangApp ()
 inclusionsAnalysis sas tu = void $ getInclusions tu (inclusionsVisitor sas)
 
@@ -122,14 +129,13 @@ defsAnalysis sas tu = do
     cursor <- getCursor tu
     void $ visitChildren cursor (defsVisitor sas)
 
-defsVisitorImpl :: IORef SourceFile -> IORef [DefInfo] -> ChildVisitor
-defsVisitorImpl sfRef dsRef cursor _ = do
+defsVisitorImpl :: WorkingDirectory -> IORef [DefInfo] -> ChildVisitor
+defsVisitorImpl wd dsRef cursor _ = do
   loc <- C.getLocation cursor
   (f, ln, col, _) <- Source.getSpellingLocation loc
   file <- case f of Just valid -> File.getName valid >>= CS.unpackText
                     Nothing    -> return ""
-  thisFile <- liftIO $ readIORef sfRef
-  case (file == thisFile) of
+  case inProject wd file of
     True -> do  cKind <- C.getKind cursor
                 cursorIsDef <- isDef cursor cKind
                 when cursorIsDef $ do
@@ -145,17 +151,6 @@ defsVisitorImpl sfRef dsRef cursor _ = do
                             C.Cursor_CXXMethod    -> ChildVisit_Continue
                             _                     -> ChildVisit_Recurse
     False -> return ChildVisit_Continue
-
-{-
--- Was the following; still evaluating the tradeoffs.
--- It probably does NOT make sense to store definitions that must necessarily
--- occur in the same file, because we have to parse the file anyway to get the
--- USR. Should refactor things to support that flow.
-      return $ case cKind of
-                  C.Cursor_FunctionDecl -> ChildVisit_Continue
-                  C.Cursor_CXXMethod    -> ChildVisit_Continue
-                  _                     -> ChildVisit_Recurse
--}
 
 inProject :: WorkingDirectory -> SourceFile -> Bool
 inProject wd p = (wd `T.isPrefixOf`) .&&. (not . T.null) $ p
@@ -228,13 +223,18 @@ dumpDiagnostics tu = do
   where
     isError = (== Diag.Diagnostic_Error) .||. (== Diag.Diagnostic_Fatal)
 
+doDisplayAST :: TranslationUnit -> ClangApp ()
+doDisplayAST tu = getCursor tu >>= dumpSubtree
 
 dumpSubtree :: C.Cursor -> ClangApp ()
 dumpSubtree cursor = do
     dump 0 cursor
     void $ visitChildren cursor (dumpVisitor 0)
+    liftIO $ putStrLn "Finished recursing"
   where dumpVisitor :: Int -> ChildVisitor
-        dumpVisitor i c _ = dump i c >> return ChildVisit_Recurse
+        dumpVisitor i c _ = do dump i c
+                               void $ visitChildren c (dumpVisitor $ i + 1)
+                               return ChildVisit_Continue
         dump :: Int -> C.Cursor -> ClangApp ()
         dump i c = do
           -- Get extent.
@@ -243,12 +243,12 @@ dumpSubtree cursor = do
           (_, endLn, endCol, _) <- Source.getEnd extent >>= Source.getSpellingLocation
 
           -- Get metadata.
-          name <- C.getDisplayName cursor >>= CS.unpack
-          usr <- XRef.getUSR cursor >>= CS.unpack
+          name <- C.getDisplayName c >>= CS.unpack
+          usr <- XRef.getUSR c >>= CS.unpack
           kind <- C.getKind c >>= C.getCursorKindSpelling >>= CS.unpack
 
           -- Display.
-          liftIO $ logDebug $ (replicate i ' ') ++"[" ++ kind ++ "] " ++ name ++ " (" ++ usr ++ ") @ " ++
+          liftIO $ putStrLn $ (replicate i ' ') ++ "[" ++ kind ++ "] " ++ name ++ " (" ++ usr ++ ") @ " ++
                               (show startLn) ++ "," ++ (show startCol) ++ " -> " ++
                               (show endLn) ++ "," ++ (show endCol)
 

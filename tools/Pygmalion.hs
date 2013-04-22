@@ -30,6 +30,7 @@ usage = do
   putStrLn   " --directory-for-file [file] Prints the working directory at the time"
   putStrLn   "                             the file was compiled. Guesses if needed."
   putStrLn   " --definition-for [file] [line] [col]"
+  putStrLn   " --display-ast [file]"
   bail
 
 parseArgs :: [String] -> IO ()
@@ -38,6 +39,7 @@ parseArgs ["--flags-for-file", f] = printFlags (mkSourceFile f)
 parseArgs ["--directory-for-file", f] = printDir (mkSourceFile f)
 parseArgs ["--definition-for", f, line, col] = printDef (mkSourceFile f)
                                                         (readMay line) (readMay col)
+parseArgs ["--display-ast", f] = printAST (mkSourceFile f)
 parseArgs ["--help"] = usage
 parseArgs ["-h"]     = usage
 parseArgs _          = usage
@@ -90,6 +92,9 @@ printDef f (Just line) (Just col) = do
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Declaration: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
 printDef _ _ _ = usage
+
+printAST :: SourceFile -> IO ()
+printAST f = getConfiguration >>= getCommandInfoOr bail f >>= displayAST
 
 bail :: IO ()
 bail = exitWith (ExitFailure (-1))
