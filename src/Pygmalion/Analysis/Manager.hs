@@ -5,6 +5,7 @@ module Pygmalion.Analysis.Manager
 ) where
 
 import Control.Concurrent.MVar
+import Control.Exception
 import Control.Monad
 import Control.Monad.Trans
 import Data.ByteString.Char8 (ByteString)
@@ -46,8 +47,11 @@ type Indexer = Conduit ByteString (ResourceT IO) ByteString
 
 getMTime :: SourceFile -> IO Time
 getMTime sf = do
-  clockTime <- getModificationTime (unSourceFile sf)
-  return $ floor (utcTimeToPOSIXSeconds . fromClockTime $ clockTime)
+  result <- try $ getModificationTime (unSourceFile sf)
+  case result of
+    Right clockTime -> return $ floor (utcTimeToPOSIXSeconds . fromClockTime $ clockTime)
+    Left e          -> do logInfo $ "Couldn't read mtime for file " ++ (unSourceFile sf) ++ ": " ++ (show (e :: IOException))
+                          return 0  -- Most likely the file has been deleted.
 
 doAnalyze :: AnalysisChan -> DBChan -> Indexer -> CommandInfo -> IO ()
 doAnalyze aChan dbChan indexer ci = do
@@ -56,16 +60,16 @@ doAnalyze aChan dbChan indexer ci = do
     writeCountingChan dbChan (DBGetCommandInfo (ciSourceFile ci) mOldCI)
     oldCI <- takeMVar mOldCI 
     mtime <- getMTime (ciSourceFile ci)
-    when (isJust oldCI) $ putStrLn ("Deciding whether to analyze file with index time: " ++ (show . ciLastIndexed . fromJust $ oldCI))
+    when (isJust oldCI) $ logInfo ("Deciding whether to analyze file with index time: " ++ (show . ciLastIndexed . fromJust $ oldCI))
     case oldCI of
-      Just oldCI' | (ciLastIndexed oldCI') < mtime -> doAnalyze' False
+      Just oldCI' | (ciLastIndexed oldCI') < mtime -> doAnalyze'
                   | otherwise                      -> do updateCommand dbChan ci
                                                          logInfo $ "Index is up-to-date for built file " ++ (show . ciSourceFile $ ci) ++ " (file mtime: " ++ (show mtime) ++ ")"
-      _                                            -> doAnalyze' True
+      _                                            -> doAnalyze'
   where
-    doAnalyze' isNew = do toReindex <- filesToReindex dbChan ci
-                          forM_ toReindex $ \f -> analyzeCode aChan dbChan indexer f isNew
-                          updateCommand dbChan ci
+    doAnalyze' = do toReindex <- filesToReindex dbChan ci
+                    forM_ toReindex $ \f -> analyzeCode aChan dbChan indexer f
+                    updateCommand dbChan ci
 
 doAnalyzeSource :: AnalysisChan -> DBChan -> Indexer -> SourceFile -> IO ()
 doAnalyzeSource aChan dbChan indexer sf = do
@@ -79,7 +83,7 @@ doAnalyzeSource aChan dbChan indexer sf = do
       _           -> logInfo $ "Not indexing unknown file " ++ (show sf)
   where
     doAnalyzeSource' ci mt | (ciLastIndexed ci) < mt = do toReindex <- filesToReindex dbChan ci
-                                                          forM_ toReindex $ \f -> analyzeCode aChan dbChan indexer f False
+                                                          forM_ toReindex $ \f -> analyzeCode aChan dbChan indexer f
                            | otherwise               = logInfo $ "Index is up-to-date for file " ++ (show sf)
 
 -- If the source file associated with this CommandInfo has changed, what must
@@ -94,8 +98,21 @@ filesToReindex dbChan ci = do
 updateCommand :: DBChan -> CommandInfo -> IO ()
 updateCommand dbChan ci = writeCountingChan dbChan (DBUpdateCommandInfo ci)
 
-analyzeCode :: AnalysisChan -> DBChan -> Indexer -> CommandInfo -> Bool -> IO ()
-analyzeCode aChan dbChan indexer ci isNew = do
+analyzeHeader :: AnalysisChan -> DBChan -> CommandInfo -> Inclusion -> IO ()
+analyzeHeader aChan dbChan ci ic = do
+    mOldCI <- newEmptyMVar
+    writeCountingChan dbChan (DBGetCommandInfo (icSourceFile ic) mOldCI)
+    oldCI <- takeMVar mOldCI 
+    mtime <- getMTime (icSourceFile ic)
+    case oldCI of
+      Just oldCI' | (ciLastIndexed oldCI') < mtime -> doAnalyze'
+                  | otherwise                      -> do logInfo $ "Index is up-to-date for header file " ++ (show . icSourceFile $ ic) ++ " (file mtime: " ++ (show mtime) ++ ")"
+      _ -> doAnalyze'
+  where
+    doAnalyze' = writeCountingChan aChan $ Analyze ci { ciLastIndexed = 0, ciSourceFile = icHeaderFile ic}
+
+analyzeCode :: AnalysisChan -> DBChan -> Indexer -> CommandInfo -> IO ()
+analyzeCode aChan dbChan indexer ci = do
     liftIO $ logInfo $ "Indexing " ++ (show . ciSourceFile $ ci)
     runResourceT (source $= conduitPut putReq =$= indexer =$= conduitGet getResp $$ process)
   where
@@ -112,8 +129,7 @@ analyzeCode aChan dbChan indexer ci isNew = do
         Just (CR.FoundCaller cr)    -> liftIO (writeCountingChan dbChan (DBUpdateCaller cr)) >> process
         Just (CR.FoundRef rf)       -> liftIO (writeCountingChan dbChan (DBUpdateRef rf)) >> process
         Just (CR.FoundInclusion ic) -> do liftIO (writeCountingChan dbChan (DBUpdateInclusion ci ic))
-                                          when isNew $
-                                            liftIO (writeCountingChan aChan $ Analyze ci { ciLastIndexed = 0, ciSourceFile = icHeaderFile ic})
+                                          when (icDirect ic) (liftIO $ analyzeHeader aChan dbChan ci ic)
                                           process
         Just (CR.EndOfAnalysis)     -> liftIO (logDebug "Done reading from clang process") >> return ()
         Nothing                     -> liftIO (logDebug "Clang process read failed") >> return ()
