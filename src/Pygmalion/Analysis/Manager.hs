@@ -98,19 +98,6 @@ filesToReindex dbChan ci = do
 updateCommand :: DBChan -> CommandInfo -> IO ()
 updateCommand dbChan ci = writeCountingChan dbChan (DBUpdateCommandInfo ci)
 
-analyzeHeader :: AnalysisChan -> DBChan -> CommandInfo -> Inclusion -> IO ()
-analyzeHeader aChan dbChan ci ic = do
-    mOldCI <- newEmptyMVar
-    writeCountingChan dbChan (DBGetCommandInfo (icSourceFile ic) mOldCI)
-    oldCI <- takeMVar mOldCI 
-    mtime <- getMTime (icSourceFile ic)
-    case oldCI of
-      Just oldCI' | (ciLastIndexed oldCI') < mtime -> doAnalyze'
-                  | otherwise                      -> do logInfo $ "Index is up-to-date for header file " ++ (show . icSourceFile $ ic) ++ " (file mtime: " ++ (show mtime) ++ ")"
-      _ -> doAnalyze'
-  where
-    doAnalyze' = writeCountingChan aChan $ Analyze ci { ciLastIndexed = 0, ciSourceFile = icHeaderFile ic}
-
 analyzeCode :: AnalysisChan -> DBChan -> Indexer -> CommandInfo -> IO ()
 analyzeCode aChan dbChan indexer ci = do
     liftIO $ logInfo $ "Indexing " ++ (show . ciSourceFile $ ci)
@@ -129,7 +116,8 @@ analyzeCode aChan dbChan indexer ci = do
         Just (CR.FoundCaller cr)    -> liftIO (writeCountingChan dbChan (DBUpdateCaller cr)) >> process
         Just (CR.FoundRef rf)       -> liftIO (writeCountingChan dbChan (DBUpdateRef rf)) >> process
         Just (CR.FoundInclusion ic) -> do liftIO (writeCountingChan dbChan (DBUpdateInclusion ci ic))
-                                          when (icDirect ic) (liftIO $ analyzeHeader aChan dbChan ci ic)
+                                          when (icDirect ic) (liftIO $ writeCountingChan aChan $ Analyze
+                                                                ci { ciLastIndexed = 0, ciSourceFile = icHeaderFile ic})
                                           process
         Just (CR.EndOfAnalysis)     -> liftIO (logDebug "Done reading from clang process") >> return ()
         Nothing                     -> liftIO (logDebug "Clang process read failed") >> return ()
