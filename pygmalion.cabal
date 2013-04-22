@@ -116,6 +116,7 @@ executable pygclangindex
                ,  mtl
                ,  pygmalion
                ,  text
+               ,  unix
   hs-source-dirs: tools
 
 test-suite pygmalion-quickcheck

@@ -9,6 +9,7 @@ import Data.Serialize
 import qualified Data.Text as T
 import System.Directory
 import System.IO
+import System.Posix.Process
 
 import Pygmalion.Analysis.ClangRequest
 import Pygmalion.Analysis.Source
@@ -19,6 +20,7 @@ main :: IO ()
 main = do
     initLogger DEBUG
     logDebug "Starting clang analysis process"
+    nice 10
     wd <- T.pack <$> getCurrentDirectory
     sas <- mkSourceAnalysisState wd
     runResourceT (sourceHandle stdin $= conduitGet getReq =$= process sas =$= conduitPut putResp $$ sinkHandle stdout)
