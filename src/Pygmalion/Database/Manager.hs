@@ -25,6 +25,7 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBGetCommandInfo SourceFile (MVar (Maybe CommandInfo))
                | DBGetSimilarCommandInfo SourceFile (MVar (Maybe CommandInfo))
                | DBGetDefinition USR (MVar (Maybe DefInfo))
+               | DBGetIncluders SourceFile (MVar [CommandInfo])
                | DBShutdown
 type DBChan = CountingChan DBRequest
     
@@ -47,6 +48,7 @@ runDatabaseManager chan = withDB go
                     DBGetCommandInfo f v        -> doGetCommandInfo h f v >> go h
                     DBGetSimilarCommandInfo f v -> doGetSimilarCommandInfo h f v >> go h
                     DBGetDefinition u v         -> doGetDefinition h u v >> go h
+                    DBGetIncluders sf v         -> doGetIncluders h sf v >> go h
                     DBShutdown                  -> logInfo "Shutting down DB thread"
 
 doUpdateCommandInfo :: DBHandle -> CommandInfo -> IO ()
@@ -101,3 +103,9 @@ doGetDefinition h usr v = do
   liftIO $ logDebug $ "Getting DefInfo for " ++ (show usr)
   def <- getDef h usr
   putMVar v $! def
+
+doGetIncluders :: DBHandle -> SourceFile -> MVar [CommandInfo] -> IO ()
+doGetIncluders h sf v = do
+  liftIO $ logDebug $ "Getting includers for " ++ (show sf)
+  includers <- getIncluders h sf
+  putMVar v $! includers

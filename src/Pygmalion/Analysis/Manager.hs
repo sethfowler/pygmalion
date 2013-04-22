@@ -63,7 +63,9 @@ doAnalyze indexer ci dbChan = do
                                                          logInfo $ "Index is up-to-date for built file " ++ (show . ciSourceFile $ ci) ++ " (file mtime: " ++ (show mtime) ++ ")"
       _                                            -> doAnalyze'
   where
-    doAnalyze' = analyzeCode indexer dbChan ci >> updateCommand dbChan ci
+    doAnalyze' = do toReindex <- filesToReindex dbChan ci
+                    forM_ toReindex $ \f -> analyzeCode indexer dbChan f
+                    updateCommand dbChan ci
 
 doAnalyzeSource :: Indexer -> SourceFile -> DBChan -> IO ()
 doAnalyzeSource indexer sf dbChan = do
@@ -76,15 +78,25 @@ doAnalyzeSource indexer sf dbChan = do
                         doAnalyzeSource' oldCI' mtime
       _           -> logInfo $ "Not indexing unknown file " ++ (show sf)
   where
-    doAnalyzeSource' ci mt | (ciLastIndexed ci) < mt = analyzeCode indexer dbChan ci
+    doAnalyzeSource' ci mt | (ciLastIndexed ci) < mt = do toReindex <- filesToReindex dbChan ci
+                                                          forM_ toReindex $ \f -> analyzeCode indexer dbChan f
                            | otherwise               = logInfo $ "Index is up-to-date for file " ++ (show sf)
+
+-- If the source file associated with this CommandInfo has changed, what must
+-- we reindex?
+filesToReindex :: DBChan -> CommandInfo -> IO [CommandInfo]
+filesToReindex dbChan ci = do
+  mIncluders <- newEmptyMVar
+  writeCountingChan dbChan (DBGetIncluders (ciSourceFile ci) mIncluders)
+  includers <- takeMVar mIncluders 
+  return (ci : includers)
 
 updateCommand :: DBChan -> CommandInfo -> IO ()
 updateCommand dbChan ci = writeCountingChan dbChan (DBUpdateCommandInfo ci)
 
 analyzeCode :: Indexer -> DBChan -> CommandInfo -> IO ()
 analyzeCode indexer dbChan ci = do
-    liftIO $ logInfo $ "Analyzing " ++ (show . ciSourceFile $ ci)
+    liftIO $ logInfo $ "Indexing " ++ (show . ciSourceFile $ ci)
     runResourceT (source $= conduitPut putReq =$= indexer =$= conduitGet getResp $$ process)
   where
     source = yield (CR.Analyze ci) >> yield (CR.Shutdown)

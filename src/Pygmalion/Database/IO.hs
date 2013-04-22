@@ -6,6 +6,7 @@ module Pygmalion.Database.IO
 , withTransaction
 , updateInclusion
 , getInclusions
+, getIncluders
 , updateSourceFile
 , getAllSourceFiles
 , getCommandInfo
@@ -59,6 +60,7 @@ data DBHandle = DBHandle
     , endTransactionStmt        :: Statement
     , updateInclusionStmt       :: Statement
     , getInclusionsStmt         :: Statement
+    , getIncludersStmt          :: Statement
     , updateSourceFileStmt      :: Statement
     , getCommandInfoStmt        :: Statement
     , getSimilarCommandInfoStmt :: Statement
@@ -100,6 +102,7 @@ openDB db = labeledCatch "openDB" $ do
                   <*> openStatement c (mkQueryT endTransactionSQL)
                   <*> openStatement c (mkQueryT updateInclusionSQL)
                   <*> openStatement c (mkQueryT getInclusionsSQL)
+                  <*> openStatement c (mkQueryT getIncludersSQL)
                   <*> openStatement c (mkQueryT updateSourceFileSQL)
                   <*> openStatement c (mkQueryT getCommandInfoSQL)
                   <*> openStatement c (mkQueryT getSimilarCommandInfoSQL)
@@ -127,6 +130,7 @@ closeDB h = do
   closeStatement (endTransactionStmt h)
   closeStatement (updateInclusionStmt h)
   closeStatement (getInclusionsStmt h)
+  closeStatement (getIncludersStmt h)
   closeStatement (updateSourceFileStmt h)
   closeStatement (getCommandInfoStmt h)
   closeStatement (getSimilarCommandInfoStmt h)
@@ -271,13 +275,26 @@ getInclusions h sf = execQuery h getInclusionsStmt (Only $ hash sf)
 
 getInclusionsSQL :: T.Text
 getInclusionsSQL = "select F.Name, W.Path, C.Command, A.Args, S.LastIndexed \
-                   \ from Inclusions                                        \
-                   \ join SourceFiles as S on Inclusions.Inclusion = S.File \
-                   \ join Files as F on Inclusions.Inclusion = F.Hash       \
+                   \ from Inclusions as I                                   \
+                   \ join SourceFiles as S on I.Inclusion = S.File          \
+                   \ join Files as F on S.File = F.Hash                     \
                    \ join Paths as W on S.WorkingDirectory = W.Hash         \
                    \ join BuildCommands as C on S.BuildCommand = C.Hash     \
                    \ join BuildArgs as A on S.BuildArgs = A.Hash            \
-                   \ where Inclusions.File = ? limit 1"
+                   \ where I.File = ?"
+
+getIncluders :: DBHandle -> SourceFile -> IO [CommandInfo]
+getIncluders h sf = execQuery h getIncludersStmt (Only $ hash sf)
+
+getIncludersSQL :: T.Text
+getIncludersSQL = "select F.Name, W.Path, C.Command, A.Args, S.LastIndexed \
+                  \ from Inclusions as I                                   \
+                  \ join SourceFiles as S on I.File = S.File               \
+                  \ join Files as F on S.File = F.Hash                     \
+                  \ join Paths as W on S.WorkingDirectory = W.Hash         \
+                  \ join BuildCommands as C on S.BuildCommand = C.Hash     \
+                  \ join BuildArgs as A on S.BuildArgs = A.Hash            \
+                  \ where I.Inclusion = ?"
 
 -- Schema and operations for the Paths table.
 definePathsTable :: Connection -> IO ()
