@@ -518,11 +518,11 @@ getCallees :: DBHandle -> USR -> IO [DefInfo]
 getCallees h usr = execQuery h getCalleesStmt (Only $ hash usr)
 
 getCalleesSQL :: T.Text
-getCalleesSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
-                \ from Callers as C                                  \
-                \ join Definitions as D on C.Callee = D.USRHash      \
-                \ join Files as F on D.File = F.Hash                 \
-                \ join Kinds as K on D.Kind = K.Hash                 \
+getCalleesSQL = "select distinct D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
+                \ from Callers as C                                           \
+                \ join Definitions as D on C.Callee = D.USRHash               \
+                \ join Files as F on D.File = F.Hash                          \
+                \ join Kinds as K on D.Kind = K.Hash                          \
                 \ where C.Caller = ?"
 
 -- Schema and operations for the References table.
