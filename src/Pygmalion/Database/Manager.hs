@@ -18,6 +18,10 @@ import Pygmalion.Log
 
 data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBUpdateDefInfo DefInfo
+               | DBUpdateOverride Override
+               | DBUpdateCaller Caller
+               | DBUpdateRef Reference
+               | DBUpdateInclusion Inclusion
                | DBGetCommandInfo SourceFile (MVar (Maybe CommandInfo))
                | DBGetSimilarCommandInfo SourceFile (MVar (Maybe CommandInfo))
                | DBGetDefinition USR (MVar (Maybe DefInfo))
@@ -36,6 +40,10 @@ runDatabaseManager chan = withDB go
                   case req of
                     DBUpdateCommandInfo ci      -> doUpdateCommandInfo h ci >> go h
                     DBUpdateDefInfo di          -> doUpdateDefInfo h di >> go h
+                    DBUpdateOverride ov         -> doUpdateOverride h ov >> go h
+                    DBUpdateCaller cr           -> doUpdateCaller h cr >> go h
+                    DBUpdateRef rf              -> doUpdateRef h rf >> go h
+                    DBUpdateInclusion ic        -> doUpdateInclusion h ic >> go h
                     DBGetCommandInfo f v        -> doGetCommandInfo h f v >> go h
                     DBGetSimilarCommandInfo f v -> doGetSimilarCommandInfo h f v >> go h
                     DBGetDefinition u v         -> doGetDefinition h u v >> go h
@@ -52,6 +60,26 @@ doUpdateDefInfo :: DBHandle -> DefInfo -> IO ()
 doUpdateDefInfo h di = liftIO $ withTransaction h $ do
   liftIO $ logDebug $ "Updating database with def: " ++ (show . diUSR $ di)
   updateDef h di
+
+doUpdateOverride :: DBHandle -> Override -> IO ()
+doUpdateOverride h ov = liftIO $ withTransaction h $ do
+  liftIO $ logDebug $ "Updating database with override: " ++ (show ov)
+  updateOverride h ov
+
+doUpdateCaller :: DBHandle -> Caller -> IO ()
+doUpdateCaller h cr = liftIO $ withTransaction h $ do
+  liftIO $ logDebug $ "Updating database with caller: " ++ (show cr)
+  updateCaller h cr
+
+doUpdateRef :: DBHandle -> Reference -> IO ()
+doUpdateRef h rf = liftIO $ withTransaction h $ do
+  liftIO $ logDebug $ "Updating database with reference: " ++ (show rf)
+  updateReference h rf
+
+doUpdateInclusion :: DBHandle -> Inclusion -> IO ()
+doUpdateInclusion h ic = liftIO $ withTransaction h $ do
+  liftIO $ logDebug $ "Updating database with inclusion: " ++ (show ic)
+  updateInclusion h ic
 
 doGetCommandInfo :: DBHandle -> SourceFile -> MVar (Maybe CommandInfo) -> IO ()
 doGetCommandInfo h f v = do

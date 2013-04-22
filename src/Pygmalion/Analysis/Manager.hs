@@ -78,6 +78,10 @@ analyzeCode indexer dbChan ci = do
       liftIO $ logDebug "WAITING"
       resp <- await
       case resp of
-        Just (CR.FoundDef di) -> liftIO (writeCountingChan dbChan (DBUpdateDefInfo di)) >> process
-        Just (CR.EndOfDefs)   -> liftIO (logDebug "Done reading from clang process") >> return ()
-        Nothing               -> liftIO (logDebug "Clang process read failed") >> return ()
+        Just (CR.FoundDef di)       -> liftIO (writeCountingChan dbChan (DBUpdateDefInfo di)) >> process
+        Just (CR.FoundOverride ov)  -> liftIO (writeCountingChan dbChan (DBUpdateOverride ov)) >> process
+        Just (CR.FoundCaller cr)    -> liftIO (writeCountingChan dbChan (DBUpdateCaller cr)) >> process
+        Just (CR.FoundRef rf)       -> liftIO (writeCountingChan dbChan (DBUpdateRef rf)) >> process
+        Just (CR.FoundInclusion ic) -> liftIO (writeCountingChan dbChan (DBUpdateInclusion ic)) >> process
+        Just (CR.EndOfAnalysis)     -> liftIO (logDebug "Done reading from clang process") >> return ()
+        Nothing                     -> liftIO (logDebug "Clang process read failed") >> return ()

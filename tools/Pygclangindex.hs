@@ -1,7 +1,6 @@
 import Control.Applicative
 import Control.Monad
 import Control.Monad.Trans
-import Data.ByteString.Char8 (ByteString)
 import Data.Conduit
 import Data.Conduit.Binary
 import Data.Conduit.Cereal
@@ -34,7 +33,7 @@ main = do
         Just (Analyze ci) -> do results <- liftIO $ doAnalyze sas ci
                                 when (isJust results) $
                                   mapM_ (yield . FoundDef) (fromJust results)
-                                yield EndOfDefs
+                                yield EndOfAnalysis
                                 process sas
         Just Shutdown     -> liftIO (logDebug "Shutting down clang analysis process") >> return ()
         Nothing           -> liftIO (logError "Clang analysis process encountered an error") >> return ()

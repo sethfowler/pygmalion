@@ -17,7 +17,11 @@ data ClangRequest = Analyze CommandInfo
 instance Serialize ClangRequest
 
 data ClangResponse = FoundDef DefInfo
-                   | EndOfDefs
+                   | FoundOverride Override
+                   | FoundCaller Caller
+                   | FoundRef Reference
+                   | FoundInclusion Inclusion
+                   | EndOfAnalysis
                    deriving (Eq, Show, Generic)
 
 instance Serialize ClangResponse
