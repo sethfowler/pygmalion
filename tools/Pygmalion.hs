@@ -18,10 +18,11 @@ import Pygmalion.RPC.Client
 
 main :: IO ()
 main = do
-  initLogger DEBUG -- Need to make this configurable.
+  cf <- getConfiguration
+  initLogger (cfLogLevel cf)
   args <- getArgs
   wd <- getCurrentDirectory
-  parseArgs wd args
+  parseArgs cf wd args
 
 usage :: IO ()
 usage = do
@@ -42,39 +43,39 @@ usage = do
   putStrLn   " --display-ast [file]"
   bail
 
-parseArgs :: FilePath -> [String] -> IO ()
-parseArgs _  ["--generate-compile-commands"] = printCDB
-parseArgs wd ["--compile-flags", f] = printFlags (asSourceFile wd f)
-parseArgs wd ["--working-directory", f] = printDir (asSourceFile wd f)
-parseArgs wd ["--definition", f, line, col] = printDef (asSourceFile wd f)
-                                                       (readMay line) (readMay col)
-parseArgs wd ["--callers", f, line, col] = printCallers (asSourceFile wd f)
-                                                        (readMay line) (readMay col)
-parseArgs wd ["--callees", f, line, col] = printCallees (asSourceFile wd f)
-                                                        (readMay line) (readMay col)
-parseArgs wd ["--references", f, line, col] = printRefs (asSourceFile wd f)
-                                                        (readMay line) (readMay col)
-parseArgs wd ["--display-ast", f] = printAST (asSourceFile wd f)
-parseArgs _  ["--help"] = usage
-parseArgs _  ["-h"]     = usage
-parseArgs _ _           = usage
+parseArgs :: Config -> FilePath -> [String] -> IO ()
+parseArgs c _  ["--generate-compile-commands"] = printCDB c
+parseArgs c wd ["--compile-flags", f] = printFlags c (asSourceFile wd f)
+parseArgs c wd ["--working-directory", f] = printDir c (asSourceFile wd f)
+parseArgs c wd ["--definition", f, line, col] = printDef c (asSourceFile wd f)
+                                                           (readMay line) (readMay col)
+parseArgs c wd ["--callers", f, line, col] = printCallers c (asSourceFile wd f)
+                                                            (readMay line) (readMay col)
+parseArgs c wd ["--callees", f, line, col] = printCallees c (asSourceFile wd f)
+                                                            (readMay line) (readMay col)
+parseArgs c wd ["--references", f, line, col] = printRefs c (asSourceFile wd f)
+                                                            (readMay line) (readMay col)
+parseArgs c wd ["--display-ast", f] = printAST c (asSourceFile wd f)
+parseArgs _ _  ["--help"] = usage
+parseArgs _ _  ["-h"]     = usage
+parseArgs _ _ _           = usage
 
 asSourceFile :: FilePath -> FilePath -> SourceFile
 asSourceFile wd p = mkSourceFile $ maybe p id (absNormPath wd p)
 
 -- FIXME: Reimplement with RPC.
-printCDB :: IO ()
+printCDB :: Config -> IO ()
 {-
 printCDB = withDB $ \h -> getAllSourceFiles h >>= putStrLn . sourceRecordsToJSON
 -}
 printCDB = undefined
 
-printFlags :: SourceFile -> IO ()
-printFlags f = getConfiguration >>= getCommandInfoOr bail f >>= putFlags
+printFlags :: Config -> SourceFile -> IO ()
+printFlags cf f = getCommandInfoOr bail f cf >>= putFlags
   where putFlags (CommandInfo _ _ (Command _ args) _) = putStrLn . T.unpack . T.intercalate " " $ args
 
-printDir :: SourceFile -> IO ()
-printDir f = getConfiguration >>= getCommandInfoOr bail f >>= putDir
+printDir :: Config -> SourceFile -> IO ()
+printDir cf f = getCommandInfoOr bail f cf >>= putDir
   where putDir (CommandInfo _ wd _ _) = putStrLn . T.unpack $ wd
 
 getCommandInfoOr :: IO () -> SourceFile -> Config -> IO CommandInfo
@@ -83,9 +84,8 @@ getCommandInfoOr a f cf = do
   unless (isJust cmd) a
   return . fromJust $ cmd
 
-printDef :: SourceFile -> Maybe Int -> Maybe Int -> IO ()
-printDef f (Just line) (Just col) = do
-    cf <- getConfiguration
+printDef :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
+printDef cf f (Just line) (Just col) = do
     cmd <- getCommandInfoOr (bailWith cmdErr) f cf
     info <- getLookupInfo cmd (SourceLocation f line col)
     case info of
@@ -111,9 +111,8 @@ printDef f (Just line) (Just col) = do
                  ": Declaration: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
 printDef _ _ _ = usage
 
-printCallers :: SourceFile -> Maybe Int -> Maybe Int -> IO ()
-printCallers f (Just line) (Just col) = do
-    cf <- getConfiguration
+printCallers :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
+printCallers cf f (Just line) (Just col) = do
     cmd <- getCommandInfoOr (bailWith cmdErr) f cf
     info <- getLookupInfo cmd (SourceLocation f line col)
     case info of
@@ -136,9 +135,8 @@ printCallers f (Just line) (Just col) = do
                  ": Caller: " ++ (T.unpack n)
 printCallers _ _ _ = usage
 
-printCallees :: SourceFile -> Maybe Int -> Maybe Int -> IO ()
-printCallees f (Just line) (Just col) = do
-    cf <- getConfiguration
+printCallees :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
+printCallees cf f (Just line) (Just col) = do
     cmd <- getCommandInfoOr (bailWith cmdErr) f cf
     info <- getLookupInfo cmd (SourceLocation f line col)
     case info of
@@ -161,9 +159,8 @@ printCallees f (Just line) (Just col) = do
                  ": Callee: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
 printCallees _ _ _ = usage
 
-printRefs :: SourceFile -> Maybe Int -> Maybe Int -> IO ()
-printRefs f (Just line) (Just col) = do
-    cf <- getConfiguration
+printRefs :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
+printRefs cf f (Just line) (Just col) = do
     cmd <- getCommandInfoOr (bailWith cmdErr) f cf
     info <- getLookupInfo cmd (SourceLocation f line col)
     case info of
@@ -186,8 +183,8 @@ printRefs f (Just line) (Just col) = do
                  ": Reference until " ++ (show idEndLine) ++ ":" ++ (show idEndCol)
 printRefs _ _ _ = usage
 
-printAST :: SourceFile -> IO ()
-printAST f = getConfiguration >>= getCommandInfoOr (bailWith err) f >>= displayAST
+printAST :: Config -> SourceFile -> IO ()
+printAST cf f = getCommandInfoOr (bailWith err) f cf >>= displayAST
   where err = "No compilation information for this file."
 
 bail :: IO ()

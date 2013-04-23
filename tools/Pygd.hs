@@ -24,10 +24,10 @@ import Pygmalion.RPC.Server
 
 main :: IO ()
 main = do
-  initLogger DEBUG -- Need to make this configurable.
+  cf <- getConfiguration
+  initLogger (logLevel cf)
   nice 5
   ensureDB
-  cf <- getConfiguration
   stopWatching <- newEmptyMVar
   port <- newEmptyMVar
   aChan <- newLenChan

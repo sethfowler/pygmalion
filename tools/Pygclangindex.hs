@@ -18,7 +18,7 @@ import Pygmalion.Log
 
 main :: IO ()
 main = do
-    initLogger DEBUG
+    initLogger INFO
     logDebug "Starting clang analysis process"
     nice 10
     wd <- T.pack <$> getCurrentDirectory

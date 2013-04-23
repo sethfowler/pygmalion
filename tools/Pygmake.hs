@@ -6,13 +6,15 @@ import System.Process
 
 import Pygmalion.Core
 import Pygmalion.Config
+import Pygmalion.Log
 import Pygmalion.RPC.Client
 --import Pygmalion.JSON
 
 main :: IO ()
 main = do
-  args <- (getArgs >>= parseArgs)
   cf <- getConfiguration
+  initLogger (logLevel cf)
+  args <- (getArgs >>= parseArgs)
   rpcPing (ifPort cf)  -- Make sure pygd is running.
   ensureSuccess =<< executeMake cf args
   --when (makeCDB cf) writeCompileCommands

@@ -32,6 +32,7 @@ library
                    network,
                    network-conduit,
                    process-conduit,
+                   safe,
                    sqlite-simple,
                    stm,
                    text,
