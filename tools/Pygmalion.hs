@@ -4,18 +4,24 @@ import Control.Monad
 import Data.Maybe
 import qualified Data.Text as T
 import Safe (readMay)
+import System.Directory
 import System.Environment
 import System.Exit
+import System.Path
 
 import Pygmalion.Analysis.Source
 import Pygmalion.Config
 import Pygmalion.Core
+import Pygmalion.Log
 import Pygmalion.RPC.Client
 --import Pygmalion.JSON
 
 main :: IO ()
-main = getArgs
-   >>= parseArgs
+main = do
+  initLogger DEBUG -- Need to make this configurable.
+  args <- getArgs
+  wd <- getCurrentDirectory
+  parseArgs wd args
 
 usage :: IO ()
 usage = do
@@ -36,20 +42,23 @@ usage = do
   putStrLn   " --display-ast [file]"
   bail
 
-parseArgs :: [String] -> IO ()
-parseArgs ["--generate-compile-commands"] = printCDB
-parseArgs ["--compile-flags", f] = printFlags (mkSourceFile f)
-parseArgs ["--working-directory", f] = printDir (mkSourceFile f)
-parseArgs ["--definition", f, line, col] = printDef (mkSourceFile f)
+parseArgs :: FilePath -> [String] -> IO ()
+parseArgs _  ["--generate-compile-commands"] = printCDB
+parseArgs wd ["--compile-flags", f] = printFlags (asSourceFile wd f)
+parseArgs wd ["--working-directory", f] = printDir (asSourceFile wd f)
+parseArgs wd ["--definition", f, line, col] = printDef (asSourceFile wd f)
+                                                       (readMay line) (readMay col)
+parseArgs wd ["--callers", f, line, col] = printCallers (asSourceFile wd f)
                                                         (readMay line) (readMay col)
-parseArgs ["--callers", f, line, col] = printCallers (mkSourceFile f)
-                                                     (readMay line) (readMay col)
-parseArgs ["--callees", f, line, col] = printCallees (mkSourceFile f)
-                                                     (readMay line) (readMay col)
-parseArgs ["--display-ast", f] = printAST (mkSourceFile f)
-parseArgs ["--help"] = usage
-parseArgs ["-h"]     = usage
-parseArgs _          = usage
+parseArgs wd ["--callees", f, line, col] = printCallees (asSourceFile wd f)
+                                                        (readMay line) (readMay col)
+parseArgs wd ["--display-ast", f] = printAST (asSourceFile wd f)
+parseArgs _  ["--help"] = usage
+parseArgs _  ["-h"]     = usage
+parseArgs _ _           = usage
+
+asSourceFile :: FilePath -> FilePath -> SourceFile
+asSourceFile wd p = mkSourceFile $ maybe p id (absNormPath wd p)
 
 -- FIXME: Reimplement with RPC.
 printCDB :: IO ()
@@ -151,7 +160,8 @@ printCallees f (Just line) (Just col) = do
 printCallees _ _ _ = usage
 
 printAST :: SourceFile -> IO ()
-printAST f = getConfiguration >>= getCommandInfoOr bail f >>= displayAST
+printAST f = getConfiguration >>= getCommandInfoOr (bailWith err) f >>= displayAST
+  where err = "No compilation information for this file."
 
 bail :: IO ()
 bail = exitWith (ExitFailure (-1))

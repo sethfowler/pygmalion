@@ -63,9 +63,11 @@ executable pygmalion
   ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N
   main-is:        Pygmalion.hs 
   build-depends:  base >= 4,
+                  directory,
                   pygmalion,
                   safe,
-                  text
+                  text,
+                  MissingH
   hs-source-dirs: tools
 
 executable pygmake
@@ -101,6 +103,7 @@ executable pygd
                ,  pygmalion
                ,  system-filepath
                ,  time
+               ,  unix
                ,  void
                ,  MissingH
   hs-source-dirs: tools

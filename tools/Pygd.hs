@@ -11,6 +11,7 @@ import System.Directory
 import System.FilePath.Posix
 import System.FSNotify
 import System.Path.NameManip
+import System.Posix.Process
 
 import Control.Concurrent.Chan.Len
 import Pygmalion.Analysis.Extension
@@ -24,6 +25,7 @@ import Pygmalion.RPC.Server
 main :: IO ()
 main = do
   initLogger DEBUG -- Need to make this configurable.
+  nice 5
   ensureDB
   cf <- getConfiguration
   stopWatching <- newEmptyMVar
