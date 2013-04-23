@@ -76,6 +76,7 @@ executable pygmake
   main-is:        Pygmake.hs 
   build-depends:  base >= 4,
                   async,
+                  directory,
                   process,
                   pygmalion,
                   text
