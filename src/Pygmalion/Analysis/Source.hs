@@ -237,8 +237,7 @@ inspectIdentifier (SourceLocation f ln col) tu = do
       -- liftIO $ logDebug $ "In file: " ++ (T.unpack f) ++ ":" ++ (show ln) ++ ":" ++ (show col) ++ " got name: " ++ name ++ " usr: " ++ usr
       isNull <- C.isNullCursor cursor
       case isNull of
-        False -> do liftIO $ logDebug $ "Got to reportIdentifier"
-                    usr <- XRef.getUSR cursor >>= CS.unpackText
+        False -> do usr <- XRef.getUSR cursor >>= CS.unpackText
                     kind <- C.getKind cursor 
                     cursorIsDef <- isDef cursor kind
                     di <- createDefInfo cursor usr kind
