@@ -560,15 +560,15 @@ getReferenced h (SourceLocation sf l c) =
   execQuery h getReferencedStmt (hash sf, l, l, c, l, c)
 
 getReferencedSQL :: T.Text
-getReferencedSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
-                   \ from Refs as R                                     \
-                   \ join Definitions as D on R.Ref = D.USRHash         \
-                   \ join Files as F on D.File = F.Hash                 \
-                   \ join Kinds as K on D.Kind = K.Hash                 \
-                   \ where R.File = ? and                               \
-                   \   ((? between R.Line + 1 and R.EndLine - 1) or     \
-                   \    (? = R.Line and ? >= R.Col) or                  \
-                   \    (? = R.EndLine and ? <= R.Col))"
+getReferencedSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind  \
+                   \ from Refs as R                                      \
+                   \ join Definitions as D on R.Ref = D.USRHash          \
+                   \ join Files as F on D.File = F.Hash                  \
+                   \ join Kinds as K on D.Kind = K.Hash                  \
+                   \ where R.File = ? and                                \
+                   \   ((? between R.Line and R.EndLine) and             \
+                   \    (? > R.Line or ? >= R.Col) and                   \
+                   \    (? < R.EndLine or ? <= R.EndCol))" 
 
 getReferences :: DBHandle -> USR -> IO [SourceRange]
 getReferences h usr = execQuery h getReferencesStmt (Only $ hash usr)

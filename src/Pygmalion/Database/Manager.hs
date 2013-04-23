@@ -30,6 +30,7 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBGetCallers USR (MVar [Invocation])
                | DBGetCallees USR (MVar [DefInfo])
                | DBGetRefs USR (MVar [SourceRange])
+               | DBGetReferenced SourceLocation (MVar [DefInfo])
                | DBShutdown
 type DBChan = LenChan DBRequest
 
@@ -62,6 +63,7 @@ runDatabaseManager chan queryChan = do
                 DBGetCallers usr v          -> doGetCallers h usr v >> go (n+1) s h
                 DBGetCallees usr v          -> doGetCallees h usr v >> go (n+1) s h
                 DBGetRefs usr v             -> doGetRefs h usr v >> go (n+1) s h
+                DBGetReferenced sl v        -> doGetReferenced h sl v >> go (n+1) s h
                 DBShutdown                  -> logInfo "Shutting down DB thread"
 
 doUpdateCommandInfo :: DBHandle -> CommandInfo -> IO ()
@@ -139,4 +141,10 @@ doGetRefs :: DBHandle -> USR -> MVar [SourceRange] -> IO ()
 doGetRefs h usr v = do
   liftIO $ logDebug $ "Getting refs for " ++ (show usr)
   refs <- getReferences h usr
+  putMVar v $! refs
+
+doGetReferenced :: DBHandle -> SourceLocation -> MVar [DefInfo] -> IO ()
+doGetReferenced h sl v = do
+  liftIO $ logDebug $ "Getting referenced for " ++ (show sl)
+  refs <- getReferenced h sl
   putMVar v $! refs

@@ -179,6 +179,7 @@ printAST :: Config -> SourceFile -> IO ()
 printAST cf f = getCommandInfoOr (bailWith err) f cf >>= displayAST
   where err = "No compilation information for this file."
 
+{-
 doGetLookupInfo :: Config -> SourceLocation -> IO LookupInfo
 doGetLookupInfo cf sl = do
     cmd <- getCommandInfoOr (bailWith cmdErr) (slFile sl) cf
@@ -187,6 +188,18 @@ doGetLookupInfo cf sl = do
     errPrefix = (unSourceFile $ slFile sl) ++
                 ":" ++ (show $ slLine sl) ++ ":" ++ (show $ slCol sl) ++ ": "
     cmdErr = errPrefix ++ "No compilation information for this file."
+-}
+
+doGetLookupInfo :: Config -> SourceLocation -> IO LookupInfo
+doGetLookupInfo cf sl = do
+  referenced <- rpcGetReferenced (ifPort cf) sl
+  case referenced of
+    (referenced' : []) -> return (GotDef referenced')
+    (referenced' : _)  -> do putStrLn "Warning: multiple referenced entities"
+                             print sl
+                             mapM_ print referenced
+                             return (GotDef referenced')
+    _                  -> return GotNothing
 
 bail :: IO ()
 bail = exitWith (ExitFailure (-1))

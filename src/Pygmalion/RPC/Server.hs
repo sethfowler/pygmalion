@@ -48,6 +48,7 @@ serverApp aChan dbQueryChan ad =
         Just (RPCGetCallers usr)           -> liftIO (doGetCallers dbQueryChan usr) >>= yield
         Just (RPCGetCallees usr)           -> liftIO (doGetCallees dbQueryChan usr) >>= yield
         Just (RPCGetRefs usr)              -> liftIO (doGetRefs dbQueryChan usr) >>= yield
+        Just (RPCGetReferenced sl)         -> liftIO (doGetReferenced dbQueryChan sl) >>= yield
         Just RPCPing                       -> yield . encode $ RPCOK ()
         _                                  -> yield . encode $ (RPCError :: RPCResponse ())
 
@@ -93,5 +94,12 @@ doGetRefs :: DBChan -> USR -> IO ByteString
 doGetRefs dbQueryChan usr = do
   logDebug $ "RPCGetRefs: " ++ (show usr)
   result <- callLenChan dbQueryChan $! DBGetRefs usr
+  mapM_ print result
+  return $! encode $ RPCOK result
+
+doGetReferenced :: DBChan -> SourceLocation -> IO ByteString
+doGetReferenced dbQueryChan sl = do
+  logDebug $ "RPCGetReferenced: " ++ (show sl)
+  result <- callLenChan dbQueryChan $! DBGetReferenced sl
   mapM_ print result
   return $! encode $ RPCOK result
