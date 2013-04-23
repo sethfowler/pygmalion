@@ -19,7 +19,7 @@ import Pygmalion.RPC.Client
 main :: IO ()
 main = do
   cf <- getConfiguration
-  initLogger (cfLogLevel cf)
+  initLogger (logLevel cf)
   args <- getArgs
   wd <- getCurrentDirectory
   parseArgs cf wd args
@@ -86,8 +86,7 @@ getCommandInfoOr a f cf = do
 
 printDef :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printDef cf f (Just line) (Just col) = do
-    cmd <- getCommandInfoOr (bailWith cmdErr) f cf
-    info <- getLookupInfo cmd (SourceLocation f line col)
+    info <- doGetLookupInfo cf (SourceLocation f line col)
     case info of
       GotDef di  -> putDef di
       -- FIXME Clean this up
@@ -100,7 +99,6 @@ printDef cf f (Just line) (Just col) = do
       GotNothing -> bailWith idErr
   where 
     errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
-    cmdErr = errPrefix ++ "No compilation information for this file."
     idErr = errPrefix ++ "No identifier at this location."
     defErr usr = errPrefix ++ "No definition for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
     putDef (DefInfo n _ (SourceLocation idF idLine idCol) k) =
@@ -109,23 +107,21 @@ printDef cf f (Just line) (Just col) = do
     putDecl (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Declaration: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
-printDef _ _ _ = usage
+printDef _ _ _ _ = usage
 
 printCallers :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printCallers cf f (Just line) (Just col) = do
-    cmd <- getCommandInfoOr (bailWith cmdErr) f cf
-    info <- getLookupInfo cmd (SourceLocation f line col)
+    info <- doGetLookupInfo cf (SourceLocation f line col)
     case info of
-      GotDef di     -> printCallers' (diUSR di) cf
-      GotDecl usr _ -> printCallers' usr cf
-      GotUSR usr    -> printCallers' usr cf
+      GotDef di     -> printCallers' (diUSR di)
+      GotDecl usr _ -> printCallers' usr
+      GotUSR usr    -> printCallers' usr
       GotNothing    -> bailWith idErr
   where 
     errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
-    cmdErr = errPrefix ++ "No compilation information for this file."
     idErr = errPrefix ++ "No identifier at this location."
     defErr usr = errPrefix ++ "No callers for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
-    printCallers' usr cf = do
+    printCallers' usr = do
       callers <- rpcGetCallers (ifPort cf) usr
       case (null callers) of
         True  -> bailWith (defErr usr)
@@ -133,23 +129,21 @@ printCallers cf f (Just line) (Just col) = do
     putCaller (Invocation (DefInfo n _ _ _) (SourceLocation idF idLine idCol)) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Caller: " ++ (T.unpack n)
-printCallers _ _ _ = usage
+printCallers _ _ _ _ = usage
 
 printCallees :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printCallees cf f (Just line) (Just col) = do
-    cmd <- getCommandInfoOr (bailWith cmdErr) f cf
-    info <- getLookupInfo cmd (SourceLocation f line col)
+    info <- doGetLookupInfo cf (SourceLocation f line col)
     case info of
-      GotDef di     -> printCallees' (diUSR di) cf
-      GotDecl usr _ -> printCallees' usr cf
-      GotUSR usr    -> printCallees' usr cf
+      GotDef di     -> printCallees' (diUSR di)
+      GotDecl usr _ -> printCallees' usr
+      GotUSR usr    -> printCallees' usr
       GotNothing    -> bailWith idErr
   where 
     errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
-    cmdErr = errPrefix ++ "No compilation information for this file."
     idErr = errPrefix ++ "No identifier at this location."
     defErr usr = errPrefix ++ "No callees for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
-    printCallees' usr cf = do
+    printCallees' usr = do
       callees <- rpcGetCallees (ifPort cf) usr
       case (null callees) of
         True  -> bailWith (defErr usr)
@@ -157,23 +151,21 @@ printCallees cf f (Just line) (Just col) = do
     putCallee (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Callee: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
-printCallees _ _ _ = usage
+printCallees _ _ _ _ = usage
 
 printRefs :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printRefs cf f (Just line) (Just col) = do
-    cmd <- getCommandInfoOr (bailWith cmdErr) f cf
-    info <- getLookupInfo cmd (SourceLocation f line col)
+    info <- doGetLookupInfo cf (SourceLocation f line col)
     case info of
-      GotDef di     -> printRefs' (diUSR di) cf
-      GotDecl usr _ -> printRefs' usr cf
-      GotUSR usr    -> printRefs' usr cf
+      GotDef di     -> printRefs' (diUSR di)
+      GotDecl usr _ -> printRefs' usr
+      GotUSR usr    -> printRefs' usr
       GotNothing    -> bailWith idErr
   where 
     errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
-    cmdErr = errPrefix ++ "No compilation information for this file."
     idErr = errPrefix ++ "No identifier at this location."
     defErr usr = errPrefix ++ "No references for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
-    printRefs' usr cf = do
+    printRefs' usr = do
       refs <- rpcGetRefs (ifPort cf) usr
       case (null refs) of
         True  -> bailWith (defErr usr)
@@ -181,11 +173,20 @@ printRefs cf f (Just line) (Just col) = do
     putRef (SourceRange idF idLine idCol idEndLine idEndCol) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Reference until " ++ (show idEndLine) ++ ":" ++ (show idEndCol)
-printRefs _ _ _ = usage
+printRefs _ _ _ _ = usage
 
 printAST :: Config -> SourceFile -> IO ()
 printAST cf f = getCommandInfoOr (bailWith err) f cf >>= displayAST
   where err = "No compilation information for this file."
+
+doGetLookupInfo :: Config -> SourceLocation -> IO LookupInfo
+doGetLookupInfo cf sl = do
+    cmd <- getCommandInfoOr (bailWith cmdErr) (slFile sl) cf
+    getLookupInfo cmd sl
+  where
+    errPrefix = (unSourceFile $ slFile sl) ++
+                ":" ++ (show $ slLine sl) ++ ":" ++ (show $ slCol sl) ++ ": "
+    cmdErr = errPrefix ++ "No compilation information for this file."
 
 bail :: IO ()
 bail = exitWith (ExitFailure (-1))
