@@ -4,6 +4,8 @@ module Pygmalion.Database.IO
 ( ensureDB
 , withDB
 , withTransaction
+, beginTransaction
+, endTransaction
 , updateInclusion
 , getInclusions
 , getIncluders
@@ -92,6 +94,12 @@ withTransaction :: DBHandle -> IO a -> IO a
 withTransaction h f = bracket (execStatement h beginTransactionStmt ())
                               (const $ execStatement h endTransactionStmt ())
                               (const f)
+
+beginTransaction :: DBHandle -> IO ()
+beginTransaction h = execStatement h beginTransactionStmt ()
+
+endTransaction :: DBHandle -> IO ()
+endTransaction h = execStatement h endTransactionStmt ()
 
 openDB :: FilePath -> IO DBHandle
 openDB db = labeledCatch "openDB" $ do
