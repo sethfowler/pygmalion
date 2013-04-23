@@ -143,9 +143,13 @@ defsVisitorImpl wd dsRef osRef csRef rsRef tuRef cursor _ = do
                 defIsNull <- C.isNullCursor defC
                 refC <- C.getReferenced cursor
                 refIsNull <- C.isNullCursor refC
+                cursorIsDef <- isDef cursor cKind
 
                 -- Record references.
-                when (not (defIsNull && refIsNull)) $ do
+                -- TODO: The 'goodRef' criteria below is still experimental, and
+                -- definitely doesn't consider C++.
+                let goodRef = cKind `elem` [C.Cursor_DeclRefExpr, C.Cursor_MemberRefExpr, C.Cursor_TypeRef] || cursorIsDef
+                when (goodRef && not (defIsNull && refIsNull)) $ do
                     -- Prefer definitions to references when available.
                     let referToC = if defIsNull then refC else defC
                     referToUSR <- XRef.getUSR referToC >>= CS.unpackText
@@ -174,7 +178,6 @@ defsVisitorImpl wd dsRef osRef csRef rsRef tuRef cursor _ = do
                 -- TODO: Record overrides.
 
                 -- Record definitions.
-                cursorIsDef <- isDef cursor cKind
                 when (cursorIsDef || cKind == C.Cursor_MacroDefinition) $ do
                     usr <- XRef.getUSR cursor >>= CS.unpackText
                     name <- fqn cursor

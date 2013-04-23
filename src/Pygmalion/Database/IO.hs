@@ -566,10 +566,11 @@ getReferences :: DBHandle -> USR -> IO [SourceRange]
 getReferences h usr = execQuery h getReferencesStmt (Only $ hash usr)
 
 getReferencesSQL :: T.Text
-getReferencesSQL = "select F.Name, R.Line, R.Col, R.EndLine, R.EndCol \
-                   \ from Refs as R                                   \
-                   \ join Files as F on R.File = F.Hash               \
-                   \ where R.Ref = ?"
+getReferencesSQL = "select F.Name, R.Line, R.Col, R.EndLine, R.EndCol             \
+                   \ from Refs as R                                               \
+                   \ join Files as F on R.File = F.Hash                           \
+                   \ where R.Ref = ?                                              \
+                   \ order by F.Name, R.Line, R.Col, R.EndLine desc, R.EndCol desc"
 
 -- Checks that the database has the correct schema and sets it up if needed.
 ensureSchema :: Connection -> IO ()
