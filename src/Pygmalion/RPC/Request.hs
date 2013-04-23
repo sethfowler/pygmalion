@@ -16,6 +16,7 @@ data RPCRequest = RPCSendCommandInfo CommandInfo
                 | RPCGetDefinition USR
                 | RPCGetCallers USR
                 | RPCGetCallees USR
+                | RPCGetRefs USR
                 | RPCPing
                 deriving (Eq, Show, Generic)
 

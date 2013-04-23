@@ -566,11 +566,9 @@ getReferences :: DBHandle -> USR -> IO [SourceRange]
 getReferences h usr = execQuery h getReferencesStmt (Only $ hash usr)
 
 getReferencesSQL :: T.Text
-getReferencesSQL = "select R.File, R.Line, R.Col, R.EndLine, R.EndCol \
+getReferencesSQL = "select F.Name, R.Line, R.Col, R.EndLine, R.EndCol \
                    \ from Refs as R                                   \
-                   \ join Definitions as D on R.Ref = D.USRHash       \
-                   \ join Files as F on D.File = F.Hash               \
-                   \ join Kinds as K on D.Kind = K.Hash               \
+                   \ join Files as F on R.File = F.Hash               \
                    \ where R.Ref = ?"
 
 -- Checks that the database has the correct schema and sets it up if needed.

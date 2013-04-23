@@ -28,17 +28,17 @@ usage = do
   putStrLn $ "Usage: " ++ queryExecutable ++ " [command]"
   putStrLn   "where [command] is one of the following:"
   putStrLn   " --help                      Prints this message."
-  putStrLn   " --compile-commands          Prints a clang compilation database."
-  putStrLn   " --flags-for-file [file]     Prints the compilation flags for the"
+  putStrLn   " --generate-compile-commands Prints a clang compilation database."
+  putStrLn   " --compile-flags [file]      Prints the compilation flags for the"
   putStrLn   "                             given file, or nothing on failure. If"
   putStrLn   "                             the file isn't in the database, a guess"
   putStrLn   "                             will be printed if possible."
-  putStrLn   " --directory-for-file [file] Prints the working directory at the time"
+  putStrLn   " --working-directory [file]  Prints the working directory at the time"
   putStrLn   "                             the file was compiled. Guesses if needed."
-  putStrLn   " --definition-for [file] [line] [col]"
+  putStrLn   " --definition [file] [line] [col]"
   putStrLn   " --callers [file] [line] [col]"
   putStrLn   " --callees [file] [line] [col]"
-  putStrLn   " --identify [file] [line] [col]"
+  putStrLn   " --references [file] [line] [col]"
   putStrLn   " --display-ast [file]"
   bail
 
@@ -51,6 +51,8 @@ parseArgs wd ["--definition", f, line, col] = printDef (asSourceFile wd f)
 parseArgs wd ["--callers", f, line, col] = printCallers (asSourceFile wd f)
                                                         (readMay line) (readMay col)
 parseArgs wd ["--callees", f, line, col] = printCallees (asSourceFile wd f)
+                                                        (readMay line) (readMay col)
+parseArgs wd ["--references", f, line, col] = printRefs (asSourceFile wd f)
                                                         (readMay line) (readMay col)
 parseArgs wd ["--display-ast", f] = printAST (asSourceFile wd f)
 parseArgs _  ["--help"] = usage
@@ -158,6 +160,31 @@ printCallees f (Just line) (Just col) = do
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Callee: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
 printCallees _ _ _ = usage
+
+printRefs :: SourceFile -> Maybe Int -> Maybe Int -> IO ()
+printRefs f (Just line) (Just col) = do
+    cf <- getConfiguration
+    cmd <- getCommandInfoOr (bailWith cmdErr) f cf
+    info <- getLookupInfo cmd (SourceLocation f line col)
+    case info of
+      GotDef di     -> printRefs' (diUSR di) cf
+      GotDecl usr _ -> printRefs' usr cf
+      GotUSR usr    -> printRefs' usr cf
+      GotNothing    -> bailWith idErr
+  where 
+    errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
+    cmdErr = errPrefix ++ "No compilation information for this file."
+    idErr = errPrefix ++ "No identifier at this location."
+    defErr usr = errPrefix ++ "No references for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
+    printRefs' usr cf = do
+      refs <- rpcGetRefs (ifPort cf) usr
+      case (null refs) of
+        True  -> bailWith (defErr usr)
+        False -> mapM_ putRef refs
+    putRef (SourceRange idF idLine idCol idEndLine idEndCol) =
+      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
+                 ": Reference until " ++ (show idEndLine) ++ ":" ++ (show idEndCol)
+printRefs _ _ _ = usage
 
 printAST :: SourceFile -> IO ()
 printAST f = getConfiguration >>= getCommandInfoOr (bailWith err) f >>= displayAST

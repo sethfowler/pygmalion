@@ -7,6 +7,7 @@ module Pygmalion.RPC.Client
 , rpcGetDefinition
 , rpcGetCallers
 , rpcGetCallees
+, rpcGetRefs
 ) where
 
 import Control.Concurrent (newEmptyMVar, takeMVar, putMVar, MVar)
@@ -38,6 +39,9 @@ rpcGetCallers port usr = callRPC port (RPCGetCallers usr)
 
 rpcGetCallees :: Port -> USR -> IO [DefInfo]
 rpcGetCallees port usr = callRPC port (RPCGetCallees usr)
+
+rpcGetRefs :: Port -> USR -> IO [SourceRange]
+rpcGetRefs port usr = callRPC port (RPCGetRefs usr)
 
 callRPC :: Serialize a => Port -> RPCRequest -> IO a
 callRPC port req = do

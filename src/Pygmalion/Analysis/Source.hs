@@ -62,7 +62,7 @@ mkSourceAnalysisState wd = do
   newRefsRef       <- newIORef $! []
   newInclusionsRef <- newIORef $! []
   newUnitRef       <- newIORef $! Nothing
-  return $ SourceAnalysisState (defsVisitorImpl wd newDefsRef newCallersRef newUnitRef)
+  return $ SourceAnalysisState (defsVisitorImpl wd newDefsRef newOverridesRef newCallersRef newRefsRef newUnitRef)
                                (inclusionsVisitorImpl wd newSFRef newInclusionsRef)
                                newSFRef
                                newDefsRef
@@ -133,16 +133,34 @@ defsAnalysis sas tu = do
     cursor <- getCursor tu
     void $ visitChildren cursor (defsVisitor sas)
 
-defsVisitorImpl :: WorkingDirectory -> IORef [DefInfo] -> IORef [Caller] -> IORef (Maybe TranslationUnit) -> ChildVisitor
-defsVisitorImpl wd dsRef csRef tuRef cursor _ = do
+defsVisitorImpl :: WorkingDirectory -> IORef [DefInfo] -> IORef [Override] -> IORef [Caller]
+                -> IORef [Reference] -> IORef (Maybe TranslationUnit) -> ChildVisitor
+defsVisitorImpl wd dsRef osRef csRef rsRef tuRef cursor _ = do
   loc <- getCursorLocation cursor
   case inProject wd loc of
     True -> do  cKind <- C.getKind cursor
-                when (cKind `elem` [C.Cursor_CallExpr, C.Cursor_MacroExpansion]) $ do
-                  --liftIO $ logDebug "Got CallExpr"
-                  refC <- C.getReferenced cursor
-                  refIsNull <- C.isNullCursor refC
-                  when (not refIsNull) $ do
+                defC <- C.getReferenced cursor
+                defIsNull <- C.isNullCursor defC
+                refC <- C.getReferenced cursor
+                refIsNull <- C.isNullCursor refC
+
+                -- Record references.
+                when (not (defIsNull && refIsNull)) $ do
+                    -- Prefer definitions to references when available.
+                    let referToC = if defIsNull then refC else defC
+                    referToUSR <- XRef.getUSR referToC >>= CS.unpackText
+
+                    -- Determine the end of the extent of this cursor.
+                    extent <- C.getExtent cursor
+                    endLoc <- Source.getEnd extent
+                    (_, endLn, endCol, _) <- Source.getSpellingLocation endLoc
+
+                    -- Record.
+                    reference <- return $! Reference (SourceRange (slFile loc) (slLine loc) (slCol loc) endLn endCol) referToUSR
+                    liftIO . modifyIORef' rsRef $! (reference :)
+                
+                -- Record callers.
+                when ((cKind `elem` [C.Cursor_CallExpr, C.Cursor_MacroExpansion]) && not refIsNull) $ do
                     refUSR <- XRef.getUSR refC >>= CS.unpackText
                     tu <- liftIO $ readIORef tuRef
                     parC <- parentFunction (fromJust tu) cursor
@@ -152,17 +170,20 @@ defsVisitorImpl wd dsRef csRef tuRef cursor _ = do
                     --parName <- cursorName parC
                     --refName <- cursorName refC
                     --liftIO $ logDebug $ "Caller: " ++ (T.unpack parName) ++ " calls " ++ (T.unpack refName)
+
+                -- TODO: Record overrides.
+
+                -- Record definitions.
                 cursorIsDef <- isDef cursor cKind
                 when (cursorIsDef || cKind == C.Cursor_MacroDefinition) $ do
-                  usr <- XRef.getUSR cursor >>= CS.unpackText
-                  name <- fqn cursor
-                  kind <- C.getCursorKindSpelling cKind >>= CS.unpackText
-                  def <- return $! DefInfo name usr loc kind
-                  liftIO . modifyIORef' dsRef $! (def :)
-                return $ case cKind of
-                            C.Cursor_FunctionDecl -> ChildVisit_Recurse
-                            C.Cursor_CXXMethod    -> ChildVisit_Recurse
-                            _                     -> ChildVisit_Recurse
+                    usr <- XRef.getUSR cursor >>= CS.unpackText
+                    name <- fqn cursor
+                    kind <- C.getCursorKindSpelling cKind >>= CS.unpackText
+                    def <- return $! DefInfo name usr loc kind
+                    liftIO . modifyIORef' dsRef $! (def :)
+                return ChildVisit_Recurse
+
+    -- Don't recurse into out-of-project header files.
     False -> return ChildVisit_Continue
 
 getCursorLocation :: C.Cursor -> ClangApp SourceLocation
