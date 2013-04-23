@@ -9,6 +9,7 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Monad
 import Control.Monad.Trans
+import Data.Time.Clock
 import Data.Time.Clock.POSIX
 
 import Control.Concurrent.Chan.Len
@@ -31,29 +32,37 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBGetRefs USR (MVar [SourceRange])
                | DBShutdown
 type DBChan = LenChan DBRequest
-    
+
 runDatabaseManager :: DBChan -> DBChan -> IO ()
-runDatabaseManager chan queryChan = withDB go
-  where go :: DBHandle -> IO ()
-        go h = {-# SCC "databaseThread" #-}
-               do (tookFirst, newCount, req) <- readLenChanPreferFirst queryChan chan
-                  logDebug $ if tookFirst then "Query channel now has " ++ (show newCount) ++ " queries waiting"
-                                          else "Database channel now has " ++ (show newCount) ++ " requests waiting"
-                  case req of
-                    DBUpdateCommandInfo ci      -> doUpdateCommandInfo h ci >> go h
-                    DBUpdateDefInfo di          -> doUpdateDefInfo h di >> go h
-                    DBUpdateOverride ov         -> doUpdateOverride h ov >> go h
-                    DBUpdateCaller cr           -> doUpdateCaller h cr >> go h
-                    DBUpdateRef rf              -> doUpdateRef h rf >> go h
-                    DBUpdateInclusion ci ic     -> doUpdateInclusion h ci ic >> go h
-                    DBGetCommandInfo f v        -> doGetCommandInfo h f v >> go h
-                    DBGetSimilarCommandInfo f v -> doGetSimilarCommandInfo h f v >> go h
-                    DBGetDefinition u v         -> doGetDefinition h u v >> go h
-                    DBGetIncluders sf v         -> doGetIncluders h sf v >> go h
-                    DBGetCallers usr v          -> doGetCallers h usr v >> go h
-                    DBGetCallees usr v          -> doGetCallees h usr v >> go h
-                    DBGetRefs usr v             -> doGetRefs h usr v >> go h
-                    DBShutdown                  -> logInfo "Shutting down DB thread"
+runDatabaseManager chan queryChan = do
+    start <- getCurrentTime
+    withDB (go 0 start)
+  where
+    go :: Int -> UTCTime -> DBHandle -> IO ()
+    go 1000 start h = do 
+      stop <- getCurrentTime
+      logInfo $ "Handled 1000 records in " ++ (show $ stop `diffUTCTime` start)
+      newStart <- getCurrentTime
+      go 0 newStart h
+    go n s h = {-# SCC "databaseThread" #-}
+           do (tookFirst, newCount, req) <- readLenChanPreferFirst queryChan chan
+              logDebug $ if tookFirst then "Query channel now has " ++ (show newCount) ++ " queries waiting"
+                                      else "Database channel now has " ++ (show newCount) ++ " requests waiting"
+              case req of
+                DBUpdateCommandInfo ci      -> doUpdateCommandInfo h ci >> go (n+1) s h
+                DBUpdateDefInfo di          -> doUpdateDefInfo h di >> go (n+1) s h
+                DBUpdateOverride ov         -> doUpdateOverride h ov >> go (n+1) s h
+                DBUpdateCaller cr           -> doUpdateCaller h cr >> go (n+1) s h
+                DBUpdateRef rf              -> doUpdateRef h rf >> go (n+1) s h
+                DBUpdateInclusion ci ic     -> doUpdateInclusion h ci ic >> go (n+1) s h
+                DBGetCommandInfo f v        -> doGetCommandInfo h f v >> go (n+1) s h
+                DBGetSimilarCommandInfo f v -> doGetSimilarCommandInfo h f v >> go (n+1) s h
+                DBGetDefinition u v         -> doGetDefinition h u v >> go (n+1) s h
+                DBGetIncluders sf v         -> doGetIncluders h sf v >> go (n+1) s h
+                DBGetCallers usr v          -> doGetCallers h usr v >> go (n+1) s h
+                DBGetCallees usr v          -> doGetCallees h usr v >> go (n+1) s h
+                DBGetRefs usr v             -> doGetRefs h usr v >> go (n+1) s h
+                DBShutdown                  -> logInfo "Shutting down DB thread"
 
 doUpdateCommandInfo :: DBHandle -> CommandInfo -> IO ()
 doUpdateCommandInfo h cmd = liftIO $ withTransaction h $ do
