@@ -35,21 +35,23 @@ main = do
   dbQueryChan <- newLenChan
   logDebug "Launching database thread"
   dbThread <- asyncBound (runDatabaseManager dbChan dbQueryChan)
+  link dbThread
   --let maxThreads = numCapabilities
   let maxThreads = 4 :: Int
   threads <- forM [1..maxThreads] $ \i -> do
     logDebug $ "Launching analysis thread #" ++ (show i)
     asyncBound (runAnalysisManager aChan dbChan dbQueryChan)
+  mapM_ link threads
   rpcThread <- async (runRPCServer cf port aChan dbQueryChan)
+  link rpcThread
   watchThread <- async (doWatch aChan stopWatching)
+  link watchThread
   _ <- getLine
   cancel rpcThread
-  --logDebug "Just terminated RPC thread."
-  --_ <- getLine
+  logDebug "Terminated RPC thread."
   putMVar stopWatching ()
   wait watchThread
-  --logDebug "Just terminated watch thread."
-  --_ <- getLine
+  logDebug "Terminated watch thread."
   forM_ threads $ \_ -> writeLenChan aChan ShutdownAnalysis  -- Signifies end of data.
   forM_ (zip threads [1..numCapabilities]) $ \(thread, i) -> do
     ensureNoException =<< waitCatch thread
