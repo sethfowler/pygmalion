@@ -21,6 +21,7 @@ data ClangResponse = FoundDef DefInfo
                    | FoundCaller Caller
                    | FoundRef Reference
                    | FoundInclusion Inclusion
+                   | EndOfInclusions
                    | EndOfAnalysis
                    deriving (Eq, Show, Generic)
 

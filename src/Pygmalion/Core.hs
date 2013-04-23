@@ -19,6 +19,9 @@ module Pygmalion.Core
 , Caller (..)
 , Invocation (..)
 , Reference (..)
+, SourceReferenced (..)
+, SourceReference (..)
+, SourceContext
 , Port
 , mkSourceFile
 , unSourceFile
@@ -167,11 +170,37 @@ instance FromRow Invocation where
   fromRow = Invocation <$> fromRow <*> fromRow
 
 data Reference = Reference
-    { rfRange :: !SourceRange
-    , rfUSR   :: !USR
+    { rfRange   :: !SourceRange
+    , rfKind    :: !DefKind
+    , rfContext :: !USR
+    , rfUSR     :: !USR
     } deriving (Eq, Show, Generic)
 
 instance Serialize Reference
+
+data SourceReferenced = SourceReferenced
+    { sdDef   :: !DefInfo
+    , sdRange :: !SourceRange
+    , sdKind  :: !DefKind
+    } deriving (Eq, Show, Generic)
+
+instance Serialize SourceReferenced
+
+instance FromRow SourceReferenced where
+  fromRow = SourceReferenced <$> fromRow <*> fromRow <*> field
+
+data SourceReference = SourceReference
+    { srLocation :: !SourceLocation
+    , srKind     :: !DefKind
+    , srContext  :: !SourceContext
+    } deriving (Eq, Show, Generic)
+
+instance Serialize SourceReference
+
+instance FromRow SourceReference where
+  fromRow = SourceReference <$> fromRow <*> field <*> field
+
+type SourceContext = T.Text
 
 -- Tool names.
 queryExecutable, scanExecutable, makeExecutable, daemonExecutable, clangExecutable :: String

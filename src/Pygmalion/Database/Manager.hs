@@ -8,7 +8,6 @@ module Pygmalion.Database.Manager
 import Control.Applicative
 import Control.Concurrent
 import Control.Monad
-import Control.Monad.Trans
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 
@@ -23,14 +22,16 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBUpdateCaller Caller
                | DBUpdateRef Reference
                | DBUpdateInclusion CommandInfo Inclusion
+               | DBResetInclusions SourceFile
+               | DBResetMetadata SourceFile
                | DBGetCommandInfo SourceFile (MVar (Maybe CommandInfo))
                | DBGetSimilarCommandInfo SourceFile (MVar (Maybe CommandInfo))
                | DBGetDefinition USR (MVar (Maybe DefInfo))
                | DBGetIncluders SourceFile (MVar [CommandInfo])
                | DBGetCallers USR (MVar [Invocation])
                | DBGetCallees USR (MVar [DefInfo])
-               | DBGetRefs USR (MVar [SourceRange])
-               | DBGetReferenced SourceLocation (MVar [DefInfo])
+               | DBGetRefs USR (MVar [SourceReference])
+               | DBGetReferenced SourceLocation (MVar [SourceReferenced])
                | DBShutdown
 type DBChan = LenChan DBRequest
 
@@ -56,6 +57,8 @@ runDatabaseManager chan queryChan = do
                 DBUpdateCaller cr           -> doUpdateCaller h cr >> go (n+1) s h
                 DBUpdateRef rf              -> doUpdateRef h rf >> go (n+1) s h
                 DBUpdateInclusion ci ic     -> doUpdateInclusion h ci ic >> go (n+1) s h
+                DBResetInclusions sf        -> doResetInclusions h sf >> go (n+1) s h
+                DBResetMetadata sf          -> doResetMetadata h sf >> go (n+1) s h
                 DBGetCommandInfo f v        -> doGetCommandInfo h f v >> go (n+1) s h
                 DBGetSimilarCommandInfo f v -> doGetSimilarCommandInfo h f v >> go (n+1) s h
                 DBGetDefinition u v         -> doGetDefinition h u v >> go (n+1) s h
@@ -67,84 +70,94 @@ runDatabaseManager chan queryChan = do
                 DBShutdown                  -> logInfo "Shutting down DB thread"
 
 doUpdateCommandInfo :: DBHandle -> CommandInfo -> IO ()
-doUpdateCommandInfo h cmd = liftIO $ withTransaction h $ do
+doUpdateCommandInfo h cmd = withTransaction h $ do
   time <- getPOSIXTime
   let ci = cmd { ciLastIndexed = floor time }
-  liftIO $ logDebug $ "Updating database with command: " ++ (show . ciSourceFile $ ci)
+  logDebug $ "Updating database with command: " ++ (show . ciSourceFile $ ci)
   updateSourceFile h ci
 
 doUpdateDefInfo :: DBHandle -> DefInfo -> IO ()
-doUpdateDefInfo h di = liftIO $ withTransaction h $ do
-  liftIO $ logDebug $ "Updating database with def: " ++ (show . diUSR $ di)
+doUpdateDefInfo h di = withTransaction h $ do
+  logDebug $ "Updating database with def: " ++ (show . diUSR $ di)
   updateDef h di
 
 doUpdateOverride :: DBHandle -> Override -> IO ()
-doUpdateOverride h ov = liftIO $ withTransaction h $ do
-  liftIO $ logDebug $ "Updating database with override: " ++ (show ov)
+doUpdateOverride h ov = withTransaction h $ do
+  logDebug $ "Updating database with override: " ++ (show ov)
   updateOverride h ov
 
 doUpdateCaller :: DBHandle -> Caller -> IO ()
-doUpdateCaller h cr = liftIO $ withTransaction h $ do
-  liftIO $ logDebug $ "Updating database with caller: " ++ (show cr)
+doUpdateCaller h cr = withTransaction h $ do
+  logDebug $ "Updating database with caller: " ++ (show cr)
   updateCaller h cr
 
 doUpdateRef :: DBHandle -> Reference -> IO ()
-doUpdateRef h rf = liftIO $ withTransaction h $ do
-  liftIO $ logDebug $ "Updating database with reference: " ++ (show rf)
+doUpdateRef h rf = withTransaction h $ do
+  logDebug $ "Updating database with reference: " ++ (show rf)
   updateReference h rf
 
 doUpdateInclusion :: DBHandle -> CommandInfo -> Inclusion -> IO ()
-doUpdateInclusion h cmd ic = liftIO $ withTransaction h $ do
-  liftIO $ logDebug $ "Updating database with inclusion: " ++ (show ic)
+doUpdateInclusion h cmd ic = withTransaction h $ do
+  logDebug $ "Updating database with inclusion: " ++ (show ic)
   time <- getPOSIXTime
   let ci = cmd { ciLastIndexed = floor time, ciSourceFile = icHeaderFile ic }
   updateSourceFile h ci
   updateInclusion h ic
 
+doResetInclusions :: DBHandle -> SourceFile -> IO ()
+doResetInclusions h sf = withTransaction h $ do
+  logDebug $ "Resetting inclusions for file: " ++ (show sf)
+  resetInclusions h sf
+
+doResetMetadata :: DBHandle -> SourceFile -> IO ()
+doResetMetadata h sf = withTransaction h $ do
+  logDebug $ "Resetting metadata for file: " ++ (show sf)
+  resetMetadata h sf
+
 doGetCommandInfo :: DBHandle -> SourceFile -> MVar (Maybe CommandInfo) -> IO ()
 doGetCommandInfo h f v = do
-  liftIO $ logDebug $ "Getting CommandInfo for " ++ (show f)
+  logDebug $ "Getting CommandInfo for " ++ (show f)
   ci <- getCommandInfo h f
   putMVar v $! ci
 
 doGetSimilarCommandInfo :: DBHandle -> SourceFile -> MVar (Maybe CommandInfo) -> IO ()
 doGetSimilarCommandInfo h f v = do
-  liftIO $ logDebug $ "Getting similar CommandInfo for " ++ (show f)
+  logDebug $ "Getting similar CommandInfo for " ++ (show f)
   ci <- liftM2 (<|>) (getCommandInfo h f) (getSimilarCommandInfo h f)
   putMVar v $! ci
 
 doGetDefinition :: DBHandle -> USR -> MVar (Maybe DefInfo) -> IO ()
 doGetDefinition h usr v = do
-  liftIO $ logDebug $ "Getting DefInfo for " ++ (show usr)
+  logDebug $ "Getting DefInfo for " ++ (show usr)
   def <- getDef h usr
   putMVar v $! def
 
 doGetIncluders :: DBHandle -> SourceFile -> MVar [CommandInfo] -> IO ()
 doGetIncluders h sf v = do
-  liftIO $ logDebug $ "Getting includers for " ++ (show sf)
+  logDebug $ "Getting includers for " ++ (show sf)
   includers <- getIncluders h sf
   putMVar v $! includers
 
 doGetCallers :: DBHandle -> USR -> MVar [Invocation] -> IO ()
 doGetCallers h usr v = do
-  liftIO $ logDebug $ "Getting callers for " ++ (show usr)
+  logDebug $ "Getting callers for " ++ (show usr)
   callers <- getCallers h usr
   putMVar v $! callers
 
 doGetCallees :: DBHandle -> USR -> MVar [DefInfo] -> IO ()
 doGetCallees h usr v = do
-  liftIO $ logDebug $ "Getting callees for " ++ (show usr)
+  logDebug $ "Getting callees for " ++ (show usr)
   callees <- getCallees h usr
   putMVar v $! callees
 
-doGetRefs :: DBHandle -> USR -> MVar [SourceRange] -> IO ()
+doGetRefs :: DBHandle -> USR -> MVar [SourceReference] -> IO ()
 doGetRefs h usr v = do
-  liftIO $ logDebug $ "Getting refs for " ++ (show usr)
+  logDebug $ "Getting refs for " ++ (show usr)
   refs <- getReferences h usr
   putMVar v $! refs
 
-doGetReferenced :: DBHandle -> SourceLocation -> MVar [DefInfo] -> IO ()
+doGetReferenced :: DBHandle -> SourceLocation -> MVar [SourceReferenced] -> IO ()
 doGetReferenced h sl v = do
-  liftIO $ logDebug $ "Getting referenced for " ++ (show sl)
+  logDebug $ "Getting referenced for " ++ (show sl)
   refs <- getReferenced h sl
   putMVar v $! refs

@@ -1,7 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 import Control.Monad
+import Data.List
 import Data.Maybe
+import Data.Ord
 import qualified Data.Text as T
 import Safe (readMay)
 import System.Directory
@@ -170,9 +172,9 @@ printRefs cf f (Just line) (Just col) = do
       case (null refs) of
         True  -> bailWith (defErr usr)
         False -> mapM_ putRef refs
-    putRef (SourceRange idF idLine idCol idEndLine idEndCol) =
+    putRef (SourceReference (SourceLocation idF idLine idCol) k ctx) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Reference until " ++ (show idEndLine) ++ ":" ++ (show idEndCol)
+                 ": Reference: " ++ (T.unpack ctx) ++ " [" ++ (T.unpack k) ++ "]"
 printRefs _ _ _ _ = usage
 
 printAST :: Config -> SourceFile -> IO ()
@@ -192,14 +194,24 @@ doGetLookupInfo cf sl = do
 
 doGetLookupInfo :: Config -> SourceLocation -> IO LookupInfo
 doGetLookupInfo cf sl = do
-  referenced <- rpcGetReferenced (ifPort cf) sl
-  case referenced of
-    (referenced' : []) -> return (GotDef referenced')
-    (referenced' : _)  -> do putStrLn "Warning: multiple referenced entities"
-                             print sl
-                             mapM_ print referenced
-                             return (GotDef referenced')
-    _                  -> return GotNothing
+    rawReferenced <- rpcGetReferenced (ifPort cf) sl
+    when (multipleItems rawReferenced) $ do
+      logInfo "Warning: multiple referenced entities"
+      logInfo (show sl)
+      mapM_ (logInfo . show) rawReferenced
+    let referenced = filterNarrowest . filterExpansion $ rawReferenced
+    case referenced of
+      Just referenced' -> return (GotDef . sdDef $ referenced')
+      Nothing          -> return GotNothing
+  where
+    filterExpansion rs = let exps = filter ((== "macro expansion") . sdKind) rs in
+                         if null exps then rs else exps
+    filterNarrowest [] = Nothing
+    filterNarrowest rs = Just $ minimumBy (comparing $ rangeSize . sdRange) rs
+    rangeSize (SourceRange _ l c el ec) = (el - l, ec - c)
+    multipleItems [] = False
+    multipleItems (_ : []) = False
+    multipleItems _ = True
 
 bail :: IO ()
 bail = exitWith (ExitFailure (-1))

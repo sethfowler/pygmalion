@@ -139,16 +139,26 @@ defsVisitorImpl wd dsRef osRef csRef rsRef tuRef cursor _ = do
   loc <- getCursorLocation cursor
   case inProject wd loc of
     True -> do  cKind <- C.getKind cursor
+                tu <- liftIO $ readIORef tuRef
                 defC <- C.getReferenced cursor
                 defIsNull <- C.isNullCursor defC
                 refC <- C.getReferenced cursor
                 refIsNull <- C.isNullCursor refC
                 cursorIsDef <- isDef cursor cKind
+                cursorIsRef <- C.isReference cKind
+                cursorIsDecl <- C.isDeclaration cKind
 
                 -- Record references.
                 -- TODO: The 'goodRef' criteria below is still experimental, and
                 -- definitely doesn't consider C++.
-                let goodRef = cKind `elem` [C.Cursor_DeclRefExpr, C.Cursor_MemberRefExpr, C.Cursor_TypeRef] || cursorIsDef
+                let goodRef = cKind `elem` [C.Cursor_DeclRefExpr,
+                                            C.Cursor_MemberRefExpr,
+                                            C.Cursor_TypeRef,
+                                            C.Cursor_MacroExpansion,
+                                            C.Cursor_MacroDefinition]
+                                           || cursorIsDef
+                                           || cursorIsRef
+                                           || cursorIsDecl
                 when (goodRef && not (defIsNull && refIsNull)) $ do
                     -- Prefer definitions to references when available.
                     let referToC = if defIsNull then refC else defC
@@ -159,14 +169,22 @@ defsVisitorImpl wd dsRef osRef csRef rsRef tuRef cursor _ = do
                     endLoc <- Source.getEnd extent
                     (_, endLn, endCol, _) <- Source.getSpellingLocation endLoc
 
+                    -- Determine the context.
+                    ctxC <- parentFunction (fromJust tu) cursor
+                    ctxUSR <- XRef.getUSR ctxC >>= CS.unpackText
+
                     -- Record.
-                    reference <- return $! Reference (SourceRange (slFile loc) (slLine loc) (slCol loc) endLn endCol) referToUSR
+                    refKind <- C.getCursorKindSpelling cKind >>= CS.unpackText
+                    reference <- return $! Reference (SourceRange (slFile loc)
+                                                                  (slLine loc)
+                                                                  (slCol loc)
+                                                                  endLn endCol)
+                                                    refKind ctxUSR referToUSR
                     liftIO . modifyIORef' rsRef $! (reference :)
                 
                 -- Record callers.
                 when ((cKind `elem` [C.Cursor_CallExpr, C.Cursor_MacroExpansion]) && not refIsNull) $ do
                     refUSR <- XRef.getUSR refC >>= CS.unpackText
-                    tu <- liftIO $ readIORef tuRef
                     parC <- parentFunction (fromJust tu) cursor
                     parUSR <- XRef.getUSR parC >>= CS.unpackText
                     caller <- return $! Caller loc parUSR refUSR

@@ -94,9 +94,11 @@ updateCommand dbChan ci = writeLenChan dbChan (DBUpdateCommandInfo ci)
 
 analyzeCode :: DBChan -> Indexer -> CommandInfo -> IO ()
 analyzeCode dbChan indexer ci = do
-    liftIO $ logInfo $ "Indexing " ++ (show . ciSourceFile $ ci)
+    logInfo $ "Indexing " ++ (show sf)
+    writeLenChan dbChan (DBResetInclusions sf)
     runResourceT (source $= conduitPut putReq =$= indexer =$= conduitGet getResp $$ process)
   where
+    sf = ciSourceFile ci
     source = yield (CR.Analyze ci) >> yield (CR.Shutdown)
     putReq :: Putter CR.ClangRequest
     putReq = put
@@ -110,5 +112,6 @@ analyzeCode dbChan indexer ci = do
         Just (CR.FoundCaller cr)    -> liftIO (writeLenChan dbChan (DBUpdateCaller cr)) >> process
         Just (CR.FoundRef rf)       -> liftIO (writeLenChan dbChan (DBUpdateRef rf)) >> process
         Just (CR.FoundInclusion ic) -> liftIO (writeLenChan dbChan (DBUpdateInclusion ci ic)) >> process
+        Just (CR.EndOfInclusions)   -> liftIO (writeLenChan dbChan (DBResetMetadata sf)) >> process
         Just (CR.EndOfAnalysis)     -> liftIO (logDebug "Done reading from clang process") >> return ()
         Nothing                     -> liftIO (logDebug "Clang process read failed") >> return ()

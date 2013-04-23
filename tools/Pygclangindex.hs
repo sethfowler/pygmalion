@@ -35,11 +35,12 @@ main = do
         Just (Analyze ci) -> do maySar <- liftIO $ doAnalyze sas ci
                                 when (isJust maySar) $ do
                                   let sar = fromJust maySar
+                                  mapM_ (yield . FoundInclusion) (sarInclusions sar)
+                                  yield EndOfInclusions
                                   mapM_ (yield . FoundDef) (sarDefs sar)
                                   mapM_ (yield . FoundOverride) (sarOverrides sar)
                                   mapM_ (yield . FoundCaller) (sarCallers sar)
                                   mapM_ (yield . FoundRef) (sarRefs sar)
-                                  mapM_ (yield . FoundInclusion) (sarInclusions sar)
                                 yield EndOfAnalysis
                                 process sas
         Just Shutdown     -> liftIO (logDebug "Shutting down clang analysis process") >> return ()

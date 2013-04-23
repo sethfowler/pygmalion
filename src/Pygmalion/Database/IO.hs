@@ -6,6 +6,8 @@ module Pygmalion.Database.IO
 , withTransaction
 , beginTransaction
 , endTransaction
+, resetInclusions
+, resetMetadata
 , updateInclusion
 , getInclusions
 , getIncluders
@@ -61,6 +63,7 @@ data DBHandle = DBHandle
     , beginTransactionStmt      :: Statement
     , endTransactionStmt        :: Statement
     , updateInclusionStmt       :: Statement
+    , resetInclusionsStmt       :: Statement
     , getInclusionsStmt         :: Statement
     , getIncludersStmt          :: Statement
     , updateSourceFileStmt      :: Statement
@@ -72,9 +75,11 @@ data DBHandle = DBHandle
     , getOverridedStmt          :: Statement
     , getOverridersStmt         :: Statement
     , updateCallerStmt          :: Statement
+    , resetCallersStmt          :: Statement
     , getCallersStmt            :: Statement
     , getCalleesStmt            :: Statement
     , updateReferenceStmt       :: Statement
+    , resetReferencesStmt       :: Statement
     , getReferencedStmt         :: Statement
     , getReferencesStmt         :: Statement
     , insertFileStmt            :: Statement
@@ -101,6 +106,11 @@ beginTransaction h = execStatement h beginTransactionStmt ()
 endTransaction :: DBHandle -> IO ()
 endTransaction h = execStatement h endTransactionStmt ()
 
+resetMetadata :: DBHandle -> SourceFile -> IO ()
+resetMetadata h sf = do
+  resetCallers h sf
+  resetReferences h sf
+
 openDB :: FilePath -> IO DBHandle
 openDB db = labeledCatch "openDB" $ do
   c <- open db
@@ -109,6 +119,7 @@ openDB db = labeledCatch "openDB" $ do
   h <- DBHandle c <$> openStatement c (mkQueryT beginTransactionSQL)
                   <*> openStatement c (mkQueryT endTransactionSQL)
                   <*> openStatement c (mkQueryT updateInclusionSQL)
+                  <*> openStatement c (mkQueryT resetInclusionsSQL)
                   <*> openStatement c (mkQueryT getInclusionsSQL)
                   <*> openStatement c (mkQueryT getIncludersSQL)
                   <*> openStatement c (mkQueryT updateSourceFileSQL)
@@ -120,9 +131,11 @@ openDB db = labeledCatch "openDB" $ do
                   <*> openStatement c (mkQueryT getOverridedSQL)
                   <*> openStatement c (mkQueryT getOverridersSQL)
                   <*> openStatement c (mkQueryT updateCallerSQL)
+                  <*> openStatement c (mkQueryT resetCallersSQL)
                   <*> openStatement c (mkQueryT getCallersSQL)
                   <*> openStatement c (mkQueryT getCalleesSQL)
                   <*> openStatement c (mkQueryT updateReferenceSQL)
+                  <*> openStatement c (mkQueryT resetReferencesSQL)
                   <*> openStatement c (mkQueryT getReferencedSQL)
                   <*> openStatement c (mkQueryT getReferencesSQL)
                   <*> openStatement c (mkQueryT insertFileSQL)
@@ -137,6 +150,7 @@ closeDB h = do
   closeStatement (beginTransactionStmt h)
   closeStatement (endTransactionStmt h)
   closeStatement (updateInclusionStmt h)
+  closeStatement (resetInclusionsStmt h)
   closeStatement (getInclusionsStmt h)
   closeStatement (getIncludersStmt h)
   closeStatement (updateSourceFileStmt h)
@@ -148,9 +162,11 @@ closeDB h = do
   closeStatement (getOverridedStmt h)
   closeStatement (getOverridersStmt h)
   closeStatement (updateCallerStmt h)
+  closeStatement (resetCallersStmt h)
   closeStatement (getCallersStmt h)
   closeStatement (getCalleesStmt h)
   closeStatement (updateReferenceStmt h)
+  closeStatement (resetReferencesStmt h)
   closeStatement (getReferencedStmt h)
   closeStatement (getReferencesStmt h)
   closeStatement (insertFileStmt h)
@@ -224,7 +240,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int64
 dbMajorVersion = 0
-dbMinorVersion = 9
+dbMinorVersion = 11
 
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c sql
@@ -262,11 +278,11 @@ insertFileSQL = "insert or ignore into Files (Name, Hash) values (?, ?)"
 -- Schema and operations for the Inclusions table.
 defineInclusionsTable :: Connection -> IO ()
 defineInclusionsTable c = execute_ c sql
-  where sql = "create table if not exists Inclusions(    \
-               \ Id integer primary key unique not null, \
-               \ File integer not null,                  \
-               \ Inclusion integer not null,             \
-               \ Direct integer not null)"
+  where sql = "create table if not exists Inclusions( \
+               \ File integer not null,               \
+               \ Inclusion integer not null,          \
+               \ Direct integer not null,             \
+               \ primary key (File, Inclusion))"
 
 updateInclusion :: DBHandle -> Inclusion -> IO ()
 updateInclusion h (Inclusion sf hf d) = do
@@ -277,6 +293,14 @@ updateInclusion h (Inclusion sf hf d) = do
 updateInclusionSQL :: T.Text
 updateInclusionSQL = "replace into Inclusions (File, Inclusion, Direct) \
                     \ values (?, ?, ?)"
+
+resetInclusions :: DBHandle -> SourceFile -> IO ()
+resetInclusions h sf = do
+  let sfHash = hash sf
+  execStatement h resetInclusionsStmt (Only $ sfHash)
+
+resetInclusionsSQL :: T.Text
+resetInclusionsSQL = "delete from Inclusions where File = ?"
 
 getInclusions :: DBHandle -> SourceFile -> IO [CommandInfo]
 getInclusions h sf = execQuery h getInclusionsStmt (Only $ hash sf)
@@ -491,13 +515,13 @@ getOverridersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
 -- Schema and operations for the Callers table.
 defineCallersTable :: Connection -> IO ()
 defineCallersTable c = execute_ c sql
-  where sql = "create table if not exists Callers(       \
-               \ Id integer primary key unique not null, \
-               \ File integer not null,                  \
-               \ Line integer not null,                  \
-               \ Col integer not null,                   \
-               \ Caller integer not null,                \
-               \ Callee integer not null)"
+  where sql = "create table if not exists Callers( \
+               \ File integer not null,            \
+               \ Line integer not null,            \
+               \ Col integer not null,             \
+               \ Caller integer not null,          \
+               \ Callee integer not null,          \
+               \ primary key (File, Line, Col))"
 
 updateCaller :: DBHandle -> Caller -> IO ()
 updateCaller h (Caller (SourceLocation sf l c) callerUSR calleeUSR) = do
@@ -509,6 +533,15 @@ updateCaller h (Caller (SourceLocation sf l c) callerUSR calleeUSR) = do
 updateCallerSQL :: T.Text
 updateCallerSQL = "replace into Callers (File, Line, Col, Caller, Callee) \
                   \ values (?, ?, ?, ?, ?)"
+
+resetCallers :: DBHandle -> SourceFile -> IO ()
+resetCallers h sf = do
+  let sfHash = hash sf
+  execStatement h resetCallersStmt (sfHash, sfHash)
+
+resetCallersSQL :: T.Text
+resetCallersSQL = "delete from Callers where File = ?                           \
+                  \ or File in (select Inclusion from Inclusions where File = ?)"
 
 getCallers :: DBHandle -> USR -> IO [Invocation]
 getCallers h usr = execQuery h getCallersStmt (Only $ hash usr)
@@ -536,47 +569,67 @@ getCalleesSQL = "select distinct D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
 -- Schema and operations for the References table.
 defineReferencesTable :: Connection -> IO ()
 defineReferencesTable c = execute_ c sql
-  where sql = "create table if not exists Refs(    \
-               \ Id integer primary key unique not null, \
-               \ File integer not null,                  \
-               \ Line integer not null,                  \
-               \ Col integer not null,                   \
-               \ EndLine integer not null,               \
-               \ EndCol integer not null,                \
-               \ Ref integer not null)"
+  where sql = "create table if not exists Refs(                          \
+               \ File integer not null,                                  \
+               \ Line integer not null,                                  \
+               \ Col integer not null,                                   \
+               \ EndLine integer not null,                               \
+               \ EndCol integer not null,                                \
+               \ RefKind integer not null,                               \
+               \ RefContext integer not null,                            \
+               \ Ref integer not null,                                   \
+               \ primary key (File, Line, Col, EndLine, EndCol, RefKind))"
 
 updateReference :: DBHandle -> Reference -> IO ()
-updateReference h (Reference (SourceRange sf l c el ec) refUSR) = do
+updateReference h (Reference (SourceRange sf l c el ec) k ctxUSR refUSR) = do
     let sfHash = hash sf
     let refUSRHash = hash refUSR
-    execStatement h updateReferenceStmt (sfHash, l, c, el, ec, refUSRHash)
+    let kindHash = hash k
+    execStatement h insertKindStmt (k, kindHash)
+    let ctxUSRHash = hash ctxUSR
+    execStatement h updateReferenceStmt (sfHash, l, c, el, ec, kindHash, ctxUSRHash, refUSRHash)
 
 updateReferenceSQL :: T.Text
-updateReferenceSQL = "replace into Refs (File, Line, Col, EndLine, EndCol, Ref) \
-                     \ values (?, ?, ?, ?, ?, ?)"
+updateReferenceSQL = "replace into Refs (File, Line, Col, EndLine, EndCol, RefKind, RefContext, Ref) \
+                     \ values (?, ?, ?, ?, ?, ?, ?, ?)"
 
-getReferenced :: DBHandle -> SourceLocation -> IO [DefInfo]
+resetReferences :: DBHandle -> SourceFile -> IO ()
+resetReferences h sf = do
+  let sfHash = hash sf
+  execStatement h resetReferencesStmt (sfHash, sfHash)
+
+resetReferencesSQL :: T.Text
+resetReferencesSQL = "delete from Refs where File = ?                              \
+                     \ or File in (select Inclusion from Inclusions where File = ?)"
+
+getReferenced :: DBHandle -> SourceLocation -> IO [SourceReferenced]
 getReferenced h (SourceLocation sf l c) =
   execQuery h getReferencedStmt (hash sf, l, l, c, l, c)
 
+-- Note below that the columns of the reference are [Col, EndCol).
 getReferencedSQL :: T.Text
-getReferencedSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind  \
-                   \ from Refs as R                                      \
-                   \ join Definitions as D on R.Ref = D.USRHash          \
-                   \ join Files as F on D.File = F.Hash                  \
-                   \ join Kinds as K on D.Kind = K.Hash                  \
-                   \ where R.File = ? and                                \
-                   \   ((? between R.Line and R.EndLine) and             \
-                   \    (? > R.Line or ? >= R.Col) and                   \
-                   \    (? < R.EndLine or ? <= R.EndCol))" 
+getReferencedSQL = "select D.Name, D.USR, DF.Name, D.Line, D.Col, DK.Kind,  \
+                   \   RF.Name, R.Line, R.Col, R.EndLine, R.EndCol, RK.Kind \
+                   \ from Refs as R                                         \
+                   \ join Definitions as D on R.Ref = D.USRHash             \
+                   \ join Files as DF on D.File = DF.Hash                   \
+                   \ join Kinds as DK on D.Kind = DK.Hash                   \
+                   \ join Files as RF on R.File = RF.Hash                   \
+                   \ join Kinds as RK on R.RefKind = RK.Hash                \
+                   \ where R.File = ? and                                   \
+                   \   ((? between R.Line and R.EndLine) and                \
+                   \    (? > R.Line or ? >= R.Col) and                      \
+                   \    (? < R.EndLine or ? < R.EndCol))" 
 
-getReferences :: DBHandle -> USR -> IO [SourceRange]
+getReferences :: DBHandle -> USR -> IO [SourceReference]
 getReferences h usr = execQuery h getReferencesStmt (Only $ hash usr)
 
 getReferencesSQL :: T.Text
-getReferencesSQL = "select F.Name, R.Line, R.Col, R.EndLine, R.EndCol             \
+getReferencesSQL = "select F.Name, R.Line, R.Col, K.Kind, D.Name                  \
                    \ from Refs as R                                               \
                    \ join Files as F on R.File = F.Hash                           \
+                   \ join Kinds as K on R.RefKind = K.Hash                        \
+                   \ join Definitions as D on R.RefContext = D.USRHash            \
                    \ where R.Ref = ?                                              \
                    \ order by F.Name, R.Line, R.Col, R.EndLine desc, R.EndCol desc"
 

@@ -41,10 +41,10 @@ rpcGetCallers port usr = callRPC port (RPCGetCallers usr)
 rpcGetCallees :: Port -> USR -> IO [DefInfo]
 rpcGetCallees port usr = callRPC port (RPCGetCallees usr)
 
-rpcGetRefs :: Port -> USR -> IO [SourceRange]
+rpcGetRefs :: Port -> USR -> IO [SourceReference]
 rpcGetRefs port usr = callRPC port (RPCGetRefs usr)
 
-rpcGetReferenced :: Port -> SourceLocation -> IO [DefInfo]
+rpcGetReferenced :: Port -> SourceLocation -> IO [SourceReferenced]
 rpcGetReferenced port sl = callRPC port (RPCGetReferenced sl)
 
 callRPC :: Serialize a => Port -> RPCRequest -> IO a
