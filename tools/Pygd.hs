@@ -11,7 +11,6 @@ import System.Directory
 import System.FilePath.Posix
 import System.FSNotify
 import System.Path.NameManip
-import System.Posix.Process
 
 import Control.Concurrent.Chan.Len
 import Pygmalion.Analysis.Extension
@@ -27,7 +26,6 @@ main = do
   -- Initialize.
   cf <- getConfiguration
   initLogger (logLevel cf)
-  nice 5
   ensureDB
   stopWatching <- newEmptyMVar
   port <- newEmptyMVar
@@ -44,7 +42,7 @@ main = do
   let maxThreads = 4 :: Int
   threads <- forM [1..maxThreads] $ \i -> do
     logDebug $ "Launching analysis thread #" ++ (show i)
-    asyncBound (runAnalysisManager aChan dbChan dbQueryChan)
+    asyncBound (runAnalysisManager aChan dbChan dbChan)
   mapM_ (link2 waiterThread) threads
   rpcThread <- async (runRPCServer cf port aChan dbQueryChan)
   link2 waiterThread rpcThread

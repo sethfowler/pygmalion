@@ -105,7 +105,6 @@ executable pygd
                ,  pygmalion
                ,  system-filepath
                ,  time
-               ,  unix
                ,  void
                ,  MissingH
   hs-source-dirs: tools
