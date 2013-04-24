@@ -2,7 +2,7 @@
 
 import Control.Concurrent
 import Control.Concurrent.Async
-import Control.Exception (Exception, throw)
+import Control.Exception (Exception)
 import Control.Monad
 import Data.List
 import qualified Filesystem.Path.CurrentOS as FP
@@ -24,6 +24,7 @@ import Pygmalion.RPC.Server
 
 main :: IO ()
 main = do
+  -- Initialize.
   cf <- getConfiguration
   initLogger (logLevel cf)
   nice 5
@@ -33,24 +34,29 @@ main = do
   aChan <- newLenChan
   dbChan <- newLenChan
   dbQueryChan <- newLenChan
+
+  -- Launch threads.
+  waiterThread <- async doWait
   logDebug "Launching database thread"
   dbThread <- asyncBound (runDatabaseManager dbChan dbQueryChan)
-  link dbThread
+  link2 waiterThread dbThread
   --let maxThreads = numCapabilities
   let maxThreads = 4 :: Int
   threads <- forM [1..maxThreads] $ \i -> do
     logDebug $ "Launching analysis thread #" ++ (show i)
     asyncBound (runAnalysisManager aChan dbChan dbQueryChan)
-  mapM_ link threads
+  mapM_ (link2 waiterThread) threads
   rpcThread <- async (runRPCServer cf port aChan dbQueryChan)
-  link rpcThread
+  link2 waiterThread rpcThread
   watchThread <- async (doWatch aChan stopWatching)
-  link watchThread
-  _ <- getLine
-  cancel rpcThread
+  link2 waiterThread watchThread
+
+  -- When the waiter thread finishes, we begin shutdown.
+  ensureNoException =<< waitCatch waiterThread
+  cancel rpcThread  -- We have to cancel because the RPC server runs forever.
   logDebug "Terminated RPC thread."
   putMVar stopWatching ()
-  wait watchThread
+  ensureNoException =<< waitCatch watchThread
   logDebug "Terminated watch thread."
   forM_ threads $ \_ -> writeLenChan aChan ShutdownAnalysis  -- Signifies end of data.
   forM_ (zip threads [1..numCapabilities]) $ \(thread, i) -> do
@@ -59,6 +65,9 @@ main = do
   writeLenChan dbChan DBShutdown  -- Terminate the database thread.
   ensureNoException =<< waitCatch dbThread
   logDebug $ "Termination of database thread"
+
+doWait :: IO ()
+doWait = getLine >> return () 
 
 doWatch :: AnalysisChan -> MVar () -> IO ()
 doWatch aChan stopWatching = do
@@ -101,7 +110,6 @@ isSource f = (hasSourceExtension f || hasHeaderExtension f) &&
 illegalPaths :: [FilePath]
 illegalPaths = [".git", ".hg", ".svn", "_darcs"]
 
-ensureNoException :: Exception a => Either a b -> IO b
-ensureNoException (Right v) = return v
-ensureNoException (Left e)  = do logError $ "Thread threw an exception: " ++ (show e)
-                                 throw e
+ensureNoException :: Exception a => Either a b -> IO ()
+ensureNoException (Right _) = return ()
+ensureNoException (Left e)  = logError $ "Thread threw an exception: " ++ (show e)
