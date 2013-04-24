@@ -202,7 +202,11 @@ defsVisitorImpl wd dsRef osRef csRef rsRef tuRef cursor _ = do
                     kind <- C.getCursorKindSpelling cKind >>= CS.unpackText
                     def <- return $! DefInfo name usr loc kind
                     liftIO . modifyIORef' dsRef $! (def :)
-                return ChildVisit_Recurse
+
+                -- Recurse (most of the time).
+                case cKind of
+                  C.Cursor_MacroDefinition -> return ChildVisit_Continue
+                  _                        -> return ChildVisit_Recurse
 
     -- Don't recurse into out-of-project header files.
     False -> return ChildVisit_Continue
