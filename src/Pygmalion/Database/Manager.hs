@@ -30,6 +30,8 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBGetIncluders SourceFile (MVar [CommandInfo])
                | DBGetCallers USR (MVar [Invocation])
                | DBGetCallees USR (MVar [DefInfo])
+               | DBGetBases USR (MVar [DefInfo])
+               | DBGetOverrides USR (MVar [DefInfo])
                | DBGetRefs USR (MVar [SourceReference])
                | DBGetReferenced SourceLocation (MVar [SourceReferenced])
                | DBShutdown
@@ -65,6 +67,8 @@ runDatabaseManager chan queryChan = do
                 DBGetIncluders sf v         -> doGetIncluders h sf v >> go (n+1) s h
                 DBGetCallers usr v          -> doGetCallers h usr v >> go (n+1) s h
                 DBGetCallees usr v          -> doGetCallees h usr v >> go (n+1) s h
+                DBGetBases usr v            -> doGetBases h usr v >> go (n+1) s h
+                DBGetOverrides usr v        -> doGetOverrides h usr v >> go (n+1) s h
                 DBGetRefs usr v             -> doGetRefs h usr v >> go (n+1) s h
                 DBGetReferenced sl v        -> doGetReferenced h sl v >> go (n+1) s h
                 DBShutdown                  -> logInfo "Shutting down DB thread"
@@ -149,6 +153,18 @@ doGetCallees h usr v = do
   logDebug $ "Getting callees for " ++ (show usr)
   callees <- getCallees h usr
   putMVar v $! callees
+
+doGetBases :: DBHandle -> USR -> MVar [DefInfo] -> IO ()
+doGetBases h usr v = do
+  logDebug $ "Getting bases for " ++ (show usr)
+  bases <- getOverrided h usr
+  putMVar v $! bases
+
+doGetOverrides :: DBHandle -> USR -> MVar [DefInfo] -> IO ()
+doGetOverrides h usr v = do
+  logDebug $ "Getting overrides for " ++ (show usr)
+  overrides <- getOverriders h usr
+  putMVar v $! overrides
 
 doGetRefs :: DBHandle -> USR -> MVar [SourceReference] -> IO ()
 doGetRefs h usr v = do

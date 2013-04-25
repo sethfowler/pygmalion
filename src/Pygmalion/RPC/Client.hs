@@ -7,6 +7,8 @@ module Pygmalion.RPC.Client
 , rpcGetDefinition
 , rpcGetCallers
 , rpcGetCallees
+, rpcGetBases
+, rpcGetOverrides
 , rpcGetRefs
 , rpcGetReferenced
 ) where
@@ -40,6 +42,12 @@ rpcGetCallers port usr = callRPC port (RPCGetCallers usr)
 
 rpcGetCallees :: Port -> USR -> IO [DefInfo]
 rpcGetCallees port usr = callRPC port (RPCGetCallees usr)
+
+rpcGetBases :: Port -> USR -> IO [DefInfo]
+rpcGetBases port usr = callRPC port (RPCGetBases usr)
+
+rpcGetOverrides :: Port -> USR -> IO [DefInfo]
+rpcGetOverrides port usr = callRPC port (RPCGetOverrides usr)
 
 rpcGetRefs :: Port -> USR -> IO [SourceReference]
 rpcGetRefs port usr = callRPC port (RPCGetRefs usr)

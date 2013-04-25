@@ -41,6 +41,8 @@ usage = do
   putStrLn   " --definition [file] [line] [col]"
   putStrLn   " --callers [file] [line] [col]"
   putStrLn   " --callees [file] [line] [col]"
+  putStrLn   " --bases [file] [line] [col]"
+  putStrLn   " --overrides [file] [line] [col]"
   putStrLn   " --references [file] [line] [col]"
   putStrLn   " --display-ast [file]"
   bail
@@ -55,6 +57,10 @@ parseArgs c wd ["--callers", f, line, col] = printCallers c (asSourceFile wd f)
                                                             (readMay line) (readMay col)
 parseArgs c wd ["--callees", f, line, col] = printCallees c (asSourceFile wd f)
                                                             (readMay line) (readMay col)
+parseArgs c wd ["--bases", f, line, col] = printBases c (asSourceFile wd f)
+                                                        (readMay line) (readMay col)
+parseArgs c wd ["--overrides", f, line, col] = printOverrides c (asSourceFile wd f)
+                                                                (readMay line) (readMay col)
 parseArgs c wd ["--references", f, line, col] = printRefs c (asSourceFile wd f)
                                                             (readMay line) (readMay col)
 parseArgs c wd ["--display-ast", f] = printAST c (asSourceFile wd f)
@@ -154,6 +160,50 @@ printCallees cf f (Just line) (Just col) = do
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Callee: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
 printCallees _ _ _ _ = usage
+
+printBases :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
+printBases cf f (Just line) (Just col) = do
+    info <- doGetLookupInfo cf (SourceLocation f line col)
+    case info of
+      GotDef di     -> printBases' (diUSR di)
+      GotDecl usr _ -> printBases' usr
+      GotUSR usr    -> printBases' usr
+      GotNothing    -> bailWith idErr
+  where 
+    errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
+    idErr = errPrefix ++ "No identifier at this location."
+    defErr usr = errPrefix ++ "No bases for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
+    printBases' usr = do
+      callers <- rpcGetBases (ifPort cf) usr
+      case (null callers) of
+        True  -> bailWith (defErr usr)
+        False -> mapM_ putBase callers
+    putBase (DefInfo n _ (SourceLocation idF idLine idCol) k) =
+      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
+                 ": Base: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
+printBases _ _ _ _ = usage
+
+printOverrides :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
+printOverrides cf f (Just line) (Just col) = do
+    info <- doGetLookupInfo cf (SourceLocation f line col)
+    case info of
+      GotDef di     -> printOverrides' (diUSR di)
+      GotDecl usr _ -> printOverrides' usr
+      GotUSR usr    -> printOverrides' usr
+      GotNothing    -> bailWith idErr
+  where 
+    errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
+    idErr = errPrefix ++ "No identifier at this location."
+    defErr usr = errPrefix ++ "No overrides for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
+    printOverrides' usr = do
+      callees <- rpcGetOverrides (ifPort cf) usr
+      case (null callees) of
+        True  -> bailWith (defErr usr)
+        False -> mapM_ putOverride callees
+    putOverride (DefInfo n _ (SourceLocation idF idLine idCol) k) =
+      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
+                 ": Override: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
+printOverrides _ _ _ _ = usage
 
 printRefs :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printRefs cf f (Just line) (Just col) = do

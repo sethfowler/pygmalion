@@ -140,7 +140,7 @@ defsVisitorImpl wd dsRef osRef csRef rsRef tuRef cursor _ = do
   case inProject wd loc of
     True -> do  cKind <- C.getKind cursor
                 tu <- liftIO $ readIORef tuRef
-                defC <- C.getReferenced cursor
+                defC <- C.getDefinition cursor
                 defIsNull <- C.isNullCursor defC
                 refC <- C.getReferenced cursor
                 refIsNull <- C.isNullCursor refC
@@ -151,7 +151,14 @@ defsVisitorImpl wd dsRef osRef csRef rsRef tuRef cursor _ = do
                 -- Record references.
                 -- TODO: The 'goodRef' criteria below is still experimental, and
                 -- definitely doesn't consider C++.
-                let goodRef = cKind `elem` [C.Cursor_DeclRefExpr,
+                -- TODO: Ignore CallExpr children that start at the same
+                -- position as the CallExpr. This always refers to the same
+                -- thing as the CallExpr itself. We don't want to just ignore
+                -- the CallExpr though, because e.g. constructor calls are
+                -- represented as CallExprs with no children.
+                -- TODO: Support LabelRefs.
+                let goodRef = cKind `elem` [C.Cursor_CallExpr,
+                                            C.Cursor_DeclRefExpr,
                                             C.Cursor_MemberRefExpr,
                                             C.Cursor_TypeRef,
                                             C.Cursor_MacroExpansion,
@@ -170,7 +177,7 @@ defsVisitorImpl wd dsRef osRef csRef rsRef tuRef cursor _ = do
                     (_, endLn, endCol, _) <- Source.getSpellingLocation endLoc
 
                     -- Determine the context.
-                    ctxC <- parentFunction (fromJust tu) cursor
+                    ctxC <- getContext (fromJust tu) cursor
                     ctxUSR <- XRef.getUSR ctxC >>= CS.unpackText
 
                     -- Record.
@@ -185,7 +192,7 @@ defsVisitorImpl wd dsRef osRef csRef rsRef tuRef cursor _ = do
                 -- Record callers.
                 when ((cKind `elem` [C.Cursor_CallExpr, C.Cursor_MacroExpansion]) && not refIsNull) $ do
                     refUSR <- XRef.getUSR refC >>= CS.unpackText
-                    parC <- parentFunction (fromJust tu) cursor
+                    parC <- getContext (fromJust tu) cursor
                     parUSR <- XRef.getUSR parC >>= CS.unpackText
                     caller <- return $! Caller loc parUSR refUSR
                     liftIO . modifyIORef' csRef $! (caller :)
@@ -193,9 +200,23 @@ defsVisitorImpl wd dsRef osRef csRef rsRef tuRef cursor _ = do
                     --refName <- cursorName refC
                     --liftIO $ logDebug $ "Caller: " ++ (T.unpack parName) ++ " calls " ++ (T.unpack refName)
 
-                -- TODO: Record overrides.
+                -- Record method overrides.
+                -- TODO: I seem to recall that in C++11 you can override
+                -- constructors. Add support for that if so.
+                when (cKind `elem` [C.Cursor_CXXMethod, C.Cursor_Destructor]) $ do
+                  overrides <- C.getOverriddenCursors cursor
+                  overrideUSRs <- mapM (CS.unpackText <=< XRef.getUSR) overrides
+                  usr <- XRef.getUSR cursor >>= CS.unpackText
+                  forM_ overrideUSRs $ \oUSR -> do
+                    override <- return $! Override usr oUSR
+                    liftIO . modifyIORef' osRef $! (override :)
+
+                -- Record class inheritance ("overrides").
+                when (cKind == C.Cursor_ClassDecl) $
+                  void $ visitChildren cursor (classVisitor osRef cursor)
 
                 -- Record definitions.
+                -- TODO: Support labels.
                 when (cursorIsDef || cKind == C.Cursor_MacroDefinition) $ do
                     usr <- XRef.getUSR cursor >>= CS.unpackText
                     name <- fqn cursor
@@ -210,6 +231,20 @@ defsVisitorImpl wd dsRef osRef csRef rsRef tuRef cursor _ = do
 
     -- Don't recurse into out-of-project header files.
     False -> return ChildVisit_Continue
+
+classVisitor :: IORef [Override] -> C.Cursor -> ChildVisitor
+classVisitor osRef thisClassC cursor _ = do
+  cKind <- C.getKind cursor
+  case cKind of
+    C.Cursor_CXXBaseSpecifier -> do
+      thisClassUSR <- XRef.getUSR thisClassC >>= CS.unpackText
+      thisClassName <- fqn thisClassC
+      defC <- C.getDefinition cursor
+      baseUSR <- XRef.getUSR defC >>= CS.unpackText
+      override <- return $! Override thisClassUSR baseUSR
+      liftIO . modifyIORef' osRef $! (override :)
+      return ChildVisit_Break
+    _ -> return ChildVisit_Continue
 
 getCursorLocation :: C.Cursor -> ClangApp SourceLocation
 getCursorLocation cursor = do
@@ -234,14 +269,14 @@ fqn cursor = (T.intercalate "::" . reverse) <$> go cursor
                   if isNull || isTU then return [] else go' c
         go' c =  (:) <$> (cursorName c) <*> (C.getSemanticParent c >>= go)
 
-parentFunction :: TranslationUnit -> C.Cursor -> ClangApp C.Cursor
-parentFunction tu cursor = do
+getContext :: TranslationUnit -> C.Cursor -> ClangApp C.Cursor
+getContext tu cursor = do
     isNull <- C.isNullCursor cursor
     cKind <- C.getKind cursor
     go cursor cKind isNull
   where
     go c _ isNull | isNull = return c
-    go c k _ | k `elem` [C.Cursor_FunctionDecl, C.Cursor_CXXMethod, C.Cursor_TranslationUnit] = return c
+    go c k _ | k `elem` [C.Cursor_FunctionDecl, C.Cursor_CXXMethod, C.Cursor_Constructor, C.Cursor_Destructor, C.Cursor_TranslationUnit, C.Cursor_ClassDecl, C.Cursor_StructDecl, C.Cursor_EnumDecl, C.Cursor_Namespace] = return c
     go c k _ | k == C.Cursor_MacroExpansion = do
       extent <- C.getExtent c
       loc <- Source.getStart extent
@@ -253,8 +288,8 @@ parentFunction tu cursor = do
                          srcCKind <- C.getKind srcCursor
                          case srcCKind of
                            C.Cursor_MacroExpansion -> return c  -- Will loop infinitely otherwise.
-                           _                       -> parentFunction tu srcCursor
-    go c _ _ = C.getSemanticParent c >>= parentFunction tu
+                           _                       -> getContext tu srcCursor
+    go c _ _ = C.getSemanticParent c >>= getContext tu
 
 cursorName :: C.Cursor -> ClangApp Identifier
 cursorName c = C.getDisplayName c >>= CS.unpackText >>= anonymize

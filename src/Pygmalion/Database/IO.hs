@@ -240,7 +240,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int64
 dbMajorVersion = 0
-dbMinorVersion = 11
+dbMinorVersion = 12
 
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c sql
@@ -475,10 +475,10 @@ getDefSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
 -- Schema and operations for the Overrides table.
 defineOverridesTable :: Connection -> IO ()
 defineOverridesTable c = execute_ c sql
-  where sql = "create table if not exists Overrides(     \
-               \ Id integer primary key unique not null, \
-               \ Definition integer not null,            \
-               \ Overrided integer not null)"
+  where sql = "create table if not exists Overrides( \
+               \ Definition integer not null,        \
+               \ Overrided integer not null,         \
+               \ primary key (Definition, Overrided))"
 
 updateOverride :: DBHandle -> Override -> IO ()
 updateOverride h (Override defUSR overrideUSR) = do

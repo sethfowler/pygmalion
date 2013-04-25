@@ -47,6 +47,8 @@ serverApp aChan dbQueryChan ad =
         Just (RPCGetDefinition usr)        -> liftIO (doGetDefinition dbQueryChan usr) >>= yield
         Just (RPCGetCallers usr)           -> liftIO (doGetCallers dbQueryChan usr) >>= yield
         Just (RPCGetCallees usr)           -> liftIO (doGetCallees dbQueryChan usr) >>= yield
+        Just (RPCGetBases usr)             -> liftIO (doGetBases dbQueryChan usr) >>= yield
+        Just (RPCGetOverrides usr)         -> liftIO (doGetOverrides dbQueryChan usr) >>= yield
         Just (RPCGetRefs usr)              -> liftIO (doGetRefs dbQueryChan usr) >>= yield
         Just (RPCGetReferenced sl)         -> liftIO (doGetReferenced dbQueryChan sl) >>= yield
         Just RPCPing                       -> yield . encode $ RPCOK ()
@@ -87,6 +89,20 @@ doGetCallees :: DBChan -> USR -> IO ByteString
 doGetCallees dbQueryChan usr = do
   logDebug $ "RPCGetCallees: " ++ (show usr)
   result <- callLenChan dbQueryChan $! DBGetCallees usr
+  mapM_ print result
+  return $! encode $ RPCOK result
+
+doGetBases :: DBChan -> USR -> IO ByteString
+doGetBases dbQueryChan usr = do
+  logDebug $ "RPCGetBases: " ++ (show usr)
+  result <- callLenChan dbQueryChan $! DBGetBases usr
+  mapM_ print result
+  return $! encode $ RPCOK result
+
+doGetOverrides :: DBChan -> USR -> IO ByteString
+doGetOverrides dbQueryChan usr = do
+  logDebug $ "RPCGetOverrides: " ++ (show usr)
+  result <- callLenChan dbQueryChan $! DBGetOverrides usr
   mapM_ print result
   return $! encode $ RPCOK result
 
