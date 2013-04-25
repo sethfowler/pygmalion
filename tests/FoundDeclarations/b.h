@@ -1,4 +1,6 @@
-#pragma once
+#ifndef B_H
+#define B_H
+
 #include "c.h"
 extern int b;
 
@@ -20,3 +22,5 @@ class BClass : public ns::CClass
 
     int mBPrivate;
 };
+
+#endif

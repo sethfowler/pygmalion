@@ -1,4 +1,5 @@
-#pragma once
+#ifndef B_H
+#define B_H
 
 namespace ns {
 
@@ -30,3 +31,5 @@ class CClass
 };
 
 } // namespace ns
+
+#endif
