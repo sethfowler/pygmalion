@@ -564,7 +564,7 @@ getCalleesSQL = "select distinct D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
                 \ join Definitions as D on C.Callee = D.USRHash               \
                 \ join Files as F on D.File = F.Hash                          \
                 \ join Kinds as K on D.Kind = K.Hash                          \
-                \ where C.Caller = ?"
+                \ where C.Caller = ? order by F.Name, D.Line, D.Col"
 
 -- Schema and operations for the References table.
 defineReferencesTable :: Connection -> IO ()
