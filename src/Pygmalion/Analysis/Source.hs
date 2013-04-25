@@ -238,7 +238,6 @@ classVisitor osRef thisClassC cursor _ = do
   case cKind of
     C.Cursor_CXXBaseSpecifier -> do
       thisClassUSR <- XRef.getUSR thisClassC >>= CS.unpackText
-      thisClassName <- fqn thisClassC
       defC <- C.getDefinition cursor
       baseUSR <- XRef.getUSR defC >>= CS.unpackText
       override <- return $! Override thisClassUSR baseUSR
