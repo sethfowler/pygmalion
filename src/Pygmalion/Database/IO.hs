@@ -86,7 +86,6 @@ data DBHandle = DBHandle
     , insertPathStmt            :: Statement
     , insertCommandStmt         :: Statement
     , insertArgsStmt            :: Statement
-    , insertKindStmt            :: Statement
     }
 
 ensureDB :: IO ()
@@ -142,7 +141,6 @@ openDB db = labeledCatch "openDB" $ do
                   <*> openStatement c (mkQueryT insertPathSQL)
                   <*> openStatement c (mkQueryT insertCommandSQL)
                   <*> openStatement c (mkQueryT insertArgsSQL)
-                  <*> openStatement c (mkQueryT insertKindSQL)
   return h
 
 closeDB :: DBHandle -> IO ()
@@ -173,7 +171,6 @@ closeDB h = do
   closeStatement (insertPathStmt h)
   closeStatement (insertCommandStmt h)
   closeStatement (insertArgsStmt h)
-  closeStatement (insertKindStmt h)
   close (conn h)
 
 enableTracing :: Connection -> IO ()
@@ -240,7 +237,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int64
 dbMajorVersion = 0
-dbMinorVersion = 12
+dbMinorVersion = 13
 
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c sql
@@ -426,16 +423,6 @@ getSimilarCommandInfoSQL = "select F.Name, W.Path, C.Command, A.Args, LastIndexe
                            \ join BuildArgs as A on SourceFiles.BuildArgs = A.Hash        \
                            \ where F.Name like ? limit 1"
 
--- Schema and operations for the Kinds table.
-defineKindsTable :: Connection -> IO ()
-defineKindsTable c = execute_ c sql
-  where sql =  "create table if not exists Kinds(          \
-               \ Hash integer primary key unique not null, \
-               \ Kind varchar(2048) not null)"
-
-insertKindSQL :: T.Text
-insertKindSQL = "insert or ignore into Kinds (Kind, Hash) values (?, ?)"
-
 -- Schema and operations for the Definitions table.
 defineDefinitionsTable :: Connection -> IO ()
 defineDefinitionsTable c = execute_ c sql
@@ -453,9 +440,8 @@ updateDef h (DefInfo n u (SourceLocation sf l c) k) = do
     let usrHash = hash u
     let sfHash = hash sf
     execStatement h insertFileStmt (sf, sfHash) -- FIXME: Maybe only updateSourceFile should do this?
-    let kindHash = hash k
-    execStatement h insertKindStmt (k, kindHash)
-    execStatement h updateDefStmt (usrHash, n, u, sfHash, l, c, kindHash)
+    let kind = fromEnum k
+    execStatement h updateDefStmt (usrHash, n, u, sfHash, l, c, kind)
 
 updateDefSQL :: T.Text
 updateDefSQL = "replace into Definitions               \
@@ -466,10 +452,9 @@ getDef :: DBHandle -> USR -> IO (Maybe DefInfo)
 getDef h usr = execSingleRowQuery h getDefStmt (Only $ hash usr)
 
 getDefSQL :: T.Text
-getDefSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
+getDefSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind \
             \ from Definitions as D                              \
             \ join Files as F on D.File = F.Hash                 \
-            \ join Kinds as K on D.Kind = K.Hash                 \
             \ where D.USRHash = ? limit 1"
   
 -- Schema and operations for the Overrides table.
@@ -494,22 +479,20 @@ getOverrided :: DBHandle -> USR -> IO [DefInfo]
 getOverrided h usr = execQuery h getOverridedStmt (Only $ hash usr)
 
 getOverridedSQL :: T.Text
-getOverridedSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
+getOverridedSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind \
                   \ from Overrides as O                                \
                   \ join Definitions as D on O.Overrided = D.USRHash   \
                   \ join Files as F on D.File = F.Hash                 \
-                  \ join Kinds as K on D.Kind = K.Hash                 \
                   \ where O.Definition = ?"
 
 getOverriders :: DBHandle -> USR -> IO [DefInfo]
 getOverriders h usr = execQuery h getOverridersStmt (Only $ hash usr)
 
 getOverridersSQL :: T.Text
-getOverridersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
+getOverridersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind \
                    \ from Overrides as O                                \
                    \ join Definitions as D on O.Definition = D.USRHash  \
                    \ join Files as F on D.File = F.Hash                 \
-                   \ join Kinds as K on D.Kind = K.Hash                 \
                    \ where O.Overrided = ?"
 
 -- Schema and operations for the Callers table.
@@ -547,23 +530,21 @@ getCallers :: DBHandle -> USR -> IO [Invocation]
 getCallers h usr = execQuery h getCallersStmt (Only $ hash usr)
 
 getCallersSQL :: T.Text
-getCallersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind, FC.Name, C.Line, C.Col \
+getCallersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind, FC.Name, C.Line, C.Col \
                 \ from Callers as C                                                          \
                 \ join Files as FC on C.File = FC.Hash                                       \
                 \ join Definitions as D on C.Caller = D.USRHash                              \
                 \ join Files as F on D.File = F.Hash                                         \
-                \ join Kinds as K on D.Kind = K.Hash                                         \
                 \ where C.Callee = ? order by FC.Name, C.Line, C.Col"
 
 getCallees :: DBHandle -> USR -> IO [DefInfo]
 getCallees h usr = execQuery h getCalleesStmt (Only $ hash usr)
 
 getCalleesSQL :: T.Text
-getCalleesSQL = "select distinct D.Name, D.USR, F.Name, D.Line, D.Col, K.Kind \
+getCalleesSQL = "select distinct D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind \
                 \ from Callers as C                                           \
                 \ join Definitions as D on C.Callee = D.USRHash               \
                 \ join Files as F on D.File = F.Hash                          \
-                \ join Kinds as K on D.Kind = K.Hash                          \
                 \ where C.Caller = ? order by F.Name, D.Line, D.Col"
 
 -- Schema and operations for the References table.
@@ -584,10 +565,9 @@ updateReference :: DBHandle -> Reference -> IO ()
 updateReference h (Reference (SourceRange sf l c el ec) k ctxUSR refUSR) = do
     let sfHash = hash sf
     let refUSRHash = hash refUSR
-    let kindHash = hash k
-    execStatement h insertKindStmt (k, kindHash)
+    let kind = fromEnum k
     let ctxUSRHash = hash ctxUSR
-    execStatement h updateReferenceStmt (sfHash, l, c, el, ec, kindHash, ctxUSRHash, refUSRHash)
+    execStatement h updateReferenceStmt (sfHash, l, c, el, ec, kind, ctxUSRHash, refUSRHash)
 
 updateReferenceSQL :: T.Text
 updateReferenceSQL = "replace into Refs (File, Line, Col, EndLine, EndCol, RefKind, RefContext, Ref) \
@@ -608,27 +588,24 @@ getReferenced h (SourceLocation sf l c) =
 
 -- Note below that the columns of the reference are [Col, EndCol).
 getReferencedSQL :: T.Text
-getReferencedSQL = "select D.Name, D.USR, DF.Name, D.Line, D.Col, DK.Kind,  \
-                   \   RF.Name, R.Line, R.Col, R.EndLine, R.EndCol, RK.Kind \
-                   \ from Refs as R                                         \
-                   \ join Definitions as D on R.Ref = D.USRHash             \
-                   \ join Files as DF on D.File = DF.Hash                   \
-                   \ join Kinds as DK on D.Kind = DK.Hash                   \
-                   \ join Files as RF on R.File = RF.Hash                   \
-                   \ join Kinds as RK on R.RefKind = RK.Hash                \
-                   \ where R.File = ? and                                   \
-                   \   ((? between R.Line and R.EndLine) and                \
-                   \    (? > R.Line or ? >= R.Col) and                      \
+getReferencedSQL = "select D.Name, D.USR, DF.Name, D.Line, D.Col, D.Kind,     \
+                   \   RF.Name, R.Line, R.Col, R.EndLine, R.EndCol, R.RefKind \
+                   \ from Refs as R                                           \
+                   \ join Definitions as D on R.Ref = D.USRHash               \
+                   \ join Files as DF on D.File = DF.Hash                     \
+                   \ join Files as RF on R.File = RF.Hash                     \
+                   \ where R.File = ? and                                     \
+                   \   ((? between R.Line and R.EndLine) and                  \
+                   \    (? > R.Line or ? >= R.Col) and                        \
                    \    (? < R.EndLine or ? < R.EndCol))" 
 
 getReferences :: DBHandle -> USR -> IO [SourceReference]
 getReferences h usr = execQuery h getReferencesStmt (Only $ hash usr)
 
 getReferencesSQL :: T.Text
-getReferencesSQL = "select F.Name, R.Line, R.Col, K.Kind, D.Name                  \
+getReferencesSQL = "select F.Name, R.Line, R.Col, R.RefKind, D.Name               \
                    \ from Refs as R                                               \
                    \ join Files as F on R.File = F.Hash                           \
-                   \ join Kinds as K on R.RefKind = K.Hash                        \
                    \ join Definitions as D on R.RefContext = D.USRHash            \
                    \ where R.Ref = ?                                              \
                    \ order by F.Name, R.Line, R.Col, R.EndLine desc, R.EndCol desc"
@@ -642,7 +619,6 @@ ensureSchema c = defineMetadataTable c
               >> defineBuildCommandsTable c
               >> defineBuildArgsTable c
               >> defineSourceFilesTable c
-              >> defineKindsTable c
               >> defineDefinitionsTable c
               >> defineOverridesTable c
               >> defineCallersTable c

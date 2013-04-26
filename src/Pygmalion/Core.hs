@@ -14,7 +14,7 @@ module Pygmalion.Core
 , USR
 , SourceLine
 , SourceCol
-, DefKind
+, SourceKind (..)
 , Override (..)
 , Caller (..)
 , Invocation (..)
@@ -44,6 +44,8 @@ import Data.Int
 import Data.Serialize
 import Database.SQLite.Simple (FromRow(..), field)
 import GHC.Generics
+
+import Pygmalion.SourceKind
 
 type Port = Int
 
@@ -106,13 +108,13 @@ data DefInfo = DefInfo
     { diIdentifier     :: !Identifier
     , diUSR            :: !USR
     , diSourceLocation :: !SourceLocation
-    , diDefKind        :: !DefKind
+    , diDefKind        :: !SourceKind
     } deriving (Eq, Show, Generic)
 
 instance Serialize DefInfo
 
 instance FromRow DefInfo where
-  fromRow = DefInfo <$> field <*> field <*> fromRow <*> field
+  fromRow = DefInfo <$> field <*> field <*> fromRow <*> fromRow
 
 data SourceLocation = SourceLocation
     { slFile :: !SourceFile
@@ -142,7 +144,6 @@ type Identifier = T.Text
 type USR        = T.Text
 type SourceLine = Int
 type SourceCol  = Int
-type DefKind    = T.Text
 
 data Override = Override
     { orDef       :: !USR
@@ -171,7 +172,7 @@ instance FromRow Invocation where
 
 data Reference = Reference
     { rfRange   :: !SourceRange
-    , rfKind    :: !DefKind
+    , rfKind    :: !SourceKind
     , rfContext :: !USR
     , rfUSR     :: !USR
     } deriving (Eq, Show, Generic)
@@ -181,24 +182,24 @@ instance Serialize Reference
 data SourceReferenced = SourceReferenced
     { sdDef   :: !DefInfo
     , sdRange :: !SourceRange
-    , sdKind  :: !DefKind
+    , sdKind  :: !SourceKind
     } deriving (Eq, Show, Generic)
 
 instance Serialize SourceReferenced
 
 instance FromRow SourceReferenced where
-  fromRow = SourceReferenced <$> fromRow <*> fromRow <*> field
+  fromRow = SourceReferenced <$> fromRow <*> fromRow <*> fromRow
 
 data SourceReference = SourceReference
     { srLocation :: !SourceLocation
-    , srKind     :: !DefKind
+    , srKind     :: !SourceKind
     , srContext  :: !SourceContext
     } deriving (Eq, Show, Generic)
 
 instance Serialize SourceReference
 
 instance FromRow SourceReference where
-  fromRow = SourceReference <$> fromRow <*> field <*> field
+  fromRow = SourceReference <$> fromRow <*> fromRow <*> field
 
 type SourceContext = T.Text
 

@@ -32,6 +32,7 @@ import Data.Typeable
 import Data.Bool.Predicate
 import Pygmalion.Core
 import Pygmalion.Log
+import Pygmalion.SourceKind
 
 data SourceAnalysisResult = SourceAnalysisResult
     { sarDefs       :: ![DefInfo]
@@ -181,7 +182,7 @@ defsVisitorImpl wd dsRef osRef csRef rsRef tuRef cursor _ = do
                     ctxUSR <- XRef.getUSR ctxC >>= CS.unpackText
 
                     -- Record.
-                    refKind <- C.getCursorKindSpelling cKind >>= CS.unpackText
+                    let refKind = toSourceKind cKind
                     reference <- return $! Reference (SourceRange (slFile loc)
                                                                   (slLine loc)
                                                                   (slCol loc)
@@ -220,7 +221,7 @@ defsVisitorImpl wd dsRef osRef csRef rsRef tuRef cursor _ = do
                 when (cursorIsDef || cKind == C.Cursor_MacroDefinition) $ do
                     usr <- XRef.getUSR cursor >>= CS.unpackText
                     name <- fqn cursor
-                    kind <- C.getCursorKindSpelling cKind >>= CS.unpackText
+                    let kind = toSourceKind cKind
                     def <- return $! DefInfo name usr loc kind
                     liftIO . modifyIORef' dsRef $! (def :)
 
@@ -328,7 +329,7 @@ inspectIdentifier (SourceLocation f ln col) tu = do
         True -> return GotNothing
     createDefInfo cursor usr k = do
       name <- C.getDisplayName cursor >>= CS.unpackText
-      kind <- C.getCursorKindSpelling k >>= CS.unpackText
+      let kind = toSourceKind k
       loc <- C.getLocation cursor
       (df, dl, dc, _) <- Source.getSpellingLocation loc
       file <- case df of Just valid -> File.getName valid >>= CS.unpackText

@@ -111,10 +111,10 @@ printDef cf f (Just line) (Just col) = do
     defErr usr = errPrefix ++ "No definition for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
     putDef (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Definition: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
+                 ": Definition: " ++ (T.unpack n) ++ " [" ++ (show k) ++ "]"
     putDecl (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Declaration: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
+                 ": Declaration: " ++ (T.unpack n) ++ " [" ++ (show k) ++ "]"
 printDef _ _ _ _ = usage
 
 printCallers :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
@@ -158,7 +158,7 @@ printCallees cf f (Just line) (Just col) = do
         False -> mapM_ putCallee callees
     putCallee (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Callee: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
+                 ": Callee: " ++ (T.unpack n) ++ " [" ++ (show k) ++ "]"
 printCallees _ _ _ _ = usage
 
 printBases :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
@@ -180,7 +180,7 @@ printBases cf f (Just line) (Just col) = do
         False -> mapM_ putBase callers
     putBase (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Base: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
+                 ": Base: " ++ (T.unpack n) ++ " [" ++ (show k) ++ "]"
 printBases _ _ _ _ = usage
 
 printOverrides :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
@@ -202,7 +202,7 @@ printOverrides cf f (Just line) (Just col) = do
         False -> mapM_ putOverride callees
     putOverride (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Override: " ++ (T.unpack n) ++ " [" ++ (T.unpack k) ++ "]"
+                 ": Override: " ++ (T.unpack n) ++ " [" ++ (show k) ++ "]"
 printOverrides _ _ _ _ = usage
 
 printRefs :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
@@ -224,7 +224,7 @@ printRefs cf f (Just line) (Just col) = do
         False -> mapM_ putRef refs
     putRef (SourceReference (SourceLocation idF idLine idCol) k ctx) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Reference: " ++ (T.unpack ctx) ++ " [" ++ (T.unpack k) ++ "]"
+                 ": Reference: " ++ (T.unpack ctx) ++ " [" ++ (show k) ++ "]"
 printRefs _ _ _ _ = usage
 
 printAST :: Config -> SourceFile -> IO ()
@@ -254,7 +254,7 @@ doGetLookupInfo cf sl = do
       Just referenced' -> return (GotDef . sdDef $ referenced')
       Nothing          -> return GotNothing
   where
-    filterExpansion rs = let exps = filter ((== "macro expansion") . sdKind) rs in
+    filterExpansion rs = let exps = filter ((== MacroExpansion) . sdKind) rs in
                          if null exps then rs else exps
     filterNarrowest [] = Nothing
     filterNarrowest rs = Just $ minimumBy (comparing $ rangeSize . sdRange) rs
