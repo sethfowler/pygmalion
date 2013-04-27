@@ -109,7 +109,6 @@ analyzeCode dbChan indexer ci = do
       case resp of
         Just (CR.FoundDef di)       -> liftIO (writeLenChan dbChan (DBUpdateDefInfo di)) >> process
         Just (CR.FoundOverride ov)  -> liftIO (writeLenChan dbChan (DBUpdateOverride ov)) >> process
-        Just (CR.FoundCaller cr)    -> liftIO (writeLenChan dbChan (DBUpdateCaller cr)) >> process
         Just (CR.FoundRef rf)       -> liftIO (writeLenChan dbChan (DBUpdateRef rf)) >> process
         Just (CR.FoundInclusion ic) -> liftIO (writeLenChan dbChan (DBUpdateInclusion ci ic)) >> process
         Just (CR.EndOfInclusions)   -> liftIO (writeLenChan dbChan (DBResetMetadata sf)) >> process

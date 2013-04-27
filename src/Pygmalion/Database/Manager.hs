@@ -19,7 +19,6 @@ import Pygmalion.Log
 data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBUpdateDefInfo DefInfo
                | DBUpdateOverride Override
-               | DBUpdateCaller Caller
                | DBUpdateRef Reference
                | DBUpdateInclusion CommandInfo Inclusion
                | DBResetInclusions SourceFile
@@ -56,7 +55,6 @@ runDatabaseManager chan queryChan = do
                 DBUpdateCommandInfo ci      -> doUpdateCommandInfo h ci >> go (n+1) s h
                 DBUpdateDefInfo di          -> doUpdateDefInfo h di >> go (n+1) s h
                 DBUpdateOverride ov         -> doUpdateOverride h ov >> go (n+1) s h
-                DBUpdateCaller cr           -> doUpdateCaller h cr >> go (n+1) s h
                 DBUpdateRef rf              -> doUpdateRef h rf >> go (n+1) s h
                 DBUpdateInclusion ci ic     -> doUpdateInclusion h ci ic >> go (n+1) s h
                 DBResetInclusions sf        -> doResetInclusions h sf >> go (n+1) s h
@@ -89,11 +87,6 @@ doUpdateOverride :: DBHandle -> Override -> IO ()
 doUpdateOverride h ov = withTransaction h $ do
   logDebug $ "Updating database with override: " ++ (show ov)
   updateOverride h ov
-
-doUpdateCaller :: DBHandle -> Caller -> IO ()
-doUpdateCaller h cr = withTransaction h $ do
-  logDebug $ "Updating database with caller: " ++ (show cr)
-  updateCaller h cr
 
 doUpdateRef :: DBHandle -> Reference -> IO ()
 doUpdateRef h rf = withTransaction h $ do

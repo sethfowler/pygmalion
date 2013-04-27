@@ -18,7 +18,6 @@ instance Serialize ClangRequest
 
 data ClangResponse = FoundDef DefInfo
                    | FoundOverride Override
-                   | FoundCaller Caller
                    | FoundRef Reference
                    | FoundInclusion Inclusion
                    | EndOfInclusions

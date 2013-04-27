@@ -16,7 +16,6 @@ module Pygmalion.Core
 , SourceCol
 , SourceKind (..)
 , Override (..)
-, Caller (..)
 , Invocation (..)
 , Reference (..)
 , SourceReferenced (..)
@@ -151,14 +150,6 @@ data Override = Override
     } deriving (Eq, Show, Generic)
 
 instance Serialize Override
-
-data Caller = Caller
-    { crSourceLocation :: !SourceLocation
-    , crCaller         :: !USR
-    , crCallee         :: !USR
-    } deriving (Eq, Show, Generic)
-
-instance Serialize Caller
 
 data Invocation = Invocation
     { ivDefInfo        :: !DefInfo

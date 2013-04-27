@@ -39,7 +39,6 @@ main = do
                                   yield EndOfInclusions
                                   mapM_ (yield . FoundDef) (sarDefs sar)
                                   mapM_ (yield . FoundOverride) (sarOverrides sar)
-                                  mapM_ (yield . FoundCaller) (sarCallers sar)
                                   mapM_ (yield . FoundRef) (sarRefs sar)
                                 yield EndOfAnalysis
                                 process sas

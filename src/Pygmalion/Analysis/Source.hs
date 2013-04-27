@@ -37,7 +37,6 @@ import Pygmalion.SourceKind
 data SourceAnalysisResult = SourceAnalysisResult
     { sarDefs       :: ![DefInfo]
     , sarOverrides  :: ![Override]
-    , sarCallers    :: ![Caller]
     , sarRefs       :: ![Reference]
     , sarInclusions :: ![Inclusion]
     }
@@ -48,7 +47,6 @@ data SourceAnalysisState = SourceAnalysisState
     , sourceFileRef     :: IORef SourceFile
     , defsRef           :: IORef [DefInfo]
     , overridesRef      :: IORef [Override]
-    , callersRef        :: IORef [Caller]
     , refsRef           :: IORef [Reference]
     , inclusionsRef     :: IORef [Inclusion]
     , unitRef           :: IORef (Maybe TranslationUnit)
@@ -59,16 +57,14 @@ mkSourceAnalysisState wd = do
   newSFRef         <- newIORef $! (mkSourceFile "")
   newDefsRef       <- newIORef $! []
   newOverridesRef  <- newIORef $! []
-  newCallersRef    <- newIORef $! []
   newRefsRef       <- newIORef $! []
   newInclusionsRef <- newIORef $! []
   newUnitRef       <- newIORef $! Nothing
-  return $ SourceAnalysisState (defsVisitorImpl wd newDefsRef newOverridesRef newCallersRef newRefsRef newUnitRef)
+  return $ SourceAnalysisState (defsVisitorImpl wd newDefsRef newOverridesRef newRefsRef newUnitRef)
                                (inclusionsVisitorImpl wd newSFRef newInclusionsRef)
                                newSFRef
                                newDefsRef
                                newOverridesRef
-                               newCallersRef
                                newRefsRef
                                newInclusionsRef
                                newUnitRef
@@ -78,7 +74,6 @@ runSourceAnalyses sas ci@(CommandInfo sf _ _ _) = do
   writeIORef (sourceFileRef sas) $! sf
   writeIORef (defsRef sas)       $! []
   writeIORef (overridesRef sas)  $! []
-  writeIORef (callersRef sas)    $! []
   writeIORef (refsRef sas)       $! []
   writeIORef (inclusionsRef sas) $! []
   result <- try $ withTranslationUnit ci $ \tu -> do
@@ -87,7 +82,6 @@ runSourceAnalyses sas ci@(CommandInfo sf _ _ _) = do
   case result of
     Right _ -> Just <$> (SourceAnalysisResult <$> readIORef (defsRef sas)
                                               <*> readIORef (overridesRef sas)
-                                              <*> readIORef (callersRef sas)
                                               <*> readIORef (refsRef sas)
                                               <*> readIORef (inclusionsRef sas))
     Left (ClangException e) -> logWarn ("Clang exception: " ++ e) >> return Nothing
@@ -134,9 +128,9 @@ defsAnalysis sas tu = do
     cursor <- getCursor tu
     void $ visitChildren cursor (defsVisitor sas)
 
-defsVisitorImpl :: WorkingDirectory -> IORef [DefInfo] -> IORef [Override] -> IORef [Caller]
+defsVisitorImpl :: WorkingDirectory -> IORef [DefInfo] -> IORef [Override]
                 -> IORef [Reference] -> IORef (Maybe TranslationUnit) -> ChildVisitor
-defsVisitorImpl wd dsRef osRef csRef rsRef tuRef cursor _ = do
+defsVisitorImpl wd dsRef osRef rsRef tuRef cursor _ = do
   loc <- getCursorLocation cursor
   case inProject wd loc of
     True -> do  cKind <- C.getKind cursor
@@ -190,17 +184,6 @@ defsVisitorImpl wd dsRef osRef csRef rsRef tuRef cursor _ = do
                                                     refKind ctxUSR referToUSR
                     liftIO . modifyIORef' rsRef $! (reference :)
                 
-                -- Record callers.
-                when ((cKind `elem` [C.Cursor_CallExpr, C.Cursor_MacroExpansion]) && not refIsNull) $ do
-                    refUSR <- XRef.getUSR refC >>= CS.unpackText
-                    parC <- getContext (fromJust tu) cursor
-                    parUSR <- XRef.getUSR parC >>= CS.unpackText
-                    caller <- return $! Caller loc parUSR refUSR
-                    liftIO . modifyIORef' csRef $! (caller :)
-                    --parName <- cursorName parC
-                    --refName <- cursorName refC
-                    --liftIO $ logDebug $ "Caller: " ++ (T.unpack parName) ++ " calls " ++ (T.unpack refName)
-
                 -- Record method overrides.
                 -- TODO: I seem to recall that in C++11 you can override
                 -- constructors. Add support for that if so.

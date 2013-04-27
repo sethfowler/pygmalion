@@ -20,7 +20,6 @@ module Pygmalion.Database.IO
 , updateOverride
 , getOverrided
 , getOverriders
-, updateCaller
 , getCallers
 , getCallees
 , updateReference
@@ -31,7 +30,7 @@ module Pygmalion.Database.IO
 ) where
 
 import Control.Applicative
-import Control.Exception(bracket)
+import Control.Exception (bracket)
 import Control.Monad
 import Data.Hashable
 import Data.Int
@@ -74,8 +73,6 @@ data DBHandle = DBHandle
     , updateOverrideStmt        :: Statement
     , getOverridedStmt          :: Statement
     , getOverridersStmt         :: Statement
-    , updateCallerStmt          :: Statement
-    , resetCallersStmt          :: Statement
     , getCallersStmt            :: Statement
     , getCalleesStmt            :: Statement
     , updateReferenceStmt       :: Statement
@@ -106,9 +103,7 @@ endTransaction :: DBHandle -> IO ()
 endTransaction h = execStatement h endTransactionStmt ()
 
 resetMetadata :: DBHandle -> SourceFile -> IO ()
-resetMetadata h sf = do
-  resetCallers h sf
-  resetReferences h sf
+resetMetadata h sf = resetReferences h sf
 
 openDB :: FilePath -> IO DBHandle
 openDB db = labeledCatch "openDB" $ do
@@ -129,8 +124,6 @@ openDB db = labeledCatch "openDB" $ do
                   <*> openStatement c (mkQueryT updateOverrideSQL)
                   <*> openStatement c (mkQueryT getOverridedSQL)
                   <*> openStatement c (mkQueryT getOverridersSQL)
-                  <*> openStatement c (mkQueryT updateCallerSQL)
-                  <*> openStatement c (mkQueryT resetCallersSQL)
                   <*> openStatement c (mkQueryT getCallersSQL)
                   <*> openStatement c (mkQueryT getCalleesSQL)
                   <*> openStatement c (mkQueryT updateReferenceSQL)
@@ -159,8 +152,6 @@ closeDB h = do
   closeStatement (updateOverrideStmt h)
   closeStatement (getOverridedStmt h)
   closeStatement (getOverridersStmt h)
-  closeStatement (updateCallerStmt h)
-  closeStatement (resetCallersStmt h)
   closeStatement (getCallersStmt h)
   closeStatement (getCalleesStmt h)
   closeStatement (updateReferenceStmt h)
@@ -495,58 +486,6 @@ getOverridersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind \
                    \ join Files as F on D.File = F.Hash                 \
                    \ where O.Overrided = ?"
 
--- Schema and operations for the Callers table.
-defineCallersTable :: Connection -> IO ()
-defineCallersTable c = execute_ c sql
-  where sql = "create table if not exists Callers( \
-               \ File integer not null,            \
-               \ Line integer not null,            \
-               \ Col integer not null,             \
-               \ Caller integer not null,          \
-               \ Callee integer not null,          \
-               \ primary key (File, Line, Col))"
-
-updateCaller :: DBHandle -> Caller -> IO ()
-updateCaller h (Caller (SourceLocation sf l c) callerUSR calleeUSR) = do
-    let sfHash = hash sf
-    let callerUSRHash = hash callerUSR
-    let calleeUSRHash = hash calleeUSR
-    execStatement h updateCallerStmt (sfHash, l, c, callerUSRHash, calleeUSRHash)
-
-updateCallerSQL :: T.Text
-updateCallerSQL = "replace into Callers (File, Line, Col, Caller, Callee) \
-                  \ values (?, ?, ?, ?, ?)"
-
-resetCallers :: DBHandle -> SourceFile -> IO ()
-resetCallers h sf = do
-  let sfHash = hash sf
-  execStatement h resetCallersStmt (sfHash, sfHash)
-
-resetCallersSQL :: T.Text
-resetCallersSQL = "delete from Callers where File = ?                           \
-                  \ or File in (select Inclusion from Inclusions where File = ?)"
-
-getCallers :: DBHandle -> USR -> IO [Invocation]
-getCallers h usr = execQuery h getCallersStmt (Only $ hash usr)
-
-getCallersSQL :: T.Text
-getCallersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind, FC.Name, C.Line, C.Col \
-                \ from Callers as C                                                          \
-                \ join Files as FC on C.File = FC.Hash                                       \
-                \ join Definitions as D on C.Caller = D.USRHash                              \
-                \ join Files as F on D.File = F.Hash                                         \
-                \ where C.Callee = ? order by FC.Name, C.Line, C.Col"
-
-getCallees :: DBHandle -> USR -> IO [DefInfo]
-getCallees h usr = execQuery h getCalleesStmt (Only $ hash usr)
-
-getCalleesSQL :: T.Text
-getCalleesSQL = "select distinct D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind \
-                \ from Callers as C                                           \
-                \ join Definitions as D on C.Callee = D.USRHash               \
-                \ join Files as F on D.File = F.Hash                          \
-                \ where C.Caller = ? order by F.Name, D.Line, D.Col"
-
 -- Schema and operations for the References table.
 defineReferencesTable :: Connection -> IO ()
 defineReferencesTable c = execute_ c sql
@@ -610,6 +549,29 @@ getReferencesSQL = "select F.Name, R.Line, R.Col, R.RefKind, D.Name             
                    \ where R.Ref = ?                                              \
                    \ order by F.Name, R.Line, R.Col, R.EndLine desc, R.EndCol desc"
 
+getCallers :: DBHandle -> USR -> IO [Invocation]
+getCallers h usr = execQuery h getCallersStmt (fromEnum CallExpr, fromEnum MacroExpansion, hash usr)
+
+getCallersSQL :: T.Text
+getCallersSQL = "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind, FR.Name, R.Line, R.Col \
+                \ from Refs as R                                                             \
+                \ join Files as FR on R.File = FR.Hash                                       \
+                \ join Definitions as D on R.RefContext = D.USRHash                          \
+                \ join Files as F on D.File = F.Hash                                         \
+                \ where R.RefKind in (?, ?) and R.Ref = ?                                    \
+                \ order by FR.Name, R.Line, R.Col"
+
+getCallees :: DBHandle -> USR -> IO [DefInfo]
+getCallees h usr = execQuery h getCalleesStmt (fromEnum CallExpr, fromEnum MacroExpansion, hash usr)
+
+getCalleesSQL :: T.Text
+getCalleesSQL = "select distinct D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind \
+                \ from Refs as R                                              \
+                \ join Definitions as D on R.Ref = D.USRHash                  \
+                \ join Files as F on D.File = F.Hash                          \
+                \ where R.RefKind in (?, ?) and R.RefContext = ?              \
+                \ order by F.Name, D.Line, D.Col"
+
 -- Checks that the database has the correct schema and sets it up if needed.
 ensureSchema :: Connection -> IO ()
 ensureSchema c = defineMetadataTable c
@@ -621,7 +583,6 @@ ensureSchema c = defineMetadataTable c
               >> defineSourceFilesTable c
               >> defineDefinitionsTable c
               >> defineOverridesTable c
-              >> defineCallersTable c
               >> defineReferencesTable c
               >> ensureVersion c
 
