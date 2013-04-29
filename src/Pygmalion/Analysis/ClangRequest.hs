@@ -20,7 +20,6 @@ data ClangResponse = FoundDef DefInfo
                    | FoundOverride Override
                    | FoundRef Reference
                    | FoundInclusion Inclusion
-                   | EndOfInclusions
                    | EndOfAnalysis
                    deriving (Eq, Show, Generic)
 

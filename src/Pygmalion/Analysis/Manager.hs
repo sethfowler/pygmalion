@@ -72,10 +72,14 @@ doAnalyzeBuiltFile aChan dbChan dbQueryChan indexer ci = do
     -- FIXME: Add an abstraction over this pattern.
     oldCI <- callLenChan dbQueryChan $ DBGetCommandInfo (ciSourceFile ci)
     mtime <- getMTime (ciSourceFile ci)
-    when (isJust oldCI) $ logInfo $ "Deciding whether to analyze file " ++ (show . ciSourceFile $ ci) ++ " with last index time " ++ (show . ciLastIndexed $ ci)
+    when (isJust oldCI) $
+      logInfo $ "Index built? File: " ++ (show . ciSourceFile $ ci) ++
+                " Last index: " ++ (show . ciLastIndexed . fromJust $ oldCI) ++
+                " mtime: " ++ (show mtime)
     case oldCI of
       Just oldCI' | (ciLastIndexed oldCI') < mtime -> doAnalyze'
-                  | otherwise                      -> do updateCommand dbChan ci
+                  | otherwise                      -> do -- Update command but not index time.
+                                                         updateCommand dbChan oldCI'
                                                          logInfo $ "Index is up-to-date for built file " ++ (show . ciSourceFile $ ci) ++ " (file mtime: " ++ (show mtime) ++ ")"
       _                                            -> doAnalyze'
   where
@@ -107,9 +111,10 @@ updateCommand dbChan ci = writeLenChan dbChan (DBUpdateCommandInfo ci)
 analyzeCode :: AnalysisChan -> DBChan -> Indexer -> CommandInfo -> IO ()
 analyzeCode aChan dbChan indexer ci = do
     logInfo $ "Indexing " ++ (show sf)
-    writeLenChan dbChan (DBResetInclusions sf)
+    time <- getPOSIXTime
+    writeLenChan dbChan (DBResetMetadata sf)
     runResourceT (source $= conduitPut putReq =$= indexer =$= conduitGet getResp $$ process)
-    updateCommand dbChan ci
+    updateCommand dbChan $ ci { ciLastIndexed = floor time }
   where
     sf = ciSourceFile ci
     source = yield (CR.Analyze ci) >> yield (CR.Shutdown)
@@ -124,7 +129,6 @@ analyzeCode aChan dbChan indexer ci = do
         Just (CR.FoundOverride ov)  -> liftIO (writeLenChan dbChan (DBUpdateOverride ov)) >> process
         Just (CR.FoundRef rf)       -> liftIO (writeLenChan dbChan (DBUpdateRef rf)) >> process
         Just (CR.FoundInclusion ic) -> handleInclusion ic >> process
-        Just (CR.EndOfInclusions)   -> liftIO (writeLenChan dbChan (DBResetMetadata sf)) >> process
         Just (CR.EndOfAnalysis)     -> liftIO (logDebug "Done reading from clang process") >> return ()
         Nothing                     -> liftIO (logDebug "Clang process read failed") >> return ()
     handleInclusion ic = do

@@ -6,7 +6,6 @@ module Pygmalion.Database.IO
 , withTransaction
 , beginTransaction
 , endTransaction
-, resetInclusions
 , resetMetadata
 , updateInclusion
 , getInclusions
@@ -103,7 +102,9 @@ endTransaction :: DBHandle -> IO ()
 endTransaction h = execStatement h endTransactionStmt ()
 
 resetMetadata :: DBHandle -> SourceFile -> IO ()
-resetMetadata h sf = resetReferences h sf
+resetMetadata h sf = do
+  resetInclusions h sf
+  resetReferences h sf
 
 openDB :: FilePath -> IO DBHandle
 openDB db = labeledCatch "openDB" $ do

@@ -1,3 +1,5 @@
+{-# LANGUAGE BangPatterns #-}
+
 module Pygmalion.Database.Manager
 ( runDatabaseManager
 , ensureDB
@@ -20,7 +22,6 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBUpdateOverride Override
                | DBUpdateRef Reference
                | DBUpdateInclusion Inclusion
-               | DBResetInclusions SourceFile
                | DBResetMetadata SourceFile
                | DBGetCommandInfo SourceFile (MVar (Maybe CommandInfo))
                | DBGetSimilarCommandInfo SourceFile (MVar (Maybe CommandInfo))
@@ -41,12 +42,12 @@ runDatabaseManager chan queryChan = do
     withDB (go 0 start)
   where
     go :: Int -> UTCTime -> DBHandle -> IO ()
-    go 1000 start h = do 
+    go 1000 !start !h = do 
       stop <- getCurrentTime
       logInfo $ "Handled 1000 records in " ++ (show $ stop `diffUTCTime` start)
       newStart <- getCurrentTime
       go 0 newStart h
-    go n s h = {-# SCC "databaseThread" #-}
+    go !n !s !h = {-# SCC "databaseThread" #-}
            do (tookFirst, newCount, req) <- readLenChanPreferFirst queryChan chan
               logDebug $ if tookFirst then "Query channel now has " ++ (show newCount) ++ " queries waiting"
                                       else "Database channel now has " ++ (show newCount) ++ " requests waiting"
@@ -56,7 +57,6 @@ runDatabaseManager chan queryChan = do
                 DBUpdateOverride ov         -> doUpdateOverride h ov >> go (n+1) s h
                 DBUpdateRef rf              -> doUpdateRef h rf >> go (n+1) s h
                 DBUpdateInclusion ic        -> doUpdateInclusion h ic >> go (n+1) s h
-                DBResetInclusions sf        -> doResetInclusions h sf >> go (n+1) s h
                 DBResetMetadata sf          -> doResetMetadata h sf >> go (n+1) s h
                 DBGetCommandInfo f v        -> doGetCommandInfo h f v >> go (n+1) s h
                 DBGetSimilarCommandInfo f v -> doGetSimilarCommandInfo h f v >> go (n+1) s h
@@ -94,11 +94,6 @@ doUpdateInclusion :: DBHandle -> Inclusion -> IO ()
 doUpdateInclusion h ic = withTransaction h $ do
     logDebug $ "Updating database with inclusion: " ++ (show ic)
     updateInclusion h ic
-
-doResetInclusions :: DBHandle -> SourceFile -> IO ()
-doResetInclusions h sf = withTransaction h $ do
-  logDebug $ "Resetting inclusions for file: " ++ (show sf)
-  resetInclusions h sf
 
 doResetMetadata :: DBHandle -> SourceFile -> IO ()
 doResetMetadata h sf = withTransaction h $ do
