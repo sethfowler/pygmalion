@@ -60,7 +60,7 @@ mkSourceAnalysisState wd = do
   newRefsRef       <- newIORef $! []
   newInclusionsRef <- newIORef $! []
   newUnitRef       <- newIORef $! Nothing
-  return $ SourceAnalysisState (defsVisitorImpl wd newDefsRef newOverridesRef newRefsRef newUnitRef)
+  return $ SourceAnalysisState (defsVisitorImpl wd newSFRef newDefsRef newOverridesRef newRefsRef newUnitRef)
                                (inclusionsVisitorImpl wd newSFRef newInclusionsRef)
                                newSFRef
                                newDefsRef
@@ -128,11 +128,13 @@ defsAnalysis sas tu = do
     cursor <- getCursor tu
     void $ visitChildren cursor (defsVisitor sas)
 
-defsVisitorImpl :: WorkingPath -> IORef [DefInfo] -> IORef [Override]
+defsVisitorImpl :: WorkingPath -> IORef SourceFile -> IORef [DefInfo] -> IORef [Override]
                 -> IORef [Reference] -> IORef (Maybe TranslationUnit) -> ChildVisitor
-defsVisitorImpl wd dsRef osRef rsRef tuRef cursor _ = do
+defsVisitorImpl wd sfRef dsRef osRef rsRef tuRef cursor _ = do
+  thisFile <- liftIO $! readIORef sfRef
   loc <- getCursorLocation cursor
-  case inProject wd loc of
+  -- case inProject wd loc of
+  case (thisFile == slFile loc) of
     True -> do  cKind <- C.getKind cursor
                 tu <- liftIO $ readIORef tuRef
                 defC <- C.getDefinition cursor

@@ -5,6 +5,7 @@ import Control.Concurrent.Async
 import Control.Exception (Exception)
 import Control.Monad
 import Data.List
+import qualified Data.Set as Set
 import qualified Filesystem.Path.CurrentOS as FP
 import GHC.Conc
 import System.Directory
@@ -32,6 +33,7 @@ main = do
   aChan <- newLenChan
   dbChan <- newLenChan
   dbQueryChan <- newLenChan
+  fileLox <- newMVar Set.empty
 
   -- Launch threads.
   waiterThread <- async doWait
@@ -42,7 +44,7 @@ main = do
   let maxThreads = 4 :: Int
   threads <- forM [1..maxThreads] $ \i -> do
     logDebug $ "Launching analysis thread #" ++ (show i)
-    asyncBound (runAnalysisManager aChan dbChan dbChan)
+    asyncBound (runAnalysisManager aChan dbChan dbChan fileLox)
   mapM_ (link2 waiterThread) threads
   rpcThread <- async (runRPCServer cf port aChan dbQueryChan)
   link2 waiterThread rpcThread

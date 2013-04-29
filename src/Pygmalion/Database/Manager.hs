@@ -20,7 +20,7 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBUpdateDefInfo DefInfo
                | DBUpdateOverride Override
                | DBUpdateRef Reference
-               | DBUpdateInclusion CommandInfo Inclusion
+               | DBUpdateInclusion Inclusion
                | DBResetInclusions SourceFile
                | DBResetMetadata SourceFile
                | DBGetCommandInfo SourceFile (MVar (Maybe CommandInfo))
@@ -56,7 +56,7 @@ runDatabaseManager chan queryChan = do
                 DBUpdateDefInfo di          -> doUpdateDefInfo h di >> go (n+1) s h
                 DBUpdateOverride ov         -> doUpdateOverride h ov >> go (n+1) s h
                 DBUpdateRef rf              -> doUpdateRef h rf >> go (n+1) s h
-                DBUpdateInclusion ci ic     -> doUpdateInclusion h ci ic >> go (n+1) s h
+                DBUpdateInclusion ic        -> doUpdateInclusion h ic >> go (n+1) s h
                 DBResetInclusions sf        -> doResetInclusions h sf >> go (n+1) s h
                 DBResetMetadata sf          -> doResetMetadata h sf >> go (n+1) s h
                 DBGetCommandInfo f v        -> doGetCommandInfo h f v >> go (n+1) s h
@@ -93,13 +93,10 @@ doUpdateRef h rf = withTransaction h $ do
   logDebug $ "Updating database with reference: " ++ (show rf)
   updateReference h rf
 
-doUpdateInclusion :: DBHandle -> CommandInfo -> Inclusion -> IO ()
-doUpdateInclusion h cmd ic = withTransaction h $ do
-  logDebug $ "Updating database with inclusion: " ++ (show ic)
-  time <- getPOSIXTime
-  let ci = cmd { ciLastIndexed = floor time, ciSourceFile = icHeaderFile ic }
-  updateSourceFile h ci
-  updateInclusion h ic
+doUpdateInclusion :: DBHandle -> Inclusion -> IO ()
+doUpdateInclusion h ic = withTransaction h $ do
+    logDebug $ "Updating database with inclusion: " ++ (show ic)
+    updateInclusion h ic
 
 doResetInclusions :: DBHandle -> SourceFile -> IO ()
 doResetInclusions h sf = withTransaction h $ do

@@ -294,26 +294,26 @@ getInclusions :: DBHandle -> SourceFile -> IO [CommandInfo]
 getInclusions h sf = execQuery h getInclusionsStmt (Only $ hash sf)
 
 getInclusionsSQL :: T.Text
-getInclusionsSQL = "select F.Name, W.Path, C.Command, A.Args, S.LastIndexed \
-                   \ from Inclusions as I                                   \
-                   \ join SourceFiles as S on I.Inclusion = S.File          \
-                   \ join Files as F on S.File = F.Hash                     \
-                   \ join Paths as W on S.WorkingDirectory = W.Hash         \
-                   \ join BuildCommands as C on S.BuildCommand = C.Hash     \
-                   \ join BuildArgs as A on S.BuildArgs = A.Hash            \
+getInclusionsSQL = "select F.Name, W.Path, C.Command, A.Args, S.Language, S.LastIndexed \
+                   \ from Inclusions as I                                               \
+                   \ join SourceFiles as S on I.Inclusion = S.File                      \
+                   \ join Files as F on S.File = F.Hash                                 \
+                   \ join Paths as W on S.WorkingDirectory = W.Hash                     \
+                   \ join BuildCommands as C on S.BuildCommand = C.Hash                 \
+                   \ join BuildArgs as A on S.BuildArgs = A.Hash                        \
                    \ where I.File = ?"
 
 getIncluders :: DBHandle -> SourceFile -> IO [CommandInfo]
 getIncluders h sf = execQuery h getIncludersStmt (Only $ hash sf)
 
 getIncludersSQL :: T.Text
-getIncludersSQL = "select F.Name, W.Path, C.Command, A.Args, S.LastIndexed \
-                  \ from Inclusions as I                                   \
-                  \ join SourceFiles as S on I.File = S.File               \
-                  \ join Files as F on S.File = F.Hash                     \
-                  \ join Paths as W on S.WorkingDirectory = W.Hash         \
-                  \ join BuildCommands as C on S.BuildCommand = C.Hash     \
-                  \ join BuildArgs as A on S.BuildArgs = A.Hash            \
+getIncludersSQL = "select F.Name, W.Path, C.Command, A.Args, S.Language, S.LastIndexed \
+                  \ from Inclusions as I                                               \
+                  \ join SourceFiles as S on I.File = S.File                           \
+                  \ join Files as F on S.File = F.Hash                                 \
+                  \ join Paths as W on S.WorkingDirectory = W.Hash                     \
+                  \ join BuildCommands as C on S.BuildCommand = C.Hash                 \
+                  \ join BuildArgs as A on S.BuildArgs = A.Hash                        \
                   \ where I.Inclusion = ?"
 
 -- Schema and operations for the Paths table.
@@ -516,11 +516,10 @@ updateReferenceSQL = "replace into Refs (File, Line, Col, EndLine, EndCol, RefKi
 resetReferences :: DBHandle -> SourceFile -> IO ()
 resetReferences h sf = do
   let sfHash = hash sf
-  execStatement h resetReferencesStmt (sfHash, sfHash)
+  execStatement h resetReferencesStmt (Only sfHash)
 
 resetReferencesSQL :: T.Text
-resetReferencesSQL = "delete from Refs where File = ?                              \
-                     \ or File in (select Inclusion from Inclusions where File = ?)"
+resetReferencesSQL = "delete from Refs where File = ?"
 
 getReferenced :: DBHandle -> SourceLocation -> IO [SourceReferenced]
 getReferenced h (SourceLocation sf l c) =

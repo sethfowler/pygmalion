@@ -20,6 +20,7 @@ library
                    cereal-conduit,
                    conduit,
                    configurator,
+                   containers,
                    datetime,
                    direct-sqlite,
                    directory,
@@ -99,6 +100,7 @@ executable pygd
   main-is:        Pygd.hs 
   build-depends:  base >= 4
                ,  async
+               ,  containers
                ,  directory
                ,  filepath
                ,  fsnotify
