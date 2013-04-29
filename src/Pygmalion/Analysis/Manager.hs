@@ -38,12 +38,12 @@ runAnalysisManager aChan dbChan dbQueryChan lox = do
     go indexer
   where
     go !indexer = {-# SCC "analysisThread" #-} do
-                  (newCount, req) <- readLenChan aChan
+                  (!newCount, !req) <- readLenChan aChan
                   logDebug $ "Analysis channel now has " ++ (show newCount) ++ " items waiting"
                   case req of
-                      AnalyzeBuiltFile ci    -> checkLock lox (ciSourceFile ci) (doAnalyzeBuiltFile aChan dbChan dbQueryChan indexer ci) >> go indexer
-                      AnalyzeNotifiedFile sf -> checkLock lox sf (doAnalyzeNotifiedFile aChan dbChan dbQueryChan indexer sf) >> go indexer
-                      ShutdownAnalysis       -> logInfo "Shutting down analysis thread"
+                      AnalyzeBuiltFile !ci    -> checkLock lox (ciSourceFile ci) (doAnalyzeBuiltFile aChan dbChan dbQueryChan indexer ci) >> go indexer
+                      AnalyzeNotifiedFile !sf -> checkLock lox sf (doAnalyzeNotifiedFile aChan dbChan dbQueryChan indexer sf) >> go indexer
+                      ShutdownAnalysis        -> logInfo "Shutting down analysis thread"
 
 type Indexer = Conduit ByteString (ResourceT IO) ByteString
 
