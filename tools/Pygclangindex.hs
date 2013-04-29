@@ -8,6 +8,7 @@ import Data.Maybe
 import Data.Serialize
 import qualified Data.Text as T
 import System.Directory
+import System.Environment
 import System.IO
 import System.Posix.Process
 
@@ -20,6 +21,7 @@ main :: IO ()
 main = do
     initLogger INFO
     logDebug "Starting clang analysis process"
+    port <- (getArgs >>= parseArgs)
     nice 10
     wd <- T.pack <$> getCurrentDirectory
     sas <- mkSourceAnalysisState wd
@@ -49,3 +51,7 @@ doAnalyze :: SourceAnalysisState -> CommandInfo -> IO (Maybe SourceAnalysisResul
 doAnalyze sas ci = do
   logDebug $ "Analyzing " ++ (show . ciSourceFile $ ci)
   runSourceAnalyses sas ci
+
+parseArgs :: [String] -> IO Port
+parseArgs [port] = return $ read port
+parseArgs _      = error "No port provided to indexer"

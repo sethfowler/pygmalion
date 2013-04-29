@@ -9,7 +9,6 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Monad
 import Data.Time.Clock
-import Data.Time.Clock.POSIX
 
 import Control.Concurrent.Chan.Len
 import Pygmalion.Core
@@ -72,9 +71,7 @@ runDatabaseManager chan queryChan = do
                 DBShutdown                  -> logInfo "Shutting down DB thread"
 
 doUpdateCommandInfo :: DBHandle -> CommandInfo -> IO ()
-doUpdateCommandInfo h cmd = withTransaction h $ do
-  time <- getPOSIXTime
-  let ci = cmd { ciLastIndexed = floor time }
+doUpdateCommandInfo h ci = withTransaction h $ do
   logDebug $ "Updating database with command: " ++ (show . ciSourceFile $ ci)
   updateSourceFile h ci
 

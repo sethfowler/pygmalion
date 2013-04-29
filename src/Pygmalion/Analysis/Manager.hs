@@ -82,7 +82,6 @@ doAnalyzeBuiltFile aChan dbChan dbQueryChan indexer ci = do
     doAnalyze' = do others <- otherFilesToReindex dbQueryChan ci
                     forM_ others $ \f -> writeLenChan aChan (AnalyzeBuiltFile f)
                     analyzeCode aChan dbChan indexer ci
-                    updateCommand dbChan ci
 
 doAnalyzeNotifiedFile :: AnalysisChan -> DBChan -> DBChan -> Indexer -> SourceFile -> IO ()
 doAnalyzeNotifiedFile aChan dbChan dbQueryChan indexer sf = do
@@ -110,6 +109,7 @@ analyzeCode aChan dbChan indexer ci = do
     logInfo $ "Indexing " ++ (show sf)
     writeLenChan dbChan (DBResetInclusions sf)
     runResourceT (source $= conduitPut putReq =$= indexer =$= conduitGet getResp $$ process)
+    updateCommand dbChan ci
   where
     sf = ciSourceFile ci
     source = yield (CR.Analyze ci) >> yield (CR.Shutdown)
