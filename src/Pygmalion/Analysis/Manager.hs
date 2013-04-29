@@ -128,12 +128,12 @@ analyzeCode aChan dbChan indexer ci = do
       liftIO $ logDebug "WAITING"
       resp <- await
       case resp of
-        Just (CR.FoundDef di)       -> liftIO (writeLenChan dbChan (DBUpdateDefInfo di)) >> process
-        Just (CR.FoundOverride ov)  -> liftIO (writeLenChan dbChan (DBUpdateOverride ov)) >> process
-        Just (CR.FoundRef rf)       -> liftIO (writeLenChan dbChan (DBUpdateRef rf)) >> process
-        Just (CR.FoundInclusion ic) -> handleInclusion ic >> process
-        Just (CR.EndOfAnalysis)     -> liftIO (logDebug "Done reading from clang process") >> return ()
-        Nothing                     -> liftIO (logDebug "Clang process read failed") >> return ()
+        Just (CR.FoundDef !di)       -> liftIO (writeLenChan dbChan (DBUpdateDefInfo di)) >> process
+        Just (CR.FoundOverride !ov)  -> liftIO (writeLenChan dbChan (DBUpdateOverride ov)) >> process
+        Just (CR.FoundRef !rf)       -> liftIO (writeLenChan dbChan (DBUpdateRef rf)) >> process
+        Just (CR.FoundInclusion !ic) -> handleInclusion ic >> process
+        Just (CR.EndOfAnalysis)      -> liftIO (logDebug "Done reading from clang process") >> return ()
+        Nothing                      -> liftIO (logDebug "Clang process read failed") >> return ()
     handleInclusion ic = do
       -- FIXME: Awful.
       let cmd' = ciCommand ci
