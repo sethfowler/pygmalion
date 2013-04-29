@@ -80,11 +80,11 @@ printCDB = undefined
 
 printFlags :: Config -> SourceFile -> IO ()
 printFlags cf f = getCommandInfoOr bail f cf >>= putFlags
-  where putFlags (CommandInfo _ _ (Command _ args) _) = putStrLn . T.unpack . T.intercalate " " $ args
+  where putFlags (CommandInfo _ _ (Command _ args) _ _) = putStrLn . T.unpack . T.intercalate " " $ args
 
 printDir :: Config -> SourceFile -> IO ()
 printDir cf f = getCommandInfoOr bail f cf >>= putDir
-  where putDir (CommandInfo _ wd _ _) = putStrLn . T.unpack $ wd
+  where putDir (CommandInfo _ wd _ _ _) = putStrLn . T.unpack $ wd
 
 getCommandInfoOr :: IO () -> SourceFile -> Config -> IO CommandInfo
 getCommandInfoOr a f cf = do

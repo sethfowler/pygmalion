@@ -3,9 +3,10 @@
 module Pygmalion.Core
 ( CommandInfo (..)
 , SourceFile
-, WorkingDirectory
+, WorkingPath
 , Time
 , Command (..)
+, Language (..)
 , Inclusion (..)
 , DefInfo (..)
 , SourceLocation (..)
@@ -51,8 +52,9 @@ type Port = Int
 -- The information we collect about a compilation command.
 data CommandInfo = CommandInfo
   { ciSourceFile  :: !SourceFile
-  , ciWorkingPath :: !WorkingDirectory
+  , ciWorkingPath :: !WorkingPath
   , ciCommand     :: !Command
+  , ciLanguage    :: !Language
   , ciLastIndexed :: !Time
   } deriving (Eq, Show, Generic)
 
@@ -64,7 +66,7 @@ instance Serialize T.Text where
 instance Serialize CommandInfo
 
 instance FromRow CommandInfo where
-  fromRow = CommandInfo <$> field <*> field <*> fromRow <*> field
+  fromRow = CommandInfo <$> field <*> field <*> fromRow <*> fromRow <*> field
 
 data Command = Command
     { cmdExecutable :: !T.Text
@@ -87,8 +89,18 @@ unSourceFileText = id
 unSourceFile :: SourceFile -> FilePath
 unSourceFile = T.unpack
 
-type WorkingDirectory = T.Text
+type WorkingPath = T.Text
 type Time = Int64
+
+data Language = CLanguage
+              | CPPLanguage
+              | UnknownLanguage
+              deriving (Eq, Enum, Generic, Ord, Show)
+
+instance Serialize Language
+
+instance FromRow Language where
+  fromRow = toEnum <$> field
 
 -- Inclusion metadata.
 data Inclusion = Inclusion

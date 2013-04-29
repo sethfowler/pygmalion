@@ -349,20 +349,21 @@ insertArgsSQL = "insert or ignore into BuildArgs (Args, Hash) values (?, ?)"
 -- Schema and operations for the SourceFiles table.
 defineSourceFilesTable :: Connection -> IO ()
 defineSourceFilesTable c = execute_ c sql
-  where sql =  "create table if not exists SourceFiles(        \
-               \ File integer primary key unique not null,     \
-               \ WorkingDirectory integer not null,            \
-               \ BuildCommand integer not null,                \
-               \ BuildArgs integer not null,                   \
+  where sql =  "create table if not exists SourceFiles(         \
+               \ File integer primary key unique not null,      \
+               \ WorkingDirectory integer not null,             \
+               \ BuildCommand integer not null,                 \
+               \ BuildArgs integer not null,                    \
+               \ Language integer not null,                     \
                \ LastIndexed integer zerofill unsigned not null)"
 
 updateSourceFileSQL :: T.Text
 updateSourceFileSQL = "replace into SourceFiles                                       \
-                      \(File, WorkingDirectory, BuildCommand, BuildArgs, LastIndexed) \
-                      \values (?, ?, ?, ?, ?)"
+                      \(File, WorkingDirectory, BuildCommand, BuildArgs, Language, LastIndexed) \
+                      \values (?, ?, ?, ?, ?, ?)"
 
 updateSourceFile :: DBHandle -> CommandInfo -> IO ()
-updateSourceFile h (CommandInfo sf wd (Command cmd args) t) = do
+updateSourceFile h (CommandInfo sf wd (Command cmd args) lang t) = do
     let sfHash = hash sf
     execStatement h insertFileStmt (sf, sfHash)
     let wdHash = hash wd
@@ -372,27 +373,27 @@ updateSourceFile h (CommandInfo sf wd (Command cmd args) t) = do
     let argsJoined = T.intercalate " " args
     let argsHash = hash argsJoined
     execStatement h insertArgsStmt (argsJoined, argsHash)
-    execStatement h updateSourceFileStmt (sfHash, wdHash, cmdHash, argsHash, t)
+    execStatement h updateSourceFileStmt (sfHash, wdHash, cmdHash, argsHash, fromEnum lang, t)
 
 getAllSourceFiles :: DBHandle -> IO [CommandInfo]
 getAllSourceFiles h = query_ (conn h) sql
-  where sql = "select F.Name, W.Path, C.Command, A.Args, LastIndexed         \
-              \ from SourceFiles                                             \
-              \ join Files as F on SourceFiles.File = F.Hash                 \
-              \ join Paths as W on SourceFiles.WorkingDirectory = W.Hash     \
-              \ join BuildCommands as C on SourceFiles.BuildCommand = C.Hash \
+  where sql = "select F.Name, W.Path, C.Command, A.Args, Language, LastIndexed \
+              \ from SourceFiles                                               \
+              \ join Files as F on SourceFiles.File = F.Hash                   \
+              \ join Paths as W on SourceFiles.WorkingDirectory = W.Hash       \
+              \ join BuildCommands as C on SourceFiles.BuildCommand = C.Hash   \
               \ join BuildArgs as A on SourceFiles.BuildArgs = A.Hash"
 
 getCommandInfo :: DBHandle -> SourceFile -> IO (Maybe CommandInfo)
 getCommandInfo h sf = execSingleRowQuery h getCommandInfoStmt (Only $ hash sf)
 
 getCommandInfoSQL :: T.Text
-getCommandInfoSQL = "select F.Name, W.Path, C.Command, A.Args, LastIndexed         \
-                    \ from SourceFiles                                             \
-                    \ join Files as F on SourceFiles.File = F.Hash                 \
-                    \ join Paths as W on SourceFiles.WorkingDirectory = W.Hash     \
-                    \ join BuildCommands as C on SourceFiles.BuildCommand = C.Hash \
-                    \ join BuildArgs as A on SourceFiles.BuildArgs = A.Hash        \
+getCommandInfoSQL = "select F.Name, W.Path, C.Command, A.Args, Language, LastIndexed \
+                    \ from SourceFiles                                               \
+                    \ join Files as F on SourceFiles.File = F.Hash                   \
+                    \ join Paths as W on SourceFiles.WorkingDirectory = W.Hash       \
+                    \ join BuildCommands as C on SourceFiles.BuildCommand = C.Hash   \
+                    \ join BuildArgs as A on SourceFiles.BuildArgs = A.Hash          \
                     \ where F.Hash = ? limit 1"
 
 -- Eventually this should be more statistical, but right now it will just
@@ -406,12 +407,12 @@ getSimilarCommandInfo h sf = do
               _       -> Nothing
 
 getSimilarCommandInfoSQL :: T.Text
-getSimilarCommandInfoSQL = "select F.Name, W.Path, C.Command, A.Args, LastIndexed         \
-                           \ from SourceFiles                                             \
-                           \ join Files as F on SourceFiles.File = F.Hash                 \
-                           \ join Paths as W on SourceFiles.WorkingDirectory = W.Hash     \
-                           \ join BuildCommands as C on SourceFiles.BuildCommand = C.Hash \
-                           \ join BuildArgs as A on SourceFiles.BuildArgs = A.Hash        \
+getSimilarCommandInfoSQL = "select F.Name, W.Path, C.Command, A.Args, Language, LastIndexed \
+                           \ from SourceFiles                                               \
+                           \ join Files as F on SourceFiles.File = F.Hash                   \
+                           \ join Paths as W on SourceFiles.WorkingDirectory = W.Hash       \
+                           \ join BuildCommands as C on SourceFiles.BuildCommand = C.Hash   \
+                           \ join BuildArgs as A on SourceFiles.BuildArgs = A.Hash          \
                            \ where F.Name like ? limit 1"
 
 -- Schema and operations for the Definitions table.

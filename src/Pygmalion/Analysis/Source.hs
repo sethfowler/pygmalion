@@ -52,7 +52,7 @@ data SourceAnalysisState = SourceAnalysisState
     , unitRef           :: IORef (Maybe TranslationUnit)
     }
 
-mkSourceAnalysisState :: WorkingDirectory -> IO SourceAnalysisState
+mkSourceAnalysisState :: WorkingPath -> IO SourceAnalysisState
 mkSourceAnalysisState wd = do
   newSFRef         <- newIORef $! (mkSourceFile "")
   newDefsRef       <- newIORef $! []
@@ -70,8 +70,8 @@ mkSourceAnalysisState wd = do
                                newUnitRef
 
 runSourceAnalyses :: SourceAnalysisState -> CommandInfo -> IO (Maybe SourceAnalysisResult)
-runSourceAnalyses sas ci@(CommandInfo sf _ _ _) = do
-  writeIORef (sourceFileRef sas) $! sf
+runSourceAnalyses sas ci = do
+  writeIORef (sourceFileRef sas) $! ciSourceFile ci
   writeIORef (defsRef sas)       $! []
   writeIORef (overridesRef sas)  $! []
   writeIORef (refsRef sas)       $! []
@@ -109,7 +109,7 @@ displayAST ci = do
 inclusionsAnalysis :: SourceAnalysisState -> TranslationUnit -> ClangApp ()
 inclusionsAnalysis sas tu = void $ getInclusions tu (inclusionsVisitor sas)
 
-inclusionsVisitorImpl :: WorkingDirectory -> IORef SourceFile -> IORef [Inclusion] -> InclusionVisitor
+inclusionsVisitorImpl :: WorkingPath -> IORef SourceFile -> IORef [Inclusion] -> InclusionVisitor
 inclusionsVisitorImpl wd sfRef isRef file iStack = do
     ic <- File.getName file >>= CS.unpackText
     when (isLocalHeader wd ic) $ do
@@ -119,7 +119,7 @@ inclusionsVisitorImpl wd sfRef isRef file iStack = do
         (_ : []) -> liftIO . modifyIORef' isRef $! ((Inclusion sf ic True) :)
         (_ : _)  -> liftIO . modifyIORef' isRef $! ((Inclusion sf ic False) :)
 
-isLocalHeader :: WorkingDirectory -> SourceFile -> Bool
+isLocalHeader :: WorkingPath -> SourceFile -> Bool
 isLocalHeader wd p = (wd `T.isPrefixOf`) .&&. (not . T.null) $ p
 
 defsAnalysis :: SourceAnalysisState -> TranslationUnit -> ClangApp ()
@@ -128,7 +128,7 @@ defsAnalysis sas tu = do
     cursor <- getCursor tu
     void $ visitChildren cursor (defsVisitor sas)
 
-defsVisitorImpl :: WorkingDirectory -> IORef [DefInfo] -> IORef [Override]
+defsVisitorImpl :: WorkingPath -> IORef [DefInfo] -> IORef [Override]
                 -> IORef [Reference] -> IORef (Maybe TranslationUnit) -> ChildVisitor
 defsVisitorImpl wd dsRef osRef rsRef tuRef cursor _ = do
   loc <- getCursorLocation cursor
@@ -237,7 +237,7 @@ getCursorLocation cursor = do
                     Nothing -> return ""
   return $! SourceLocation file ln col
 
-inProject :: WorkingDirectory -> SourceLocation -> Bool
+inProject :: WorkingPath -> SourceLocation -> Bool
 inProject wd sl = (wd `T.isPrefixOf`) .&&. (not . T.null) $ slFile sl
 
 isDef :: C.Cursor -> C.CursorKind -> ClangApp Bool
@@ -374,13 +374,14 @@ dumpSubtree cursor = do
                               "reference [" ++ refName ++ "/" ++ refUSR ++ "]"
 
 withTranslationUnit :: CommandInfo -> (TranslationUnit -> ClangApp a) -> IO a
-withTranslationUnit (CommandInfo sf _ (Command _ args) _) f = do
+withTranslationUnit ci f = do
     withCreateIndex False False $ \index -> do
       setGlobalOptions index GlobalOpt_ThreadBackgroundPriorityForAll
       withParse index (Just . unSourceFile $ sf) clangArgs [] [TranslationUnit_DetailedPreprocessingRecord] f bail
   where
+    sf = ciSourceFile ci
     bail = throw . ClangException $ "Libclang couldn't parse " ++ (unSourceFile sf)
-    clangArgs = map T.unpack args
+    clangArgs = map T.unpack (cmdArguments . ciCommand $ ci)
     -- FIXME: Is something along these lines useful? Internet claims so but this
     -- may be outdated information, as things seems to work OK without it.
     --clangArgs = map T.unpack ("-I/usr/local/Cellar/llvm/3.2/lib/clang/3.2/include" : args)

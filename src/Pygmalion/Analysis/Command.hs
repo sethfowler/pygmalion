@@ -4,7 +4,9 @@ module Pygmalion.Analysis.Command
 ( getCommandInfo
 ) where
 
+import Control.Applicative
 import Data.List
+import Data.Maybe
 import qualified Data.Text as T
 import System.Directory
 import System.Path
@@ -18,9 +20,31 @@ getCommandInfo (Command c as) = do
     let strAs = map T.unpack as
     let sourceFile = find hasSourceExtension strAs >>= absNormPath wd
     let fas = map T.pack . absArgs wd . filterArgs $ strAs
-    case sourceFile of
-      Just sf -> return . Just $ CommandInfo (mkSourceFile sf) (T.pack wd) (Command c fas) 0
-      _       -> return Nothing
+    return $ flip fmap sourceFile $ \sf ->
+      CommandInfo (mkSourceFile sf)
+                  (T.pack wd)
+                  (Command c fas)
+                  (inferLang strAs sf)
+                  0
+
+inferLang :: [String] -> String -> Language
+inferLang as f = fromMaybe UnknownLanguage $ inferLangFromArgs as <|>
+                                             inferLangFromFile f
+
+inferLangFromArgs :: [String] -> Maybe Language
+inferLangFromArgs ("-x" : "c" : _)              = Just CLanguage
+inferLangFromArgs ("-x" : "c-header" : _)       = Just CLanguage
+inferLangFromArgs ("-x" : "cpp-output" : _)     = Just CLanguage
+inferLangFromArgs ("-x" : "c++" : _)            = Just CPPLanguage
+inferLangFromArgs ("-x" : "c++-header" : _)     = Just CPPLanguage
+inferLangFromArgs ("-x" : "c++-cpp-output" : _) = Just CPPLanguage
+inferLangFromArgs (_ : as)                      = inferLangFromArgs as
+inferLangFromArgs []                            = Nothing
+
+inferLangFromFile :: String -> Maybe Language
+inferLangFromFile f | hasCExtension f   = Just CLanguage
+                    | hasCPPExtension f = Just CPPLanguage
+inferLangFromFile _                     = Nothing
 
 -- We need to filter arguments that cause dependency files to be generated,
 -- as they'll gum up the works when we use libclang to analyze files later.
@@ -66,4 +90,4 @@ absArgs _ [] = []
 
 cleanPath :: FilePath -> FilePath -> FilePath
 cleanPath _ p@('=' : _) = p  -- Ignore bizarre GCC sysroot syntax.
-cleanPath wd p = maybe p id (absNormPath wd p)
+cleanPath wd p = fromMaybe p $ absNormPath wd p
