@@ -137,7 +137,7 @@ analyzeCode aChan dbChan indexer ci = do
     handleInclusion ic = do
       -- FIXME: Awful.
       let cmd' = ciCommand ci
-      let newCmd' = cmd' { cmdArguments = (incArgs . ciLanguage $ ci) ++ (cmdArguments cmd') }
+      let newCmd' = cmd' { cmdArguments = (cmdArguments cmd') ++ (incArgs . ciLanguage $ ci) }
       let newCI = ci { ciCommand = newCmd', ciLastIndexed = 0, ciSourceFile = icHeaderFile ic }
       liftIO (writeLenChan dbChan (DBUpdateInclusion ic))
       liftIO (writeLenChan aChan (AnalyzeBuiltFile newCI))
