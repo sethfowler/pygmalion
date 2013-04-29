@@ -41,7 +41,7 @@ main = do
   dbThread <- asyncBound (runDatabaseManager dbChan dbQueryChan)
   link2 waiterThread dbThread
   --let maxThreads = numCapabilities
-  let maxThreads = 1 :: Int
+  let maxThreads = 4 :: Int
   threads <- forM [1..maxThreads] $ \i -> do
     logDebug $ "Launching analysis thread #" ++ (show i)
     asyncBound (runAnalysisManager aChan dbChan dbChan fileLox)
