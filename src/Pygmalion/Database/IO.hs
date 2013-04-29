@@ -432,7 +432,6 @@ updateDef :: DBHandle -> DefInfo -> IO ()
 updateDef h (DefInfo n u (SourceLocation sf l c) k) = do
     let usrHash = hash u
     let sfHash = hash sf
-    execStatement h insertFileStmt (sf, sfHash) -- FIXME: Maybe only updateSourceFile should do this?
     let kind = fromEnum k
     execStatement h updateDefStmt (usrHash, n, u, sfHash, l, c, kind)
 
