@@ -57,7 +57,7 @@ serverApp aChan dbQueryChan ad =
 doSendCommandInfo :: AnalysisChan -> CommandInfo -> IO ByteString
 doSendCommandInfo aChan ci = do
   logDebug $ "RPCSendCommandInfo: " ++ (show ci)
-  writeLenChan aChan $ Analyze ci
+  writeLenChan aChan $ AnalyzeBuiltFile ci
   return $! encode $ RPCOK ()
 
 doGetCommandInfo :: DBChan -> SourceFile -> IO ByteString

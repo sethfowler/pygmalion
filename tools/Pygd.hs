@@ -98,7 +98,7 @@ handleSource aChan f = do
   let file = FP.encodeString f
   fileExists <- doesFileExist file
   when (isSource file && fileExists) $ do
-    writeLenChan aChan $ AnalyzeSource (mkSourceFile file)
+    writeLenChan aChan $ AnalyzeNotifiedFile (mkSourceFile file)
 
 isSource :: FilePath -> Bool
 isSource f = (hasSourceExtension f || hasHeaderExtension f) &&

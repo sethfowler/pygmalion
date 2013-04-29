@@ -24,8 +24,8 @@ import Pygmalion.Core
 import Pygmalion.Database.Manager
 import Pygmalion.Log
 
-data AnalysisRequest = Analyze CommandInfo
-                     | AnalyzeSource SourceFile
+data AnalysisRequest = AnalyzeBuiltFile CommandInfo
+                     | AnalyzeNotifiedFile SourceFile
                      | ShutdownAnalysis
 type AnalysisChan = LenChan AnalysisRequest
 
@@ -38,8 +38,8 @@ runAnalysisManager aChan dbChan dbQueryChan = do
                   (newCount, req) <- readLenChan aChan
                   logDebug $ "Analysis channel now has " ++ (show newCount) ++ " items waiting"
                   case req of
-                      Analyze cmd      -> doAnalyze dbChan dbQueryChan indexer cmd >> go indexer
-                      AnalyzeSource sf -> doAnalyzeSource dbChan dbQueryChan indexer sf >> go indexer
+                      AnalyzeBuiltFile cmd   -> doAnalyzeBuiltFile dbChan dbQueryChan indexer cmd >> go indexer
+                      AnalyzeNotifiedFile sf -> doAnalyzeNotifiedFile dbChan dbQueryChan indexer sf >> go indexer
                       ShutdownAnalysis -> logInfo "Shutting down analysis thread"
 
 type Indexer = Conduit ByteString (ResourceT IO) ByteString
@@ -52,8 +52,8 @@ getMTime sf = do
     Left e          -> do logInfo $ "Couldn't read mtime for file " ++ (unSourceFile sf) ++ ": " ++ (show (e :: IOException))
                           return 0  -- Most likely the file has been deleted.
 
-doAnalyze :: DBChan -> DBChan -> Indexer -> CommandInfo -> IO ()
-doAnalyze dbChan dbQueryChan indexer ci = do
+doAnalyzeBuiltFile :: DBChan -> DBChan -> Indexer -> CommandInfo -> IO ()
+doAnalyzeBuiltFile dbChan dbQueryChan indexer ci = do
     -- FIXME: Add an abstraction over this pattern.
     oldCI <- callLenChan dbQueryChan $ DBGetCommandInfo (ciSourceFile ci)
     mtime <- getMTime (ciSourceFile ci)
@@ -68,8 +68,8 @@ doAnalyze dbChan dbQueryChan indexer ci = do
                     forM_ toReindex $ \f -> analyzeCode dbChan indexer f
                     updateCommand dbChan ci
 
-doAnalyzeSource :: DBChan -> DBChan -> Indexer -> SourceFile -> IO ()
-doAnalyzeSource dbChan dbQueryChan indexer sf = do
+doAnalyzeNotifiedFile :: DBChan -> DBChan -> Indexer -> SourceFile -> IO ()
+doAnalyzeNotifiedFile dbChan dbQueryChan indexer sf = do
     oldCI <- callLenChan dbQueryChan $ DBGetCommandInfo sf
     case oldCI of
       Just oldCI' -> do mtime <- getMTime (ciSourceFile oldCI')
