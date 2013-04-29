@@ -113,7 +113,10 @@ analyzeCode aChan dbChan indexer ci = do
     logInfo $ "Indexing " ++ (show sf)
     time <- getPOSIXTime
     writeLenChan dbChan (DBResetMetadata sf)
-    runResourceT (source $= conduitPut putReq =$= indexer =$= conduitGet getResp $$ process)
+    result <- try $ runResourceT (source $= conduitPut putReq =$= indexer =$= conduitGet getResp $$ process)
+    case result of
+      Left e   -> logInfo $ "Analysis threw exception " ++ (show (e :: SomeException))
+      Right () -> return ()
     updateCommand dbChan $ ci { ciLastIndexed = floor time }
   where
     sf = ciSourceFile ci
