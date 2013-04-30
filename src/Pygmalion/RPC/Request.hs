@@ -20,6 +20,10 @@ data RPCRequest = RPCSendCommandInfo CommandInfo
                 | RPCGetOverrides USR
                 | RPCGetRefs USR
                 | RPCGetReferenced SourceLocation
+                | RPCFoundDef DefInfo
+                | RPCFoundOverride Override
+                | RPCFoundRef Reference
+                | RPCFoundInclusion CommandInfo Inclusion
                 | RPCPing
                 deriving (Eq, Show, Generic)
 

@@ -23,9 +23,9 @@ import Pygmalion.Database.Manager
 import Pygmalion.Log
 import Pygmalion.RPC.Request
 
-runRPCServer :: Config -> MVar Int -> AnalysisChan -> DBChan -> IO ()
-runRPCServer cf port aChan dbQueryChan =
-    runTCPServer settings (serverApp aChan dbQueryChan)
+runRPCServer :: Config -> MVar Int -> AnalysisChan -> DBChan -> DBChan -> IO ()
+runRPCServer cf port aChan dbChan dbQueryChan =
+    runTCPServer settings (serverApp aChan dbChan dbQueryChan)
   where
     settings = baseSettings { serverAfterBind = notifyPort }
     baseSettings = (serverSettings confPort confAddr) :: ServerSettings IO
@@ -33,8 +33,8 @@ runRPCServer cf port aChan dbQueryChan =
     confAddr = fromString (ifAddr cf)
     notifyPort s = socketPort s >>= (putMVar port) . fromIntegral
 
-serverApp :: AnalysisChan -> DBChan -> Application IO
-serverApp aChan dbQueryChan ad =
+serverApp :: AnalysisChan -> DBChan -> DBChan -> Application IO
+serverApp aChan dbChan dbQueryChan ad =
     (appSource ad) $= conduitGet getCI =$= process $$ (appSink ad)
   where
     getCI = {-# SCC "serverget" #-} get :: Get RPCRequest
@@ -51,6 +51,10 @@ serverApp aChan dbQueryChan ad =
         Just (RPCGetOverrides usr)         -> liftIO (doGetOverrides dbQueryChan usr) >>= yield
         Just (RPCGetRefs usr)              -> liftIO (doGetRefs dbQueryChan usr) >>= yield
         Just (RPCGetReferenced sl)         -> liftIO (doGetReferenced dbQueryChan sl) >>= yield
+        Just (RPCFoundDef di)              -> liftIO (doFoundDef dbChan di) >>= yield
+        Just (RPCFoundOverride ov)         -> liftIO (doFoundOverride dbChan ov) >>= yield
+        Just (RPCFoundRef rf)              -> liftIO (doFoundRef dbChan rf) >>= yield
+        Just (RPCFoundInclusion ci ic)        -> liftIO (doFoundInclusion aChan dbChan ci ic) >>= yield
         Just RPCPing                       -> yield . encode $ RPCOK ()
         _                                  -> yield . encode $ (RPCError :: RPCResponse ())
 
@@ -119,3 +123,36 @@ doGetReferenced dbQueryChan sl = do
   result <- callLenChan dbQueryChan $! DBGetReferenced sl
   mapM_ print result
   return $! encode $ RPCOK result
+
+doFoundDef :: DBChan -> DefInfo -> IO ByteString
+doFoundDef dbChan di = do
+  logDebug $ "RPCFoundDef: " ++ (show di)
+  writeLenChan dbChan $ DBUpdateDefInfo di
+  return $! encode $ RPCOK ()
+
+doFoundOverride :: DBChan -> Override -> IO ByteString
+doFoundOverride dbChan ov = do
+  logDebug $ "RPCFoundOverride: " ++ (show ov)
+  writeLenChan dbChan $ DBUpdateOverride ov
+  return $! encode $ RPCOK ()
+
+doFoundRef :: DBChan -> Reference -> IO ByteString
+doFoundRef dbChan rf = do
+  logDebug $ "RPCFoundRef: " ++ (show rf)
+  writeLenChan dbChan $ DBUpdateRef rf
+  return $! encode $ RPCOK ()
+
+doFoundInclusion :: AnalysisChan -> DBChan -> CommandInfo -> Inclusion -> IO ByteString
+doFoundInclusion aChan dbChan ci ic = do
+    -- FIXME Do some of this in pygclangindex.
+    logDebug $ "RPCFoundInclusion: " ++ (show ic)
+    let cmd' = ciCommand ci
+    let newCmd' = cmd' { cmdArguments = (cmdArguments cmd') ++ (incArgs . ciLanguage $ ci) }
+    let newCI = ci { ciCommand = newCmd', ciLastIndexed = 0, ciSourceFile = icHeaderFile ic }
+    liftIO (writeLenChan dbChan (DBUpdateInclusion ic))
+    liftIO (writeLenChan aChan (AnalyzeBuiltFile newCI))
+    return $! encode $ RPCOK ()
+  where
+    incArgs CLanguage       = ["-x", "c"]
+    incArgs CPPLanguage     = ["-x", "c++"]
+    incArgs UnknownLanguage = []

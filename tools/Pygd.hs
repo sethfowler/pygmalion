@@ -46,7 +46,7 @@ main = do
     logDebug $ "Launching analysis thread #" ++ (show i)
     asyncBound (runAnalysisManager aChan dbChan dbChan fileLox)
   mapM_ (link2 waiterThread) threads
-  rpcThread <- async (runRPCServer cf port aChan dbQueryChan)
+  rpcThread <- async (runRPCServer cf port aChan dbChan dbQueryChan)
   link2 waiterThread rpcThread
   watchThread <- async (doWatch aChan stopWatching)
   link2 waiterThread watchThread
