@@ -88,7 +88,7 @@ printDir cf f = getCommandInfoOr bail f cf >>= putDir
 
 getCommandInfoOr :: IO () -> SourceFile -> Config -> IO CommandInfo
 getCommandInfoOr a f cf = do
-  cmd <- rpcGetSimilarCommandInfo (ifPort cf) f
+  cmd <- withRPC cf $ runRPC (rpcGetSimilarCommandInfo f)
   unless (isJust cmd) a
   return . fromJust $ cmd
 
@@ -98,10 +98,10 @@ printDef cf f (Just line) (Just col) = do
     case info of
       GotDef di  -> putDef di
       -- FIXME Clean this up
-      GotDecl usr di -> do def <- rpcGetDefinition (ifPort cf) usr
+      GotDecl usr di -> do def <- withRPC cf $ runRPC (rpcGetDefinition usr)
                            if isJust def then putDef (fromJust def)
                                          else putDecl di
-      GotUSR usr -> do def <- rpcGetDefinition (ifPort cf) usr
+      GotUSR usr -> do def <- withRPC cf $ runRPC (rpcGetDefinition usr)
                        unless (isJust def) $ bailWith (defErr usr)
                        putDef (fromJust def)
       GotNothing -> bailWith idErr
@@ -130,7 +130,7 @@ printCallers cf f (Just line) (Just col) = do
     idErr = errPrefix ++ "No identifier at this location."
     defErr usr = errPrefix ++ "No callers for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
     printCallers' usr = do
-      callers <- rpcGetCallers (ifPort cf) usr
+      callers <- withRPC cf $ runRPC (rpcGetCallers usr)
       case (null callers) of
         True  -> bailWith (defErr usr)
         False -> mapM_ putCaller callers
@@ -152,7 +152,7 @@ printCallees cf f (Just line) (Just col) = do
     idErr = errPrefix ++ "No identifier at this location."
     defErr usr = errPrefix ++ "No callees for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
     printCallees' usr = do
-      callees <- rpcGetCallees (ifPort cf) usr
+      callees <- withRPC cf $ runRPC (rpcGetCallees usr)
       case (null callees) of
         True  -> bailWith (defErr usr)
         False -> mapM_ putCallee callees
@@ -174,7 +174,7 @@ printBases cf f (Just line) (Just col) = do
     idErr = errPrefix ++ "No identifier at this location."
     defErr usr = errPrefix ++ "No bases for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
     printBases' usr = do
-      callers <- rpcGetBases (ifPort cf) usr
+      callers <- withRPC cf $ runRPC (rpcGetBases usr)
       case (null callers) of
         True  -> bailWith (defErr usr)
         False -> mapM_ putBase callers
@@ -196,7 +196,7 @@ printOverrides cf f (Just line) (Just col) = do
     idErr = errPrefix ++ "No identifier at this location."
     defErr usr = errPrefix ++ "No overrides for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
     printOverrides' usr = do
-      callees <- rpcGetOverrides (ifPort cf) usr
+      callees <- withRPC cf $ runRPC (rpcGetOverrides usr)
       case (null callees) of
         True  -> bailWith (defErr usr)
         False -> mapM_ putOverride callees
@@ -218,7 +218,7 @@ printRefs cf f (Just line) (Just col) = do
     idErr = errPrefix ++ "No identifier at this location."
     defErr usr = errPrefix ++ "No references for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
     printRefs' usr = do
-      refs <- rpcGetRefs (ifPort cf) usr
+      refs <- withRPC cf $ runRPC (rpcGetRefs usr)
       case (null refs) of
         True  -> bailWith (defErr usr)
         False -> mapM_ putRef refs
@@ -244,7 +244,7 @@ doGetLookupInfo cf sl = do
 
 doGetLookupInfo :: Config -> SourceLocation -> IO LookupInfo
 doGetLookupInfo cf sl = do
-    rawReferenced <- rpcGetReferenced (ifPort cf) sl
+    rawReferenced <- withRPC cf $ runRPC (rpcGetReferenced sl)
     when (multipleItems rawReferenced) $ do
       logInfo "Warning: multiple referenced entities"
       logInfo (show sl)

@@ -45,5 +45,5 @@ indexIfValid :: Port -> Command -> IO ()
 indexIfValid port cmd = do
   result <- getCommandInfo cmd
   case result of
-    Just cmdInfo -> rpcIndex port cmdInfo
+    Just cmdInfo -> withRPCRaw port $ runRPC (rpcIndex cmdInfo)
     _            -> return ()   -- Can't do anything with this command.

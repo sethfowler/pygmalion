@@ -1,7 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Pygmalion.RPC.Client
-( rpcPing
+( RPC
+, RPCConnection
+, openRPC
+, openRPCRaw
+, closeRPC
+, withRPC
+, withRPCRaw
+, runRPC
+, rpcPing
 , rpcIndex
 , rpcGetSimilarCommandInfo
 , rpcGetDefinition
@@ -13,60 +21,85 @@ module Pygmalion.RPC.Client
 , rpcGetReferenced
 ) where
 
-import Control.Concurrent (newEmptyMVar, takeMVar, putMVar, MVar)
+import Control.Applicative
+import Control.Concurrent (newEmptyMVar, takeMVar, putMVar)
+import Control.Exception (bracket)
 import Control.Monad.Trans
+import qualified Control.Monad.Trans.Reader as Reader
 import Data.ByteString.Char8 ()
 import Data.Conduit
 import Data.Conduit.Cereal
 import Data.Conduit.Network
 import Data.Serialize
+import Network.Socket
 import System.Timeout
 
+import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.RPC.Request
 
-rpcPing :: Port -> IO ()
-rpcPing port = callRPC port RPCPing
+type RPC a = Reader.ReaderT RPCConnection IO a
+type RPCConnection = Socket
 
-rpcIndex :: Port -> CommandInfo -> IO ()
-rpcIndex port ci = callRPC port (RPCSendCommandInfo ci)
+openRPC :: Config -> IO RPCConnection
+openRPC config = fst <$> getSocket "127.0.0.1" (ifPort config)
 
-rpcGetSimilarCommandInfo :: Port -> SourceFile -> IO (Maybe CommandInfo)
-rpcGetSimilarCommandInfo port sf = callRPC port (RPCGetSimilarCommandInfo sf)
+openRPCRaw :: Port -> IO RPCConnection
+openRPCRaw port = fst <$> getSocket "127.0.0.1" port
 
-rpcGetDefinition :: Port -> USR -> IO (Maybe DefInfo)
-rpcGetDefinition port usr = callRPC port (RPCGetDefinition usr)
+closeRPC :: RPCConnection -> IO ()
+closeRPC = sClose
 
-rpcGetCallers :: Port -> USR -> IO [Invocation]
-rpcGetCallers port usr = callRPC port (RPCGetCallers usr)
+withRPC :: Config -> (RPCConnection -> IO a) -> IO a
+withRPC config = bracket (openRPC config) closeRPC
 
-rpcGetCallees :: Port -> USR -> IO [DefInfo]
-rpcGetCallees port usr = callRPC port (RPCGetCallees usr)
+withRPCRaw :: Port -> (RPCConnection -> IO a) -> IO a
+withRPCRaw port = bracket (openRPCRaw port) closeRPC
 
-rpcGetBases :: Port -> USR -> IO [DefInfo]
-rpcGetBases port usr = callRPC port (RPCGetBases usr)
+runRPC :: RPC a -> RPCConnection -> IO a
+runRPC = Reader.runReaderT
 
-rpcGetOverrides :: Port -> USR -> IO [DefInfo]
-rpcGetOverrides port usr = callRPC port (RPCGetOverrides usr)
+rpcPing :: RPC ()
+rpcPing = callRPC RPCPing =<< Reader.ask
 
-rpcGetRefs :: Port -> USR -> IO [SourceReference]
-rpcGetRefs port usr = callRPC port (RPCGetRefs usr)
+rpcIndex :: CommandInfo -> RPC ()
+rpcIndex ci = callRPC (RPCSendCommandInfo ci) =<< Reader.ask
 
-rpcGetReferenced :: Port -> SourceLocation -> IO [SourceReferenced]
-rpcGetReferenced port sl = callRPC port (RPCGetReferenced sl)
+rpcGetSimilarCommandInfo :: SourceFile -> RPC (Maybe CommandInfo)
+rpcGetSimilarCommandInfo sf = callRPC (RPCGetSimilarCommandInfo sf) =<< Reader.ask
 
-callRPC :: Serialize a => Port -> RPCRequest -> IO a
-callRPC port req = do
+rpcGetDefinition :: USR -> RPC (Maybe DefInfo)
+rpcGetDefinition usr = callRPC (RPCGetDefinition usr) =<< Reader.ask
+
+rpcGetCallers :: USR -> RPC [Invocation]
+rpcGetCallers usr = callRPC (RPCGetCallers usr) =<< Reader.ask
+
+rpcGetCallees :: USR -> RPC [DefInfo]
+rpcGetCallees usr = callRPC (RPCGetCallees usr) =<< Reader.ask
+
+rpcGetBases :: USR -> RPC [DefInfo]
+rpcGetBases usr = callRPC (RPCGetBases usr) =<< Reader.ask
+
+rpcGetOverrides :: USR -> RPC [DefInfo]
+rpcGetOverrides usr = callRPC (RPCGetOverrides usr) =<< Reader.ask
+
+rpcGetRefs :: USR -> RPC [SourceReference]
+rpcGetRefs usr = callRPC (RPCGetRefs usr) =<< Reader.ask
+
+rpcGetReferenced :: SourceLocation -> RPC [SourceReferenced]
+rpcGetReferenced sl = callRPC (RPCGetReferenced sl) =<< Reader.ask
+
+callRPC :: Serialize a => RPCRequest -> RPCConnection -> RPC a
+callRPC req conn = liftIO $ do
     mResp <- newEmptyMVar
-    runTCPClient (clientSettings port "127.0.0.1") (rpcApp req mResp)
+    ensureCompleted =<< timeout 100000000 (conduit mResp)
     takeMVar mResp
-
-rpcApp :: Serialize a => RPCRequest -> MVar a -> Application IO
-rpcApp req mResp ad = ensureCompleted =<< timeout 100000000 app
   where
-    app = (appSource ad) $= conduitGet getResp =$= process $$ (appSink ad)
-    getResp = get
-    process = do
+    conduit mResp = sourceSocket conn
+                 $= conduitGet get
+                =$= process mResp
+                 $$ sinkSocket conn
+    process mResp = do
       yield (encode req)
       result <- await
       case result of

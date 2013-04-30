@@ -15,7 +15,7 @@ main = do
   cf <- getConfiguration
   initLogger (logLevel cf)
   args <- (getArgs >>= parseArgs)
-  rpcPing (ifPort cf)  -- Make sure pygd is running.
+  withRPC cf $ runRPC rpcPing  -- Make sure pygd is running.
   useCMake <- doesFileExist "CMakeLists.txt"
   if useCMake then executeCMake cf args
               else executeMake cf args
