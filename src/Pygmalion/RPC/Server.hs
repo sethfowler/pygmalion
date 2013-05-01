@@ -143,16 +143,6 @@ doFoundRef dbChan rf = do
 
 doFoundInclusion :: AnalysisChan -> DBChan -> Inclusion -> IO ()
 doFoundInclusion aChan dbChan ic = do
-    -- FIXME Do some of this in pygclangindex.
-    logDebug $ "RPCFoundInclusion: " ++ (show ic)
-    let ci = icCommandInfo ic
-    let ci' = ci { ciArgs = (ciArgs ci) ++ (incArgs . ciLanguage $ ci)
-                 , ciLastIndexed = 0
-                 , ciSourceFile = icHeaderFile ic
-                 }
-    liftIO (writeLenChan dbChan (DBUpdateInclusion ic))
-    liftIO (writeLenChan aChan (AnalyzeBuiltFile ci'))
-  where
-    incArgs CLanguage       = ["-x", "c"]
-    incArgs CPPLanguage     = ["-x", "c++"]
-    incArgs UnknownLanguage = []
+  logDebug $ "RPCFoundInclusion: " ++ (show ic)
+  liftIO (writeLenChan dbChan (DBUpdateInclusion ic))
+  liftIO (writeLenChan aChan (AnalyzeBuiltFile . icCommandInfo $ ic))

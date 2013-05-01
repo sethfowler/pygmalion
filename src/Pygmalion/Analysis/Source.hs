@@ -69,10 +69,20 @@ inclusionsVisitor :: RPCConnection -> WorkingPath -> CommandInfo -> InclusionVis
 inclusionsVisitor conn wd ci file iStack = do
     ic <- File.getName file >>= CS.unpackText
     when (isLocalHeader wd ic) $ do
+      let mkInclusion' = mkInclusion ic
       case iStack of
         []       -> return () -- The source file itself.
-        (_ : []) -> liftIO $ runRPC (rpcFoundInclusion (Inclusion ci ic True)) conn
-        (_ : _)  -> liftIO $ runRPC (rpcFoundInclusion (Inclusion ci ic False)) conn
+        (_ : []) -> liftIO $ runRPC (rpcFoundInclusion (mkInclusion' True)) conn
+        (_ : _)  -> liftIO $ runRPC (rpcFoundInclusion (mkInclusion' False)) conn
+  where
+    mkInclusion ic d =
+      Inclusion (ci { ciArgs = (ciArgs ci) ++ (incArgs . ciLanguage $ ci)
+                    , ciLastIndexed = 0
+                    , ciSourceFile = ic
+                    }) ic d
+    incArgs CLanguage       = ["-x", "c"]
+    incArgs CPPLanguage     = ["-x", "c++"]
+    incArgs UnknownLanguage = []
 
 isLocalHeader :: WorkingPath -> SourceFile -> Bool
 isLocalHeader wd p = (wd `T.isPrefixOf`) .&&. (not . T.null) $ p
