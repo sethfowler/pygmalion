@@ -25,6 +25,8 @@ data RPCRequest = RPCSendCommandInfo CommandInfo
                 | RPCFoundRef Reference
                 | RPCFoundInclusion CommandInfo Inclusion
                 | RPCPing
+                | RPCLog String
+                | RPCDone
                 deriving (Eq, Show, Generic)
 
 instance Serialize RPCRequest

@@ -14,17 +14,17 @@ import System.Path
 import Pygmalion.Analysis.Extension
 import Pygmalion.Core
 
-getCommandInfo :: Command -> IO (Maybe CommandInfo)
-getCommandInfo (Command c as) = do
+getCommandInfo :: String -> [String] -> IO (Maybe CommandInfo)
+getCommandInfo cmd args = do
     wd <- getCurrentDirectory
-    let strAs = map T.unpack as
-    let sourceFile = find hasSourceExtension strAs >>= absNormPath wd
-    let fas = map T.pack . absArgs wd . filterArgs $ strAs
+    let sourceFile = find hasSourceExtension args >>= absNormPath wd
+    let finalArgs = map T.pack . absArgs wd . filterArgs $ args
     return $ flip fmap sourceFile $ \sf ->
       CommandInfo (mkSourceFile sf)
                   (T.pack wd)
-                  (Command c fas)
-                  (inferLang strAs sf)
+                  (T.pack cmd)
+                  finalArgs
+                  (inferLang args sf)
                   0
 
 inferLang :: [String] -> String -> Language

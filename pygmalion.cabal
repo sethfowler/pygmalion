@@ -32,7 +32,7 @@ library
                    mtl,
                    network,
                    network-conduit,
-                   process-conduit,
+                   process,
                    safe,
                    sqlite-simple,
                    stm,
@@ -43,7 +43,6 @@ library
                    LibClang >= 0.2,
                    MissingH
   exposed-modules: Control.Concurrent.Chan.Len,
-                   Pygmalion.Analysis.ClangRequest,
                    Pygmalion.Analysis.Command,
                    Pygmalion.Analysis.Extension,
                    Pygmalion.Analysis.Manager,
@@ -116,12 +115,7 @@ executable pygclangindex
   ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N
   main-is:        Pygclangindex.hs 
   build-depends:  base >= 4
-               ,  bytestring
-               ,  cereal
-               ,  cereal-conduit
-               ,  conduit
                ,  directory
-               ,  mtl
                ,  pygmalion
                ,  text
                ,  unix

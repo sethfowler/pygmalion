@@ -377,7 +377,7 @@ updateSourceFileSQL = T.concat
   , "values (?, ?, ?, ?, ?, ?)" ]
 
 updateSourceFile :: DBHandle -> CommandInfo -> IO ()
-updateSourceFile h (CommandInfo sf wd (Command cmd args) lang t) = do
+updateSourceFile h (CommandInfo sf wd cmd args lang t) = do
     let sfHash = hash sf
     execStatement h insertFileStmt (sf, sfHash)
     let wdHash = hash wd

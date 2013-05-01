@@ -6,23 +6,18 @@ module Pygmalion.Analysis.Manager
 , AnalysisChan
 ) where
 
-import Control.Concurrent hiding (yield)
+import Control.Concurrent
 import Control.Exception
 import Control.Monad
-import Control.Monad.Trans
-import Data.ByteString.Char8 (ByteString)
-import Data.Conduit
-import Data.Conduit.Cereal
-import Data.Conduit.Process
 import Data.DateTime
 import Data.Maybe
 import Data.Time.Clock.POSIX
-import Data.Serialize
 import qualified Data.Set as Set
 import System.Directory
+import System.Exit
+import System.Process
 
 import Control.Concurrent.Chan.Len
-import qualified Pygmalion.Analysis.ClangRequest as CR
 import Pygmalion.Core
 import Pygmalion.Database.Manager
 import Pygmalion.Log
@@ -32,18 +27,16 @@ data AnalysisRequest = AnalyzeBuiltFile CommandInfo
                      | ShutdownAnalysis
 type AnalysisChan = LenChan AnalysisRequest
 
-runAnalysisManager :: AnalysisChan -> DBChan -> DBChan -> MVar (Set.Set SourceFile) -> IO ()
-runAnalysisManager aChan dbChan dbQueryChan lox = go
+runAnalysisManager :: Port -> AnalysisChan -> DBChan -> DBChan -> MVar (Set.Set SourceFile) -> IO ()
+runAnalysisManager port aChan dbChan dbQueryChan lox = go
   where
     go = {-# SCC "analysisThread" #-} do
          (!newCount, !req) <- readLenChan aChan
          logDebug $ "Analysis channel now has " ++ (show newCount) ++ " items waiting"
          case req of
-             AnalyzeBuiltFile !ci    -> checkLock lox (ciSourceFile ci) (doAnalyzeBuiltFile aChan dbChan dbQueryChan ci) >> go
-             AnalyzeNotifiedFile !sf -> checkLock lox sf (doAnalyzeNotifiedFile aChan dbChan dbQueryChan sf) >> go
+             AnalyzeBuiltFile !ci    -> checkLock lox (ciSourceFile ci) (doAnalyzeBuiltFile port aChan dbChan dbQueryChan ci) >> go
+             AnalyzeNotifiedFile !sf -> checkLock lox sf (doAnalyzeNotifiedFile port aChan dbChan dbQueryChan sf) >> go
              ShutdownAnalysis        -> logInfo "Shutting down analysis thread"
-
-type Indexer = Conduit ByteString (ResourceT IO) ByteString
 
 checkLock :: MVar (Set.Set SourceFile) -> SourceFile -> IO () -> IO ()
 checkLock !lox !sf !action = do
@@ -65,8 +58,8 @@ getMTime sf = do
     Left e          -> do logInfo $ "Couldn't read mtime for file " ++ (unSourceFile sf) ++ ": " ++ (show (e :: IOException))
                           return 0  -- Most likely the file has been deleted.
 
-doAnalyzeBuiltFile :: AnalysisChan -> DBChan -> DBChan -> CommandInfo -> IO ()
-doAnalyzeBuiltFile aChan dbChan dbQueryChan ci = do
+doAnalyzeBuiltFile :: Port -> AnalysisChan -> DBChan -> DBChan -> CommandInfo -> IO ()
+doAnalyzeBuiltFile port aChan dbChan dbQueryChan ci = do
     -- FIXME: Add an abstraction over this pattern.
     oldCI <- callLenChan dbQueryChan $ DBGetCommandInfo (ciSourceFile ci)
     mtime <- getMTime (ciSourceFile ci)
@@ -83,10 +76,10 @@ doAnalyzeBuiltFile aChan dbChan dbQueryChan ci = do
   where
     doAnalyze' = do others <- otherFilesToReindex dbQueryChan ci
                     forM_ others $ \f -> writeLenChan aChan (AnalyzeBuiltFile f)
-                    analyzeCode aChan dbChan ci
+                    analyzeCode port dbChan ci
 
-doAnalyzeNotifiedFile :: AnalysisChan -> DBChan -> DBChan -> SourceFile -> IO ()
-doAnalyzeNotifiedFile aChan dbChan dbQueryChan sf = do
+doAnalyzeNotifiedFile :: Port -> AnalysisChan -> DBChan -> DBChan -> SourceFile -> IO ()
+doAnalyzeNotifiedFile port aChan dbChan dbQueryChan sf = do
     oldCI <- callLenChan dbQueryChan $ DBGetCommandInfo sf
     case oldCI of
       Just oldCI' -> do mtime <- getMTime (ciSourceFile oldCI')
@@ -95,7 +88,7 @@ doAnalyzeNotifiedFile aChan dbChan dbQueryChan sf = do
   where
     doAnalyzeSource' ci mt | (ciLastIndexed ci) < mt = do others <- otherFilesToReindex dbQueryChan ci
                                                           forM_ others $ \f -> writeLenChan aChan (AnalyzeBuiltFile f)
-                                                          analyzeCode aChan dbChan ci
+                                                          analyzeCode port dbChan ci
                            | otherwise               = logInfo $ "Index is up-to-date for file " ++ (show sf)
 
 -- If the source file associated with this CommandInfo has changed, what must
@@ -106,40 +99,14 @@ otherFilesToReindex dbQueryChan ci = callLenChan dbQueryChan $ DBGetIncluders (c
 updateCommand :: DBChan -> CommandInfo -> IO ()
 updateCommand dbChan ci = writeLenChan dbChan (DBUpdateCommandInfo ci)
 
-analyzeCode :: AnalysisChan -> DBChan -> CommandInfo -> IO ()
-analyzeCode aChan dbChan ci = do
-    logInfo $ "Indexing " ++ (show sf)
+analyzeCode :: Port -> DBChan -> CommandInfo -> IO ()
+analyzeCode port dbChan ci = do
+    logInfo $ "Indexing " ++ (show . ciSourceFile $ ci)
     time <- getPOSIXTime
-    writeLenChan dbChan (DBResetMetadata sf)
-    let indexer = conduitProcess (proc "pygclangindex" []) :: Indexer
-    result <- try $ runResourceT (source $= conduitPut putReq =$= indexer =$= conduitGet getResp $$ process)
-    case result of
-      Left e   -> logInfo $ "Analysis threw exception " ++ (show (e :: SomeException))
-      Right () -> return ()
+    writeLenChan dbChan (DBResetMetadata . ciSourceFile $ ci)
+    (_, _, _, h) <- createProcess (proc "pygclangindex" [show port, show ci])
+    code <- waitForProcess h
+    case code of
+      ExitSuccess -> return ()
+      _           -> logInfo $ "Indexing process failed"
     updateCommand dbChan $ ci { ciLastIndexed = floor time }
-  where
-    sf = ciSourceFile ci
-    source = yield (CR.Analyze ci) >> yield (CR.Shutdown)
-    putReq :: Putter CR.ClangRequest
-    putReq = put
-    getResp = get :: Get CR.ClangResponse
-    process = do
-      liftIO $ logDebug "WAITING"
-      resp <- await
-      case resp of
-        Just (CR.FoundDef !di)       -> liftIO (writeLenChan dbChan (DBUpdateDefInfo di)) >> process
-        Just (CR.FoundOverride !ov)  -> liftIO (writeLenChan dbChan (DBUpdateOverride ov)) >> process
-        Just (CR.FoundRef !rf)       -> liftIO (writeLenChan dbChan (DBUpdateRef rf)) >> process
-        Just (CR.FoundInclusion !ic) -> handleInclusion ic >> process
-        Just (CR.EndOfAnalysis)      -> liftIO (logDebug "Done reading from clang process") >> return ()
-        Nothing                      -> liftIO (logDebug "Clang process read failed") >> return ()
-    handleInclusion ic = do
-      -- FIXME: Awful.
-      let cmd' = ciCommand ci
-      let newCmd' = cmd' { cmdArguments = (cmdArguments cmd') ++ (incArgs . ciLanguage $ ci) }
-      let newCI = ci { ciCommand = newCmd', ciLastIndexed = 0, ciSourceFile = icHeaderFile ic }
-      liftIO (writeLenChan dbChan (DBUpdateInclusion ic))
-      liftIO (writeLenChan aChan (AnalyzeBuiltFile newCI))
-    incArgs CLanguage       = ["-x", "c"]
-    incArgs CPPLanguage     = ["-x", "c++"]
-    incArgs UnknownLanguage = []

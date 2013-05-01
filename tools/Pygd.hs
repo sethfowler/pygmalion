@@ -44,7 +44,7 @@ main = do
   let maxThreads = 4 :: Int
   threads <- forM [1..maxThreads] $ \i -> do
     logDebug $ "Launching analysis thread #" ++ (show i)
-    asyncBound (runAnalysisManager aChan dbChan dbChan fileLox)
+    asyncBound (runAnalysisManager (ifPort cf) aChan dbChan dbQueryChan fileLox)
   mapM_ (link2 waiterThread) threads
   rpcThread <- async (runRPCServer cf port aChan dbChan dbQueryChan)
   link2 waiterThread rpcThread

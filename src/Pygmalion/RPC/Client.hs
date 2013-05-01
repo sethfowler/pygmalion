@@ -10,6 +10,7 @@ module Pygmalion.RPC.Client
 , withRPCRaw
 , runRPC
 , rpcPing
+, rpcLog
 , rpcIndex
 , rpcGetSimilarCommandInfo
 , rpcGetDefinition
@@ -19,6 +20,10 @@ module Pygmalion.RPC.Client
 , rpcGetOverrides
 , rpcGetRefs
 , rpcGetReferenced
+, rpcFoundDef
+, rpcFoundOverride
+, rpcFoundRef
+, rpcFoundInclusion
 ) where
 
 import Control.Applicative
@@ -48,7 +53,9 @@ openRPCRaw :: Port -> IO RPCConnection
 openRPCRaw port = fst <$> getSocket "127.0.0.1" port
 
 closeRPC :: RPCConnection -> IO ()
-closeRPC = sClose
+closeRPC conn = do
+  runRPC rpcDone conn
+  sClose conn
 
 withRPC :: Config -> (RPCConnection -> IO a) -> IO a
 withRPC config = bracket (openRPC config) closeRPC
@@ -59,11 +66,17 @@ withRPCRaw port = bracket (openRPCRaw port) closeRPC
 runRPC :: RPC a -> RPCConnection -> IO a
 runRPC = Reader.runReaderT
 
+rpcDone :: RPC ()
+rpcDone = callRPC_ RPCDone =<< Reader.ask
+
 rpcPing :: RPC ()
 rpcPing = callRPC RPCPing =<< Reader.ask
 
+rpcLog :: String -> RPC ()
+rpcLog s = callRPC_ (RPCLog s) =<< Reader.ask
+
 rpcIndex :: CommandInfo -> RPC ()
-rpcIndex ci = callRPC (RPCSendCommandInfo ci) =<< Reader.ask
+rpcIndex ci = callRPC_ (RPCSendCommandInfo ci) =<< Reader.ask
 
 rpcGetSimilarCommandInfo :: SourceFile -> RPC (Maybe CommandInfo)
 rpcGetSimilarCommandInfo sf = callRPC (RPCGetSimilarCommandInfo sf) =<< Reader.ask
@@ -89,6 +102,18 @@ rpcGetRefs usr = callRPC (RPCGetRefs usr) =<< Reader.ask
 rpcGetReferenced :: SourceLocation -> RPC [SourceReferenced]
 rpcGetReferenced sl = callRPC (RPCGetReferenced sl) =<< Reader.ask
 
+rpcFoundDef :: DefInfo -> RPC ()
+rpcFoundDef di = callRPC_ (RPCFoundDef di) =<< Reader.ask
+
+rpcFoundOverride :: Override -> RPC ()
+rpcFoundOverride ov = callRPC_ (RPCFoundOverride ov) =<< Reader.ask
+
+rpcFoundRef :: Reference -> RPC ()
+rpcFoundRef rf = callRPC_ (RPCFoundRef rf) =<< Reader.ask
+
+rpcFoundInclusion :: CommandInfo -> Inclusion -> RPC ()
+rpcFoundInclusion ci ic = callRPC_ (RPCFoundInclusion ci ic) =<< Reader.ask
+
 callRPC :: Serialize a => RPCRequest -> RPCConnection -> RPC a
 callRPC req conn = liftIO $ do
     mResp <- newEmptyMVar
@@ -106,6 +131,12 @@ callRPC req conn = liftIO $ do
         Just (RPCOK result') -> liftIO $ putMVar mResp $! result'
         Just RPCError        -> error "Server reported an error"
         _                    -> error "Unexpected result from server"
+
+callRPC_ :: RPCRequest -> RPCConnection -> RPC ()
+callRPC_ req conn = liftIO $ ensureCompleted =<< timeout 100000000 conduit 
+  where
+    conduit = process $$ sinkSocket conn
+    process = yield (encode req)
 
 ensureCompleted :: Maybe a -> IO a
 ensureCompleted (Just a) = return a

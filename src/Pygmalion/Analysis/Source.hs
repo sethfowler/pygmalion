@@ -4,9 +4,6 @@ module Pygmalion.Analysis.Source
 ( runSourceAnalyses
 , getLookupInfo
 , LookupInfo (..)
-, SourceAnalysisResult (..)
-, SourceAnalysisState
-, mkSourceAnalysisState
 , displayAST
 ) where
 
@@ -25,66 +22,23 @@ import Control.Exception
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Maybe
-import Data.IORef
 import qualified Data.Text as T
 import Data.Typeable
 
 import Data.Bool.Predicate
 import Pygmalion.Core
 import Pygmalion.Log
+import Pygmalion.RPC.Client
 import Pygmalion.SourceKind
 
-data SourceAnalysisResult = SourceAnalysisResult
-    { sarDefs       :: ![DefInfo]
-    , sarOverrides  :: ![Override]
-    , sarRefs       :: ![Reference]
-    , sarInclusions :: ![Inclusion]
-    }
-
-data SourceAnalysisState = SourceAnalysisState
-    { defsVisitor       :: ChildVisitor
-    , inclusionsVisitor :: InclusionVisitor
-    , sourceFileRef     :: IORef SourceFile
-    , defsRef           :: IORef [DefInfo]
-    , overridesRef      :: IORef [Override]
-    , refsRef           :: IORef [Reference]
-    , inclusionsRef     :: IORef [Inclusion]
-    , unitRef           :: IORef (Maybe TranslationUnit)
-    }
-
-mkSourceAnalysisState :: WorkingPath -> IO SourceAnalysisState
-mkSourceAnalysisState wd = do
-  newSFRef         <- newIORef $! (mkSourceFile "")
-  newDefsRef       <- newIORef $! []
-  newOverridesRef  <- newIORef $! []
-  newRefsRef       <- newIORef $! []
-  newInclusionsRef <- newIORef $! []
-  newUnitRef       <- newIORef $! Nothing
-  return $ SourceAnalysisState (defsVisitorImpl wd newSFRef newDefsRef newOverridesRef newRefsRef newUnitRef)
-                               (inclusionsVisitorImpl wd newSFRef newInclusionsRef)
-                               newSFRef
-                               newDefsRef
-                               newOverridesRef
-                               newRefsRef
-                               newInclusionsRef
-                               newUnitRef
-
-runSourceAnalyses :: SourceAnalysisState -> CommandInfo -> IO (Maybe SourceAnalysisResult)
-runSourceAnalyses sas ci = do
-  writeIORef (sourceFileRef sas) $! ciSourceFile ci
-  writeIORef (defsRef sas)       $! []
-  writeIORef (overridesRef sas)  $! []
-  writeIORef (refsRef sas)       $! []
-  writeIORef (inclusionsRef sas) $! []
+runSourceAnalyses :: WorkingPath -> CommandInfo -> RPCConnection -> IO ()
+runSourceAnalyses wd ci conn = do
   result <- try $ withTranslationUnit ci $ \tu -> do
-                    inclusionsAnalysis sas tu
-                    defsAnalysis sas tu
+                    inclusionsAnalysis conn wd ci tu
+                    defsAnalysis conn ci tu
   case result of
-    Right _ -> Just <$> (SourceAnalysisResult <$> readIORef (defsRef sas)
-                                              <*> readIORef (overridesRef sas)
-                                              <*> readIORef (refsRef sas)
-                                              <*> readIORef (inclusionsRef sas))
-    Left (ClangException e) -> logWarn ("Clang exception: " ++ e) >> return Nothing
+    Right _ -> return ()
+    Left (ClangException e) -> logWarn ("Clang exception: " ++ e) >> return ()
 
 data LookupInfo = GotDef DefInfo
                 | GotDecl USR DefInfo
@@ -106,37 +60,34 @@ displayAST ci = do
     Right _                 -> return ()
     Left (ClangException e) -> logWarn ("Clang exception: " ++ e )
 
-inclusionsAnalysis :: SourceAnalysisState -> TranslationUnit -> ClangApp ()
-inclusionsAnalysis sas tu = void $ getInclusions tu (inclusionsVisitor sas)
+inclusionsAnalysis :: RPCConnection -> WorkingPath -> CommandInfo -> TranslationUnit
+                   -> ClangApp ()
+inclusionsAnalysis conn wd ci tu = void $ getInclusions tu
+                                          (inclusionsVisitor conn wd ci)
 
-inclusionsVisitorImpl :: WorkingPath -> IORef SourceFile -> IORef [Inclusion] -> InclusionVisitor
-inclusionsVisitorImpl wd sfRef isRef file iStack = do
+inclusionsVisitor :: RPCConnection -> WorkingPath -> CommandInfo -> InclusionVisitor
+inclusionsVisitor conn wd ci file iStack = do
     ic <- File.getName file >>= CS.unpackText
     when (isLocalHeader wd ic) $ do
-      sf <- liftIO $ readIORef sfRef
       case iStack of
-        []       -> return ()                     -- The source file itself.
-        (_ : []) -> liftIO . modifyIORef' isRef $! ((Inclusion sf ic True) :)
-        (_ : _)  -> liftIO . modifyIORef' isRef $! ((Inclusion sf ic False) :)
+        []       -> return () -- The source file itself.
+        (_ : []) -> liftIO $ runRPC (rpcFoundInclusion ci (Inclusion (ciSourceFile ci) ic True)) conn
+        (_ : _)  -> liftIO $ runRPC (rpcFoundInclusion ci (Inclusion (ciSourceFile ci) ic False)) conn
 
 isLocalHeader :: WorkingPath -> SourceFile -> Bool
 isLocalHeader wd p = (wd `T.isPrefixOf`) .&&. (not . T.null) $ p
 
-defsAnalysis :: SourceAnalysisState -> TranslationUnit -> ClangApp ()
-defsAnalysis sas tu = do
-    liftIO $ writeIORef (unitRef sas) $! (Just tu)
+defsAnalysis :: RPCConnection -> CommandInfo -> TranslationUnit -> ClangApp ()
+defsAnalysis conn ci tu = do
     cursor <- getCursor tu
-    void $ visitChildren cursor (defsVisitor sas)
+    void $ visitChildren cursor (defsVisitor conn ci tu)
 
-defsVisitorImpl :: WorkingPath -> IORef SourceFile -> IORef [DefInfo] -> IORef [Override]
-                -> IORef [Reference] -> IORef (Maybe TranslationUnit) -> ChildVisitor
-defsVisitorImpl wd sfRef dsRef osRef rsRef tuRef cursor _ = do
-  thisFile <- liftIO $! readIORef sfRef
+defsVisitor :: RPCConnection -> CommandInfo -> TranslationUnit -> ChildVisitor
+defsVisitor conn ci tu cursor _ = do
+  let thisFile = ciSourceFile ci
   loc <- getCursorLocation cursor
-  -- case inProject wd loc of
   case (thisFile == slFile loc) of
     True -> do  cKind <- C.getKind cursor
-                tu <- liftIO $ readIORef tuRef
                 defC <- C.getDefinition cursor
                 defIsNull <- C.isNullCursor defC
                 refC <- C.getReferenced cursor
@@ -174,7 +125,7 @@ defsVisitorImpl wd sfRef dsRef osRef rsRef tuRef cursor _ = do
                     (_, endLn, endCol, _) <- Source.getSpellingLocation endLoc
 
                     -- Determine the context.
-                    ctxC <- getContext (fromJust tu) cursor
+                    ctxC <- getContext tu cursor
                     ctxUSR <- XRef.getUSR ctxC >>= CS.unpackText
 
                     -- Record.
@@ -184,7 +135,7 @@ defsVisitorImpl wd sfRef dsRef osRef rsRef tuRef cursor _ = do
                                                                   (slCol loc)
                                                                   endLn endCol)
                                                     refKind ctxUSR referToUSR
-                    liftIO . modifyIORef' rsRef $! (reference :)
+                    liftIO $ runRPC (rpcFoundRef reference) conn
                 
                 -- Record method overrides.
                 -- TODO: I seem to recall that in C++11 you can override
@@ -195,11 +146,11 @@ defsVisitorImpl wd sfRef dsRef osRef rsRef tuRef cursor _ = do
                   usr <- XRef.getUSR cursor >>= CS.unpackText
                   forM_ overrideUSRs $ \oUSR -> do
                     override <- return $! Override usr oUSR
-                    liftIO . modifyIORef' osRef $! (override :)
+                    liftIO $ runRPC (rpcFoundOverride override) conn
 
                 -- Record class inheritance ("overrides").
                 when (cKind == C.Cursor_ClassDecl) $
-                  void $ visitChildren cursor (classVisitor osRef cursor)
+                  void $ visitChildren cursor (classVisitor conn cursor)
 
                 -- Record definitions.
                 -- TODO: Support labels.
@@ -208,7 +159,7 @@ defsVisitorImpl wd sfRef dsRef osRef rsRef tuRef cursor _ = do
                     name <- fqn cursor
                     let kind = toSourceKind cKind
                     def <- return $! DefInfo name usr loc kind
-                    liftIO . modifyIORef' dsRef $! (def :)
+                    liftIO $ runRPC (rpcFoundDef def) conn
 
                 -- Recurse (most of the time).
                 case cKind of
@@ -218,8 +169,8 @@ defsVisitorImpl wd sfRef dsRef osRef rsRef tuRef cursor _ = do
     -- Don't recurse into out-of-project header files.
     False -> return ChildVisit_Continue
 
-classVisitor :: IORef [Override] -> C.Cursor -> ChildVisitor
-classVisitor osRef thisClassC cursor _ = do
+classVisitor :: RPCConnection -> C.Cursor -> ChildVisitor
+classVisitor conn thisClassC cursor _ = do
   cKind <- C.getKind cursor
   case cKind of
     C.Cursor_CXXBaseSpecifier -> do
@@ -227,7 +178,7 @@ classVisitor osRef thisClassC cursor _ = do
       defC <- C.getDefinition cursor
       baseUSR <- XRef.getUSR defC >>= CS.unpackText
       override <- return $! Override thisClassUSR baseUSR
-      liftIO . modifyIORef' osRef $! (override :)
+      liftIO $ runRPC (rpcFoundOverride override) conn
       return ChildVisit_Break
     _ -> return ChildVisit_Continue
 
@@ -238,9 +189,6 @@ getCursorLocation cursor = do
   file <- case f of Just f' -> File.getName f' >>= CS.unpackText
                     Nothing -> return ""
   return $! SourceLocation file ln col
-
-inProject :: WorkingPath -> SourceLocation -> Bool
-inProject wd sl = (wd `T.isPrefixOf`) .&&. (not . T.null) $ slFile sl
 
 isDef :: C.Cursor -> C.CursorKind -> ClangApp Bool
 isDef c k = do
@@ -383,18 +331,10 @@ withTranslationUnit ci f = do
   where
     sf = ciSourceFile ci
     bail = throw . ClangException $ "Libclang couldn't parse " ++ (unSourceFile sf)
-    clangArgs = map T.unpack (cmdArguments . ciCommand $ ci)
+    clangArgs = map T.unpack (ciArgs $ ci)
     -- FIXME: Is something along these lines useful? Internet claims so but this
     -- may be outdated information, as things seems to work OK without it.
     --clangArgs = map T.unpack ("-I/usr/local/Cellar/llvm/3.2/lib/clang/3.2/include" : args)
-
--- FIXME: Temporary until the new Haskell Platform comes out, which has this
--- built in.
-modifyIORef' :: IORef a -> (a -> a) -> IO () 
-modifyIORef' ref f = do 
- a <- readIORef ref 
- let a' = f a 
- seq a' $ writeIORef ref a' 
 
 data ClangException = ClangException String
   deriving (Show, Typeable)

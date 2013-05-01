@@ -41,28 +41,30 @@ serverApp aChan dbChan dbQueryChan ad =
     process = do
       result <- await
       case result of
-        Just (RPCSendCommandInfo ci)       -> liftIO (doSendCommandInfo aChan ci) >>= yield
-        Just (RPCGetCommandInfo sf)        -> liftIO (doGetCommandInfo dbQueryChan sf) >>= yield
-        Just (RPCGetSimilarCommandInfo sf) -> liftIO (doGetSimilarCommandInfo dbQueryChan sf) >>= yield
-        Just (RPCGetDefinition usr)        -> liftIO (doGetDefinition dbQueryChan usr) >>= yield
-        Just (RPCGetCallers usr)           -> liftIO (doGetCallers dbQueryChan usr) >>= yield
-        Just (RPCGetCallees usr)           -> liftIO (doGetCallees dbQueryChan usr) >>= yield
-        Just (RPCGetBases usr)             -> liftIO (doGetBases dbQueryChan usr) >>= yield
-        Just (RPCGetOverrides usr)         -> liftIO (doGetOverrides dbQueryChan usr) >>= yield
-        Just (RPCGetRefs usr)              -> liftIO (doGetRefs dbQueryChan usr) >>= yield
-        Just (RPCGetReferenced sl)         -> liftIO (doGetReferenced dbQueryChan sl) >>= yield
-        Just (RPCFoundDef di)              -> liftIO (doFoundDef dbChan di) >>= yield
-        Just (RPCFoundOverride ov)         -> liftIO (doFoundOverride dbChan ov) >>= yield
-        Just (RPCFoundRef rf)              -> liftIO (doFoundRef dbChan rf) >>= yield
-        Just (RPCFoundInclusion ci ic)        -> liftIO (doFoundInclusion aChan dbChan ci ic) >>= yield
-        Just RPCPing                       -> yield . encode $ RPCOK ()
-        _                                  -> yield . encode $ (RPCError :: RPCResponse ())
+        Just (RPCSendCommandInfo ci)       -> liftIO (doSendCommandInfo aChan ci) >> process
+        Just (RPCGetCommandInfo sf)        -> liftIO (doGetCommandInfo dbQueryChan sf) >>= yield >> process
+        Just (RPCGetSimilarCommandInfo sf) -> liftIO (doGetSimilarCommandInfo dbQueryChan sf) >>= yield >> process
+        Just (RPCGetDefinition usr)        -> liftIO (doGetDefinition dbQueryChan usr) >>= yield >> process
+        Just (RPCGetCallers usr)           -> liftIO (doGetCallers dbQueryChan usr) >>= yield >> process
+        Just (RPCGetCallees usr)           -> liftIO (doGetCallees dbQueryChan usr) >>= yield >> process
+        Just (RPCGetBases usr)             -> liftIO (doGetBases dbQueryChan usr) >>= yield >> process
+        Just (RPCGetOverrides usr)         -> liftIO (doGetOverrides dbQueryChan usr) >>= yield >> process
+        Just (RPCGetRefs usr)              -> liftIO (doGetRefs dbQueryChan usr) >>= yield >> process
+        Just (RPCGetReferenced sl)         -> liftIO (doGetReferenced dbQueryChan sl) >>= yield >> process
+        Just (RPCFoundDef di)              -> liftIO (doFoundDef dbChan di) >> process
+        Just (RPCFoundOverride ov)         -> liftIO (doFoundOverride dbChan ov) >> process
+        Just (RPCFoundRef rf)              -> liftIO (doFoundRef dbChan rf) >> process
+        Just (RPCFoundInclusion ci ic)     -> liftIO (doFoundInclusion aChan dbChan ci ic) >> process
+        Just (RPCLog s)                    -> liftIO (logInfo s) >> process
+        Just RPCPing                       -> yield (encode $ RPCOK ()) >> process
+        Just RPCDone                       -> return ()  -- Close connection.
+        _                                  -> do liftIO $ logError "RPC server got bad request"
+                                                 yield . encode $ (RPCError :: RPCResponse ())
 
-doSendCommandInfo :: AnalysisChan -> CommandInfo -> IO ByteString
+doSendCommandInfo :: AnalysisChan -> CommandInfo -> IO ()
 doSendCommandInfo aChan ci = do
   logDebug $ "RPCSendCommandInfo: " ++ (show ci)
   writeLenChan aChan $ AnalyzeBuiltFile ci
-  return $! encode $ RPCOK ()
 
 doGetCommandInfo :: DBChan -> SourceFile -> IO ByteString
 doGetCommandInfo dbQueryChan f = do
@@ -124,34 +126,31 @@ doGetReferenced dbQueryChan sl = do
   mapM_ print result
   return $! encode $ RPCOK result
 
-doFoundDef :: DBChan -> DefInfo -> IO ByteString
+doFoundDef :: DBChan -> DefInfo -> IO ()
 doFoundDef dbChan di = do
   logDebug $ "RPCFoundDef: " ++ (show di)
   writeLenChan dbChan $ DBUpdateDefInfo di
-  return $! encode $ RPCOK ()
 
-doFoundOverride :: DBChan -> Override -> IO ByteString
+doFoundOverride :: DBChan -> Override -> IO ()
 doFoundOverride dbChan ov = do
   logDebug $ "RPCFoundOverride: " ++ (show ov)
   writeLenChan dbChan $ DBUpdateOverride ov
-  return $! encode $ RPCOK ()
 
-doFoundRef :: DBChan -> Reference -> IO ByteString
+doFoundRef :: DBChan -> Reference -> IO ()
 doFoundRef dbChan rf = do
   logDebug $ "RPCFoundRef: " ++ (show rf)
   writeLenChan dbChan $ DBUpdateRef rf
-  return $! encode $ RPCOK ()
 
-doFoundInclusion :: AnalysisChan -> DBChan -> CommandInfo -> Inclusion -> IO ByteString
+doFoundInclusion :: AnalysisChan -> DBChan -> CommandInfo -> Inclusion -> IO ()
 doFoundInclusion aChan dbChan ci ic = do
     -- FIXME Do some of this in pygclangindex.
     logDebug $ "RPCFoundInclusion: " ++ (show ic)
-    let cmd' = ciCommand ci
-    let newCmd' = cmd' { cmdArguments = (cmdArguments cmd') ++ (incArgs . ciLanguage $ ci) }
-    let newCI = ci { ciCommand = newCmd', ciLastIndexed = 0, ciSourceFile = icHeaderFile ic }
+    let ci' = ci { ciArgs = (ciArgs ci) ++ (incArgs . ciLanguage $ ci)
+                 , ciLastIndexed = 0
+                 , ciSourceFile = icHeaderFile ic
+                 }
     liftIO (writeLenChan dbChan (DBUpdateInclusion ic))
-    liftIO (writeLenChan aChan (AnalyzeBuiltFile newCI))
-    return $! encode $ RPCOK ()
+    liftIO (writeLenChan aChan (AnalyzeBuiltFile ci'))
   where
     incArgs CLanguage       = ["-x", "c"]
     incArgs CPPLanguage     = ["-x", "c++"]

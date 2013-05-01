@@ -5,7 +5,6 @@ module Pygmalion.Core
 , SourceFile
 , WorkingPath
 , Time
-, Command (..)
 , Language (..)
 , Inclusion (..)
 , DefInfo (..)
@@ -53,10 +52,11 @@ type Port = Int
 data CommandInfo = CommandInfo
   { ciSourceFile  :: !SourceFile
   , ciWorkingPath :: !WorkingPath
-  , ciCommand     :: !Command
+  , ciCommand     :: !T.Text
+  , ciArgs        :: ![T.Text]
   , ciLanguage    :: !Language
   , ciLastIndexed :: !Time
-  } deriving (Eq, Show, Generic)
+  } deriving (Eq, Read, Show, Generic)
 
 instance Serialize T.Text where
   put = put . TE.encodeUtf16BE
@@ -66,17 +66,12 @@ instance Serialize T.Text where
 instance Serialize CommandInfo
 
 instance FromRow CommandInfo where
-  fromRow = CommandInfo <$> field <*> field <*> fromRow <*> fromRow <*> field
-
-data Command = Command
-    { cmdExecutable :: !T.Text
-    , cmdArguments  :: ![T.Text]
-    } deriving (Eq, Show, Generic)
-
-instance Serialize Command
-
-instance FromRow Command where
-  fromRow = Command <$> field <*> (T.words <$> field)
+  fromRow = CommandInfo <$> field               -- ciSourceFile
+                        <*> field               -- ciWorkingPath
+                        <*> field               -- ciCommand
+                        <*> (T.words <$> field) -- ciArgs
+                        <*> fromRow             -- ciLanguage
+                        <*> field               -- ciLastIndexed
 
 type SourceFile = T.Text
 
@@ -95,7 +90,7 @@ type Time = Int64
 data Language = CLanguage
               | CPPLanguage
               | UnknownLanguage
-              deriving (Eq, Enum, Generic, Ord, Show)
+              deriving (Eq, Enum, Generic, Ord, Read, Show)
 
 instance Serialize Language
 
