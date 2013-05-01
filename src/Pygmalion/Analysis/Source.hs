@@ -71,8 +71,8 @@ inclusionsVisitor conn wd ci file iStack = do
     when (isLocalHeader wd ic) $ do
       case iStack of
         []       -> return () -- The source file itself.
-        (_ : []) -> liftIO $ runRPC (rpcFoundInclusion ci (Inclusion (ciSourceFile ci) ic True)) conn
-        (_ : _)  -> liftIO $ runRPC (rpcFoundInclusion ci (Inclusion (ciSourceFile ci) ic False)) conn
+        (_ : []) -> liftIO $ runRPC (rpcFoundInclusion (Inclusion ci ic True)) conn
+        (_ : _)  -> liftIO $ runRPC (rpcFoundInclusion (Inclusion ci ic False)) conn
 
 isLocalHeader :: WorkingPath -> SourceFile -> Bool
 isLocalHeader wd p = (wd `T.isPrefixOf`) .&&. (not . T.null) $ p

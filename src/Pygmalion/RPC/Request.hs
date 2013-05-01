@@ -23,7 +23,7 @@ data RPCRequest = RPCSendCommandInfo CommandInfo
                 | RPCFoundDef DefInfo
                 | RPCFoundOverride Override
                 | RPCFoundRef Reference
-                | RPCFoundInclusion CommandInfo Inclusion
+                | RPCFoundInclusion Inclusion
                 | RPCPing
                 | RPCLog String
                 | RPCDone

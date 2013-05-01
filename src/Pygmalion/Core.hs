@@ -99,15 +99,12 @@ instance FromRow Language where
 
 -- Inclusion metadata.
 data Inclusion = Inclusion
-    { icSourceFile :: !SourceFile
-    , icHeaderFile :: !SourceFile
-    , icDirect     :: !Bool
+    { icCommandInfo :: !CommandInfo
+    , icHeaderFile  :: !SourceFile
+    , icDirect      :: !Bool
     } deriving (Eq, Show, Generic)
 
 instance Serialize Inclusion
-
-instance FromRow Inclusion where
-  fromRow = Inclusion <$> field <*> field <*> field
 
 -- The information we collect about definitions in source code.
 data DefInfo = DefInfo

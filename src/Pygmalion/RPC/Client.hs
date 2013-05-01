@@ -111,8 +111,8 @@ rpcFoundOverride ov = callRPC_ (RPCFoundOverride ov) =<< Reader.ask
 rpcFoundRef :: Reference -> RPC ()
 rpcFoundRef rf = callRPC_ (RPCFoundRef rf) =<< Reader.ask
 
-rpcFoundInclusion :: CommandInfo -> Inclusion -> RPC ()
-rpcFoundInclusion ci ic = callRPC_ (RPCFoundInclusion ci ic) =<< Reader.ask
+rpcFoundInclusion :: Inclusion -> RPC ()
+rpcFoundInclusion ic = callRPC_ (RPCFoundInclusion ic) =<< Reader.ask
 
 callRPC :: Serialize a => RPCRequest -> RPCConnection -> RPC a
 callRPC req conn = liftIO $ do

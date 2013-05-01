@@ -54,7 +54,7 @@ serverApp aChan dbChan dbQueryChan ad =
         Just (RPCFoundDef di)              -> liftIO (doFoundDef dbChan di) >> process
         Just (RPCFoundOverride ov)         -> liftIO (doFoundOverride dbChan ov) >> process
         Just (RPCFoundRef rf)              -> liftIO (doFoundRef dbChan rf) >> process
-        Just (RPCFoundInclusion ci ic)     -> liftIO (doFoundInclusion aChan dbChan ci ic) >> process
+        Just (RPCFoundInclusion ic)        -> liftIO (doFoundInclusion aChan dbChan ic) >> process
         Just (RPCLog s)                    -> liftIO (logInfo s) >> process
         Just RPCPing                       -> yield (encode $ RPCOK ()) >> process
         Just RPCDone                       -> return ()  -- Close connection.
@@ -141,10 +141,11 @@ doFoundRef dbChan rf = do
   logDebug $ "RPCFoundRef: " ++ (show rf)
   writeLenChan dbChan $ DBUpdateRef rf
 
-doFoundInclusion :: AnalysisChan -> DBChan -> CommandInfo -> Inclusion -> IO ()
-doFoundInclusion aChan dbChan ci ic = do
+doFoundInclusion :: AnalysisChan -> DBChan -> Inclusion -> IO ()
+doFoundInclusion aChan dbChan ic = do
     -- FIXME Do some of this in pygclangindex.
     logDebug $ "RPCFoundInclusion: " ++ (show ic)
+    let ci = icCommandInfo ic
     let ci' = ci { ciArgs = (ciArgs ci) ++ (incArgs . ciLanguage $ ci)
                  , ciLastIndexed = 0
                  , ciSourceFile = icHeaderFile ic

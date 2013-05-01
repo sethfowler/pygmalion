@@ -283,8 +283,8 @@ defineInclusionsTable c = execute_ c (mkQueryT sql)
                        , "Direct integer not null)" ]
 
 updateInclusion :: DBHandle -> Inclusion -> IO ()
-updateInclusion h (Inclusion sf hf d) = do
-    let sfHash = hash sf
+updateInclusion h (Inclusion ci hf d) = do
+    let sfHash = hash (ciSourceFile ci)
     let hfHash = hash hf
     execStatement h updateInclusionStmt (sfHash, hfHash, d)
 
