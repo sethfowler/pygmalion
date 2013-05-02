@@ -1,10 +1,10 @@
 {-# LANGUAGE OverloadedStrings, ViewPatterns #-}
 
 import Control.Monad
+import qualified Data.ByteString.UTF8 as B
 import Data.List
 import Data.Maybe
 import Data.Ord
-import qualified Data.Text as T
 import Safe (readMay)
 import System.Directory
 import System.Environment
@@ -80,11 +80,12 @@ printCDB = undefined
 
 printFlags :: Config -> SourceFile -> IO ()
 printFlags cf f = getCommandInfoOr bail f cf >>= putFlags
-  where putFlags (ciArgs -> args) = putStrLn . T.unpack . T.intercalate " " $ args
+  where
+    putFlags (ciArgs -> args) = putStrLn . intercalate " " . map B.toString $ args
 
 printDir :: Config -> SourceFile -> IO ()
 printDir cf f = getCommandInfoOr bail f cf >>= putDir
-  where putDir (ciWorkingPath -> wd) = putStrLn . T.unpack $ wd
+  where putDir (ciWorkingPath -> wd) = putStrLn . B.toString $ wd
 
 getCommandInfoOr :: IO () -> SourceFile -> Config -> IO CommandInfo
 getCommandInfoOr a f cf = do
@@ -108,13 +109,13 @@ printDef cf f (Just line) (Just col) = do
   where 
     errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
     idErr = errPrefix ++ "No identifier at this location."
-    defErr usr = errPrefix ++ "No definition for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
+    defErr usr = errPrefix ++ "No definition for this identifier. USR = [" ++ (B.toString usr) ++ "]"
     putDef (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Definition: " ++ (T.unpack n) ++ " [" ++ (show k) ++ "]"
+                 ": Definition: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
     putDecl (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Declaration: " ++ (T.unpack n) ++ " [" ++ (show k) ++ "]"
+                 ": Declaration: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
 printDef _ _ _ _ = usage
 
 printCallers :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
@@ -128,7 +129,7 @@ printCallers cf f (Just line) (Just col) = do
   where 
     errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
     idErr = errPrefix ++ "No identifier at this location."
-    defErr usr = errPrefix ++ "No callers for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
+    defErr usr = errPrefix ++ "No callers for this identifier. USR = [" ++ (B.toString usr) ++ "]"
     printCallers' usr = do
       callers <- withRPC cf $ runRPC (rpcGetCallers usr)
       case (null callers) of
@@ -136,7 +137,7 @@ printCallers cf f (Just line) (Just col) = do
         False -> mapM_ putCaller callers
     putCaller (Invocation (DefInfo n _ _ _) (SourceLocation idF idLine idCol)) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Caller: " ++ (T.unpack n)
+                 ": Caller: " ++ (B.toString n)
 printCallers _ _ _ _ = usage
 
 printCallees :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
@@ -150,7 +151,7 @@ printCallees cf f (Just line) (Just col) = do
   where 
     errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
     idErr = errPrefix ++ "No identifier at this location."
-    defErr usr = errPrefix ++ "No callees for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
+    defErr usr = errPrefix ++ "No callees for this identifier. USR = [" ++ (B.toString usr) ++ "]"
     printCallees' usr = do
       callees <- withRPC cf $ runRPC (rpcGetCallees usr)
       case (null callees) of
@@ -158,7 +159,7 @@ printCallees cf f (Just line) (Just col) = do
         False -> mapM_ putCallee callees
     putCallee (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Callee: " ++ (T.unpack n) ++ " [" ++ (show k) ++ "]"
+                 ": Callee: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
 printCallees _ _ _ _ = usage
 
 printBases :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
@@ -172,7 +173,7 @@ printBases cf f (Just line) (Just col) = do
   where 
     errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
     idErr = errPrefix ++ "No identifier at this location."
-    defErr usr = errPrefix ++ "No bases for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
+    defErr usr = errPrefix ++ "No bases for this identifier. USR = [" ++ (B.toString usr) ++ "]"
     printBases' usr = do
       callers <- withRPC cf $ runRPC (rpcGetBases usr)
       case (null callers) of
@@ -180,7 +181,7 @@ printBases cf f (Just line) (Just col) = do
         False -> mapM_ putBase callers
     putBase (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Base: " ++ (T.unpack n) ++ " [" ++ (show k) ++ "]"
+                 ": Base: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
 printBases _ _ _ _ = usage
 
 printOverrides :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
@@ -194,7 +195,7 @@ printOverrides cf f (Just line) (Just col) = do
   where 
     errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
     idErr = errPrefix ++ "No identifier at this location."
-    defErr usr = errPrefix ++ "No overrides for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
+    defErr usr = errPrefix ++ "No overrides for this identifier. USR = [" ++ (B.toString usr) ++ "]"
     printOverrides' usr = do
       callees <- withRPC cf $ runRPC (rpcGetOverrides usr)
       case (null callees) of
@@ -202,7 +203,7 @@ printOverrides cf f (Just line) (Just col) = do
         False -> mapM_ putOverride callees
     putOverride (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Override: " ++ (T.unpack n) ++ " [" ++ (show k) ++ "]"
+                 ": Override: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
 printOverrides _ _ _ _ = usage
 
 printRefs :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
@@ -216,7 +217,7 @@ printRefs cf f (Just line) (Just col) = do
   where 
     errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
     idErr = errPrefix ++ "No identifier at this location."
-    defErr usr = errPrefix ++ "No references for this identifier. USR = [" ++ (T.unpack usr) ++ "]"
+    defErr usr = errPrefix ++ "No references for this identifier. USR = [" ++ (B.toString usr) ++ "]"
     printRefs' usr = do
       refs <- withRPC cf $ runRPC (rpcGetRefs usr)
       case (null refs) of
@@ -224,7 +225,7 @@ printRefs cf f (Just line) (Just col) = do
         False -> mapM_ putRef refs
     putRef (SourceReference (SourceLocation idF idLine idCol) k ctx) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Reference: " ++ (T.unpack ctx) ++ " [" ++ (show k) ++ "]"
+                 ": Reference: " ++ (B.toString ctx) ++ " [" ++ (show k) ++ "]"
 printRefs _ _ _ _ = usage
 
 printAST :: Config -> SourceFile -> IO ()

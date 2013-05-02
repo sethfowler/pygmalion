@@ -24,7 +24,7 @@ module Pygmalion.Core
 , Port
 , mkSourceFile
 , unSourceFile
-, unSourceFileText
+--, unSourceFileText
 , queryExecutable
 , scanExecutable
 , makeExecutable
@@ -37,6 +37,7 @@ module Pygmalion.Core
 
 import Control.Applicative
 import Control.Monad
+import qualified Data.ByteString.UTF8 as B
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import Data.Int
@@ -52,16 +53,18 @@ type Port = Int
 data CommandInfo = CommandInfo
   { ciSourceFile  :: !SourceFile
   , ciWorkingPath :: !WorkingPath
-  , ciCommand     :: !T.Text
-  , ciArgs        :: ![T.Text]
+  , ciCommand     :: !B.ByteString
+  , ciArgs        :: ![B.ByteString]
   , ciLanguage    :: !Language
   , ciLastIndexed :: !Time
   } deriving (Eq, Read, Show, Generic)
 
+{-
 instance Serialize T.Text where
   put = put . TE.encodeUtf16BE
   get = liftM (TE.decodeUtf16BEWith onError) get
       where onError _ _ = Nothing
+-}
 
 instance Serialize CommandInfo
 
@@ -69,22 +72,24 @@ instance FromRow CommandInfo where
   fromRow = CommandInfo <$> field               -- ciSourceFile
                         <*> field               -- ciWorkingPath
                         <*> field               -- ciCommand
-                        <*> (T.words <$> field) -- ciArgs
+                        <*> (B.lines <$> field) -- ciArgs
                         <*> fromRow             -- ciLanguage
                         <*> field               -- ciLastIndexed
 
-type SourceFile = T.Text
+type SourceFile = B.ByteString
 
 mkSourceFile :: FilePath -> SourceFile
-mkSourceFile = T.pack
+mkSourceFile = B.fromString
 
-unSourceFileText :: SourceFile -> T.Text
+{-
+unSourceFileText :: SourceFile -> B.ByteString
 unSourceFileText = id
+-}
 
 unSourceFile :: SourceFile -> FilePath
-unSourceFile = T.unpack
+unSourceFile = B.toString
 
-type WorkingPath = T.Text
+type WorkingPath = B.ByteString
 type Time = Int64
 
 data Language = CLanguage
@@ -143,8 +148,8 @@ instance Serialize SourceRange
 instance FromRow SourceRange where
   fromRow = SourceRange <$> field <*> field <*> field <*> field <*> field
 
-type Identifier = T.Text
-type USR        = T.Text
+type Identifier = B.ByteString
+type USR        = B.ByteString
 type SourceLine = Int
 type SourceCol  = Int
 
@@ -196,7 +201,7 @@ instance Serialize SourceReference
 instance FromRow SourceReference where
   fromRow = SourceReference <$> fromRow <*> fromRow <*> field
 
-type SourceContext = T.Text
+type SourceContext = B.ByteString
 
 -- Tool names.
 queryExecutable, scanExecutable, makeExecutable, daemonExecutable, clangExecutable :: String

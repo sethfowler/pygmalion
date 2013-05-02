@@ -1,6 +1,6 @@
 import Control.Applicative
 import Control.Exception
-import qualified Data.Text as T
+import qualified Data.ByteString.UTF8 as B
 import System.Directory
 import System.Environment
 import System.Posix.Process
@@ -16,7 +16,7 @@ main = do
       initLogger INFO
       nice 10
       (port, ci) <- parseArgs =<< getArgs
-      wd <- T.pack <$> getCurrentDirectory
+      wd <- B.fromString <$> getCurrentDirectory
       withRPCRaw port (runSourceAnalyses wd ci)
     case result of
       Left e   -> logError $ "Indexing process threw exception " ++ (show (e :: SomeException))

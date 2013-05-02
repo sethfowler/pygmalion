@@ -31,6 +31,7 @@ module Pygmalion.Database.IO
 import Control.Applicative
 import Control.Exception (bracket)
 import Control.Monad
+import qualified Data.ByteString as B
 import Data.Hashable
 import Data.Int
 import Data.String
@@ -384,7 +385,7 @@ updateSourceFile h (CommandInfo sf wd cmd args lang t) = do
     execStatement h insertPathStmt (wd, wdHash)
     let cmdHash = hash cmd
     execStatement h insertCommandStmt (cmd, cmdHash)
-    let argsJoined = T.intercalate " " args
+    let argsJoined = B.intercalate "\n" args
     let argsHash = hash argsJoined
     execStatement h insertArgsStmt (argsJoined, argsHash)
     execStatement h updateSourceFileStmt (sfHash, wdHash, cmdHash, argsHash, fromEnum lang, t)

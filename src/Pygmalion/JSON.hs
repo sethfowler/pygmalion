@@ -4,7 +4,8 @@ module Pygmalion.JSON
 ( sourceRecordsToJSON
 ) where
 
-import qualified Data.Text as T
+import qualified Data.ByteString.UTF8 as B
+import Data.List
 import Text.JSON
 
 import Pygmalion.Core
@@ -12,6 +13,6 @@ import Pygmalion.Core
 sourceRecordsToJSON :: [CommandInfo] -> String
 sourceRecordsToJSON cis = encodeStrict $ map (toJSObject . toKeyValue) cis
   where toKeyValue (CommandInfo sf wd cmd args _ _) =
-          [("file", unSourceFileText sf),
-           ("directory", wd),
-           ("command", T.intercalate " " (cmd : args))]
+          [("file", unSourceFile sf),
+           ("directory", B.toString wd),
+           ("command", intercalate " " $ map B.toString (cmd : args))]

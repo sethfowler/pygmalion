@@ -5,9 +5,9 @@ module Pygmalion.Analysis.Command
 ) where
 
 import Control.Applicative
+import qualified Data.ByteString.UTF8 as B
 import Data.List
 import Data.Maybe
-import qualified Data.Text as T
 import System.Directory
 import System.Path
 
@@ -18,11 +18,11 @@ getCommandInfo :: String -> [String] -> IO (Maybe CommandInfo)
 getCommandInfo cmd args = do
     wd <- getCurrentDirectory
     let sourceFile = find hasSourceExtension args >>= absNormPath wd
-    let finalArgs = map T.pack . absArgs wd . filterArgs $ args
+    let finalArgs = map B.fromString . absArgs wd . filterArgs $ args
     return $ flip fmap sourceFile $ \sf ->
       CommandInfo (mkSourceFile sf)
-                  (T.pack wd)
-                  (T.pack cmd)
+                  (B.fromString wd)
+                  (B.fromString cmd)
                   finalArgs
                   (inferLang args sf)
                   0
