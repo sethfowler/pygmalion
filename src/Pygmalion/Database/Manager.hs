@@ -48,7 +48,7 @@ runDatabaseManager chan queryChan = do
       newStart <- getCurrentTime
       go 0 newStart h
     go !n !s !h = {-# SCC "databaseThread" #-}
-           do (!tookFirst, !newCount, !req) <- readLenChanPreferFirst queryChan chan
+           do (!tookFirst, !newCount, !req) <- readEitherChan n queryChan chan
               logDebug $ if tookFirst then "Query channel now has " ++ (show newCount) ++ " queries waiting"
                                       else "Database channel now has " ++ (show newCount) ++ " requests waiting"
               case req of
@@ -69,6 +69,11 @@ runDatabaseManager chan queryChan = do
                 DBGetRefs !usr !v             -> doGetRefs h usr v >> go (n+1) s h
                 DBGetReferenced !sl !v        -> doGetReferenced h sl v >> go (n+1) s h
                 DBShutdown                    -> logInfo "Shutting down DB thread"
+
+readEitherChan :: Int -> DBChan -> DBChan -> IO (Bool, Int, DBRequest)
+readEitherChan n queryChan chan
+  | n `rem` 10 == 0 = readLenChanPreferFirst queryChan chan
+  | otherwise       = readLenChanPreferFirst chan queryChan
 
 doUpdateCommandInfo :: DBHandle -> CommandInfo -> IO ()
 doUpdateCommandInfo h ci = withTransaction h $ do
