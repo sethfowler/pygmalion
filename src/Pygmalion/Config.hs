@@ -15,34 +15,34 @@ import Pygmalion.Core
 import Pygmalion.Log
 
 data Config = Config
-  { ifAddr   :: String    -- Address of interface to bind to.
-  , ifPort   :: Port      -- Port to bind to.
-  , make     :: String    -- Make executable to use.
-  , makeArgs :: [String]  -- Extra make args, if any.
+  { ifAddr    :: String    -- Address of interface to bind to.
+  , ifPort    :: Port      -- Port to bind to.
+  , make      :: String    -- Make executable to use.
+  , makeArgs  :: [String]  -- Extra make args, if any.
   , cmake     :: String   -- CMake executable to use.
   , cmakeArgs :: [String] -- Extra CMake args, if any.
-  , makeCDB  :: Bool      -- If true, pygmake generates a CDB automatically.
-  , cc       :: String    -- C compiler executable to use.
-  , ccArgs   :: [String]  -- Extra C compiler args, if any.
-  , cpp      :: String    -- C++ compiler executable to use.
-  , cppArgs  :: [String]  -- Extra C++ compiler args, if any.
-  , logLevel :: Priority  -- The level of logging to enable.
+  , makeCDB   :: Bool      -- If true, pygmake generates a CDB automatically.
+  , cc        :: String    -- C compiler executable to use.
+  , ccArgs    :: [String]  -- Extra C compiler args, if any.
+  , cpp       :: String    -- C++ compiler executable to use.
+  , cppArgs   :: [String]  -- Extra C++ compiler args, if any.
+  , logLevel  :: Priority  -- The level of logging to enable.
   } deriving (Eq, Show)
 
 defaultConfig :: Config
 defaultConfig = Config
-  { ifAddr   = "127.0.0.1"
-  , ifPort   = 7999
-  , make     = "make"
-  , makeArgs = []
+  { ifAddr    = "127.0.0.1"
+  , ifPort    = 7999
+  , make      = "make"
+  , makeArgs  = []
   , cmake     = "cmake"
   , cmakeArgs = []
-  , makeCDB  = False
-  , cc       = "clang"
-  , ccArgs   = []
-  , cpp      = "clang++"
-  , cppArgs  = []
-  , logLevel = INFO
+  , makeCDB   = False
+  , cc        = "clang"
+  , ccArgs    = []
+  , cpp       = "clang++"
+  , cppArgs   = []
+  , logLevel  = INFO
   }
 
 instance CT.Configured [String] where
