@@ -6,6 +6,7 @@ module Pygmalion.RPC.Server
 
 -- import Control.Concurrent.Chan
 import Control.Concurrent.MVar
+import Control.Monad
 import Control.Monad.Trans
 import Data.ByteString.Char8 (ByteString)
 import Data.Conduit
@@ -54,7 +55,7 @@ serverApp aChan dbChan dbQueryChan ad =
         Just (RPCFoundDef di)              -> liftIO (doFoundDef dbChan di) >> process
         Just (RPCFoundOverride ov)         -> liftIO (doFoundOverride dbChan ov) >> process
         Just (RPCFoundRef rf)              -> liftIO (doFoundRef dbChan rf) >> process
-        Just (RPCFoundInclusion ic)        -> liftIO (doFoundInclusion aChan dbChan ic) >> process
+        Just (RPCFoundInclusion ic)        -> liftIO (doFoundInclusion aChan dbChan dbQueryChan ic) >> process
         Just (RPCLog s)                    -> liftIO (logInfo s) >> process
         Just RPCPing                       -> yield (encode $ RPCOK ()) >> process
         Just RPCDone                       -> return ()  -- Close connection.
@@ -141,8 +142,10 @@ doFoundRef dbChan rf = do
   logDebug $ "RPCFoundRef: " ++ (show rf)
   writeLenChan dbChan $ DBUpdateRef rf
 
-doFoundInclusion :: AnalysisChan -> DBChan -> Inclusion -> IO ()
-doFoundInclusion aChan dbChan ic = do
+doFoundInclusion :: AnalysisChan -> DBChan -> DBChan -> Inclusion -> IO ()
+doFoundInclusion aChan dbChan dbQueryChan ic = do
   logDebug $ "RPCFoundInclusion: " ++ (show ic)
-  liftIO (writeLenChan dbChan (DBUpdateInclusion ic))
-  liftIO (writeLenChan aChan (AnalyzeBuiltFile . icCommandInfo $ ic))
+  writeLenChan dbChan (DBUpdateInclusion ic)
+  existing <- callLenChan dbQueryChan (DBInsertFileAndCheck . icHeaderFile $ ic)
+  when (not existing) $
+    writeLenChan aChan (AnalyzeBuiltFile . icCommandInfo $ ic)

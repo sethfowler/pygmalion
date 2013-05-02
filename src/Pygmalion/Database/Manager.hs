@@ -22,6 +22,7 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBUpdateOverride Override
                | DBUpdateRef Reference
                | DBUpdateInclusion Inclusion
+               | DBInsertFileAndCheck SourceFile (MVar Bool)
                | DBResetMetadata SourceFile
                | DBGetCommandInfo SourceFile (MVar (Maybe CommandInfo))
                | DBGetSimilarCommandInfo SourceFile (MVar (Maybe CommandInfo))
@@ -56,6 +57,7 @@ runDatabaseManager chan queryChan = do
                 DBUpdateDefInfo !di           -> doUpdateDefInfo h di >> go (n+1) s h
                 DBUpdateOverride !ov          -> doUpdateOverride h ov >> go (n+1) s h
                 DBUpdateRef !rf               -> doUpdateRef h rf >> go (n+1) s h
+                DBInsertFileAndCheck !sf !v   -> doInsertFileAndCheck h sf v >> go (n+1) s h
                 DBUpdateInclusion !ic         -> doUpdateInclusion h ic >> go (n+1) s h
                 DBResetMetadata !sf           -> doResetMetadata h sf >> go (n+1) s h
                 DBGetCommandInfo !f !v        -> doGetCommandInfo h f v >> go (n+1) s h
@@ -99,6 +101,12 @@ doUpdateInclusion :: DBHandle -> Inclusion -> IO ()
 doUpdateInclusion h ic = withTransaction h $ do
     logDebug $ "Updating database with inclusion: " ++ (show ic)
     updateInclusion h ic
+
+doInsertFileAndCheck :: DBHandle -> SourceFile -> MVar Bool -> IO ()
+doInsertFileAndCheck h f v = do
+  logDebug $ "Inserting file and checking for " ++ (show f)
+  exists <- insertFileAndCheck h f
+  putMVar v $! exists
 
 doResetMetadata :: DBHandle -> SourceFile -> IO ()
 doResetMetadata h sf = withTransaction h $ do

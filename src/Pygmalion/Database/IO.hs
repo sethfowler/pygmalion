@@ -10,6 +10,7 @@ module Pygmalion.Database.IO
 , updateInclusion
 , getInclusions
 , getIncluders
+, insertFileAndCheck
 , updateSourceFile
 , getAllSourceFiles
 , getCommandInfo
@@ -36,6 +37,7 @@ import Data.Hashable
 import Data.Int
 import Data.String
 import qualified Data.Text as T
+import qualified Database.SQLite3.Direct as Direct
 import Database.SQLite.Simple
 import System.FilePath.Posix
 
@@ -271,6 +273,12 @@ defineFilesTable c = execute_ c (mkQueryT sql)
   where sql = T.concat [ "create table if not exists Files(         "
                        , "Hash integer primary key unique not null, "
                        , "Name varchar(2048) not null)" ]
+
+insertFileAndCheck :: DBHandle -> SourceFile -> IO Bool
+insertFileAndCheck h sf = do
+  let sfHash = hash sf
+  execStatement h insertFileStmt (sf, sfHash)
+  (== 0) <$> Direct.changes (connectionHandle . conn $ h)
 
 insertFileSQL :: T.Text
 insertFileSQL = "insert or ignore into Files (Name, Hash) values (?, ?)"
