@@ -52,9 +52,9 @@ serverApp aChan dbChan dbQueryChan ad =
         Just (RPCGetOverrides usr)         -> liftIO (doGetOverrides dbQueryChan usr) >>= yield >> process
         Just (RPCGetRefs usr)              -> liftIO (doGetRefs dbQueryChan usr) >>= yield >> process
         Just (RPCGetReferenced sl)         -> liftIO (doGetReferenced dbQueryChan sl) >>= yield >> process
-        Just (RPCFoundDef di)              -> liftIO (doFoundDef dbChan di) >> process
+        Just (RPCFoundDef du)              -> liftIO (doFoundDef dbChan du) >> process
         Just (RPCFoundOverride ov)         -> liftIO (doFoundOverride dbChan ov) >> process
-        Just (RPCFoundRef rf)              -> liftIO (doFoundRef dbChan rf) >> process
+        Just (RPCFoundRef ru)              -> liftIO (doFoundRef dbChan ru) >> process
         Just (RPCFoundInclusion ic)        -> liftIO (doFoundInclusion aChan dbChan dbQueryChan ic) >> process
         Just (RPCLog s)                    -> liftIO (logInfo s) >> process
         Just RPCPing                       -> yield (encode $ RPCOK ()) >> process
@@ -127,17 +127,17 @@ doGetReferenced dbQueryChan sl = do
   mapM_ print result
   return $! encode $ RPCOK result
 
-doFoundDef :: DBChan -> DefInfo -> IO ()
+doFoundDef :: DBChan -> DefUpdate -> IO ()
 doFoundDef dbChan di = do
   logDebug $ "RPCFoundDef: " ++ (show di)
-  writeLenChan dbChan $ DBUpdateDefInfo di
+  writeLenChan dbChan $ DBUpdateDef di
 
 doFoundOverride :: DBChan -> Override -> IO ()
 doFoundOverride dbChan ov = do
   logDebug $ "RPCFoundOverride: " ++ (show ov)
   writeLenChan dbChan $ DBUpdateOverride ov
 
-doFoundRef :: DBChan -> Reference -> IO ()
+doFoundRef :: DBChan -> ReferenceUpdate -> IO ()
 doFoundRef dbChan rf = do
   logDebug $ "RPCFoundRef: " ++ (show rf)
   writeLenChan dbChan $ DBUpdateRef rf

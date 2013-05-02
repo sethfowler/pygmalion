@@ -102,13 +102,13 @@ rpcGetRefs usr = callRPC (RPCGetRefs usr) =<< Reader.ask
 rpcGetReferenced :: SourceLocation -> RPC [SourceReferenced]
 rpcGetReferenced sl = callRPC (RPCGetReferenced sl) =<< Reader.ask
 
-rpcFoundDef :: DefInfo -> RPC ()
+rpcFoundDef :: DefUpdate -> RPC ()
 rpcFoundDef di = callRPC_ (RPCFoundDef di) =<< Reader.ask
 
 rpcFoundOverride :: Override -> RPC ()
 rpcFoundOverride ov = callRPC_ (RPCFoundOverride ov) =<< Reader.ask
 
-rpcFoundRef :: Reference -> RPC ()
+rpcFoundRef :: ReferenceUpdate -> RPC ()
 rpcFoundRef rf = callRPC_ (RPCFoundRef rf) =<< Reader.ask
 
 rpcFoundInclusion :: Inclusion -> RPC ()

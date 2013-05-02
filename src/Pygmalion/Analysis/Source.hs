@@ -23,6 +23,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as BU
+import Data.Hashable
 import Data.Maybe
 import Data.Typeable
 
@@ -141,11 +142,14 @@ defsVisitor conn ci tu cursor _ = do
 
                     -- Record.
                     let refKind = toSourceKind cKind
-                    reference <- return $! Reference (SourceRange (slFile loc)
-                                                                  (slLine loc)
-                                                                  (slCol loc)
-                                                                  endLn endCol)
-                                                    refKind ctxUSR referToUSR
+                    reference <- return $! ReferenceUpdate (hash . slFile $ loc)
+                                                           (slLine loc)
+                                                           (slCol loc)
+                                                           endLn
+                                                           endCol
+                                                           refKind
+                                                           (hash ctxUSR)
+                                                           (hash referToUSR)
                     liftIO $ runRPC (rpcFoundRef reference) conn
                 
                 -- Record method overrides.
@@ -156,7 +160,7 @@ defsVisitor conn ci tu cursor _ = do
                   overrideUSRs <- mapM (CS.unpackByteString <=< XRef.getUSR) overrides
                   usr <- XRef.getUSR cursor >>= CS.unpackByteString
                   forM_ overrideUSRs $ \oUSR -> do
-                    override <- return $! Override usr oUSR
+                    override <- return $! Override (hash usr) (hash oUSR)
                     liftIO $ runRPC (rpcFoundOverride override) conn
 
                 -- Record class inheritance ("overrides").
@@ -169,7 +173,12 @@ defsVisitor conn ci tu cursor _ = do
                     usr <- XRef.getUSR cursor >>= CS.unpackByteString
                     name <- fqn cursor
                     let kind = toSourceKind cKind
-                    def <- return $! DefInfo name usr loc kind
+                    def <- return $! DefUpdate name
+                                               usr
+                                               (hash . slFile $ loc)
+                                               (slLine loc)
+                                               (slCol loc)
+                                               kind
                     liftIO $ runRPC (rpcFoundDef def) conn
 
                 -- Recurse (most of the time).
@@ -188,7 +197,7 @@ classVisitor conn thisClassC cursor _ = do
       thisClassUSR <- XRef.getUSR thisClassC >>= CS.unpackByteString
       defC <- C.getDefinition cursor
       baseUSR <- XRef.getUSR defC >>= CS.unpackByteString
-      override <- return $! Override thisClassUSR baseUSR
+      override <- return $! Override (hash thisClassUSR) (hash baseUSR)
       liftIO $ runRPC (rpcFoundOverride override) conn
       return ChildVisit_Break
     _ -> return ChildVisit_Continue

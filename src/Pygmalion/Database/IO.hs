@@ -452,10 +452,9 @@ defineDefinitionsTable c = execute_ c (mkQueryT sql)
                        , "Col integer not null,                        "
                        , "Kind integer not null)" ]
 
-updateDef :: DBHandle -> DefInfo -> IO ()
-updateDef h (DefInfo n u (SourceLocation sf l c) k) = do
+updateDef :: DBHandle -> DefUpdate -> IO ()
+updateDef h (DefUpdate n u sfHash l c k) = do
     let usrHash = hash u
-    let sfHash = hash sf
     let kind = fromEnum k
     execStatement h updateDefStmt (usrHash, n, u, sfHash, l, c, kind)
 
@@ -491,9 +490,7 @@ defineOverridesTable c = execute_ c (mkQueryT sql)
                        , "Overrided integer not null)" ]
 
 updateOverride :: DBHandle -> Override -> IO ()
-updateOverride h (Override defUSR overrideUSR) = do
-    let defUSRHash = hash defUSR
-    let overrideUSRHash = hash overrideUSR
+updateOverride h (Override defUSRHash overrideUSRHash) =
     execStatement h updateOverrideStmt (defUSRHash, overrideUSRHash)
 
 updateOverrideSQL :: T.Text
@@ -551,13 +548,11 @@ defineReferencesTable c = do
                    , "Ref integer not null)" ]
     indexSQL = "create index if not exists RefsFileIndex on Refs(File)"
 
-updateReference :: DBHandle -> Reference -> IO ()
-updateReference h (Reference (SourceRange sf l c el ec) k ctxUSR refUSR) = do
-    let sfHash = hash sf
-    let refUSRHash = hash refUSR
+updateReference :: DBHandle -> ReferenceUpdate -> IO ()
+updateReference h (ReferenceUpdate sfHash l c el ec k ctxUSRHash refUSRHash) = do
     let kind = fromEnum k
-    let ctxUSRHash = hash ctxUSR
-    execStatement h updateReferenceStmt (sfHash, l, c, el, ec, kind, ctxUSRHash, refUSRHash)
+    execStatement h updateReferenceStmt (sfHash, l, c, el, ec, kind,
+                                         ctxUSRHash, refUSRHash)
 
 updateReferenceSQL :: T.Text
 updateReferenceSQL = T.concat

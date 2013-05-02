@@ -107,6 +107,6 @@ analyzeCode port dbChan ci = do
     (_, _, _, h) <- createProcess (proc "pygclangindex" [show port, show ci])
     code <- waitForProcess h
     case code of
-      ExitSuccess -> return ()
-      _           -> logInfo $ "Indexing process failed"
-    updateCommand dbChan $ ci { ciLastIndexed = floor time }
+      ExitSuccess -> updateCommand dbChan $ ci { ciLastIndexed = floor time }
+      _           -> do logInfo $ "Indexing process failed"
+                        updateCommand dbChan $ ci { ciLastIndexed = 0 }

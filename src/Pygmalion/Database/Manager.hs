@@ -18,9 +18,9 @@ import Pygmalion.Database.IO
 import Pygmalion.Log
 
 data DBRequest = DBUpdateCommandInfo CommandInfo
-               | DBUpdateDefInfo DefInfo
+               | DBUpdateDef DefUpdate
                | DBUpdateOverride Override
-               | DBUpdateRef Reference
+               | DBUpdateRef ReferenceUpdate
                | DBUpdateInclusion Inclusion
                | DBInsertFileAndCheck SourceFile (MVar Bool)
                | DBResetMetadata SourceFile
@@ -54,7 +54,7 @@ runDatabaseManager chan queryChan = do
                                       else "Database channel now has " ++ (show newCount) ++ " requests waiting"
               case req of
                 DBUpdateCommandInfo !ci       -> doUpdateCommandInfo h ci >> go (n+1) s h
-                DBUpdateDefInfo !di           -> doUpdateDefInfo h di >> go (n+1) s h
+                DBUpdateDef !di               -> doUpdateDef h di >> go (n+1) s h
                 DBUpdateOverride !ov          -> doUpdateOverride h ov >> go (n+1) s h
                 DBUpdateRef !rf               -> doUpdateRef h rf >> go (n+1) s h
                 DBInsertFileAndCheck !sf !v   -> doInsertFileAndCheck h sf v >> go (n+1) s h
@@ -82,20 +82,20 @@ doUpdateCommandInfo h ci = withTransaction h $ do
   logDebug $ "Updating database with command: " ++ (show . ciSourceFile $ ci)
   updateSourceFile h ci
 
-doUpdateDefInfo :: DBHandle -> DefInfo -> IO ()
-doUpdateDefInfo h di = withTransaction h $ do
-  logDebug $ "Updating database with def: " ++ (show . diUSR $ di)
-  updateDef h di
+doUpdateDef :: DBHandle -> DefUpdate -> IO ()
+doUpdateDef h du = withTransaction h $ do
+  logDebug $ "Updating database with def: " ++ (show . diuUSR $ du)
+  updateDef h du
 
 doUpdateOverride :: DBHandle -> Override -> IO ()
 doUpdateOverride h ov = withTransaction h $ do
   logDebug $ "Updating database with override: " ++ (show ov)
   updateOverride h ov
 
-doUpdateRef :: DBHandle -> Reference -> IO ()
-doUpdateRef h rf = withTransaction h $ do
-  logDebug $ "Updating database with reference: " ++ (show rf)
-  updateReference h rf
+doUpdateRef :: DBHandle -> ReferenceUpdate -> IO ()
+doUpdateRef h ru = withTransaction h $ do
+  logDebug $ "Updating database with reference: " ++ (show ru)
+  updateReference h ru
 
 doUpdateInclusion :: DBHandle -> Inclusion -> IO ()
 doUpdateInclusion h ic = withTransaction h $ do

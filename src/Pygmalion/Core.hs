@@ -3,21 +3,25 @@
 module Pygmalion.Core
 ( CommandInfo (..)
 , SourceFile
+, SourceFileHash
 , WorkingPath
 , Time
 , Language (..)
 , Inclusion (..)
 , DefInfo (..)
+, DefUpdate (..)
 , SourceLocation (..)
 , SourceRange (..)
 , Identifier
 , USR
+, USRHash
 , SourceLine
 , SourceCol
 , SourceKind (..)
 , Override (..)
 , Invocation (..)
 , Reference (..)
+, ReferenceUpdate (..)
 , SourceReferenced (..)
 , SourceReference (..)
 , SourceContext
@@ -36,10 +40,7 @@ module Pygmalion.Core
 ) where
 
 import Control.Applicative
-import Control.Monad
 import qualified Data.ByteString.UTF8 as B
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as TE
 import Data.Int
 import Data.Serialize
 import Database.SQLite.Simple (FromRow(..), field)
@@ -77,14 +78,10 @@ instance FromRow CommandInfo where
                         <*> field               -- ciLastIndexed
 
 type SourceFile = B.ByteString
+type SourceFileHash = Int
 
 mkSourceFile :: FilePath -> SourceFile
 mkSourceFile = B.fromString
-
-{-
-unSourceFileText :: SourceFile -> B.ByteString
-unSourceFileText = id
--}
 
 unSourceFile :: SourceFile -> FilePath
 unSourceFile = B.toString
@@ -124,6 +121,18 @@ instance Serialize DefInfo
 instance FromRow DefInfo where
   fromRow = DefInfo <$> field <*> field <*> fromRow <*> fromRow
 
+-- Cheaper variant of DefInfo used for database updates.
+data DefUpdate = DefUpdate
+    { diuIdentifier :: !Identifier
+    , diuUSR        :: !USR
+    , diuFileHash   :: !SourceFileHash
+    , diuLine       :: !SourceLine
+    , dieCol        :: !SourceCol
+    , diuDefKind    :: !SourceKind
+    } deriving (Eq, Show, Generic)
+
+instance Serialize DefUpdate
+
 data SourceLocation = SourceLocation
     { slFile :: !SourceFile
     , slLine :: !SourceLine
@@ -150,12 +159,16 @@ instance FromRow SourceRange where
 
 type Identifier = B.ByteString
 type USR        = B.ByteString
+type USRHash    = Int
 type SourceLine = Int
 type SourceCol  = Int
 
+-- This would be the cheaper variant of Override, but we never return these
+-- directly from queries (we always return DefInfos) so we don't need the full
+-- version at all.
 data Override = Override
-    { orDef       :: !USR
-    , orOverrided :: !USR
+    { orDef       :: !USRHash
+    , orOverrided :: !USRHash
     } deriving (Eq, Show, Generic)
 
 instance Serialize Override
@@ -178,6 +191,20 @@ data Reference = Reference
     } deriving (Eq, Show, Generic)
 
 instance Serialize Reference
+
+-- Cheaper variant of Reference used for database updates.
+data ReferenceUpdate = ReferenceUpdate
+    { rfuFileHash    :: !SourceFileHash
+    , rfuLine        :: !SourceLine
+    , rfuCol         :: !SourceCol
+    , rfuEndLine     :: !SourceLine
+    , rfuEndCol      :: !SourceCol
+    , rfuKind        :: !SourceKind
+    , rfuContextHash :: !USRHash
+    , rfuUSRHash     :: !USRHash
+    } deriving (Eq, Show, Generic)
+
+instance Serialize ReferenceUpdate
 
 data SourceReferenced = SourceReferenced
     { sdDef   :: !DefInfo
