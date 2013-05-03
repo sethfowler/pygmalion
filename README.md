@@ -29,8 +29,11 @@ tools, including `vim` and
 Requirements
 ============
 
-- Up-to-date libclang. Use `brew install --with-clang --all-targets --rtti
-  --universal --jit llvm` on OS X.
+- Up-to-date libclang. You can try `brew install --with-clang --all-targets
+  --rtti --universal --jit llvm` on OS X, but unfortunately libclang 3.2 has
+  some pretty serious bugs related to macros that will affect users of
+  Pygmalion. Your best bet is to use LLVM 3.3 HEAD. These issues are serious
+  enough that I won't make a 1.0 release of Pygmalion until LLVM 3.3 is out.
 
 - Up-to-date Haskell LibClang bindings. For now you'll need the `safer-api`
   branch at [my fork](https://github.com/sfowler/LibClang/tree/safer-api), but I
