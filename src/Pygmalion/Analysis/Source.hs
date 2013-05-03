@@ -318,6 +318,10 @@ dumpSubtree cursor = do
                                return ChildVisit_Continue
         dump :: Int -> C.Cursor -> ClangApp ()
         dump i c = do
+          -- Get location.
+          loc <- C.getLocation c
+          (_, ln, col, _) <- Source.getSpellingLocation loc
+
           -- Get extent.
           extent <- C.getExtent c
           (_, startLn, startCol, _) <- Source.getStart extent >>= Source.getSpellingLocation
@@ -338,6 +342,7 @@ dumpSubtree cursor = do
 
           -- Display.
           liftIO $ putStrLn $ (replicate i ' ') ++ "[" ++ kind ++ "] " ++ name ++ " (" ++ usr ++ ") @ " ++
+                              "<" ++ (show ln) ++ "," ++ (show col) ++ "> " ++
                               (show startLn) ++ "," ++ (show startCol) ++ " -> " ++
                               (show endLn) ++ "," ++ (show endCol) ++ " " ++
                               "definition [" ++ defName ++ "/" ++ defUSR ++ "] " ++
