@@ -1,5 +1,5 @@
-#ifndef B_H
-#define B_H
+#ifndef C_H
+#define C_H
 
 namespace ns {
 
@@ -13,7 +13,13 @@ enum CEnum
   CEnum_B
 };
 
-class CClass
+class BaseInterface
+{
+  public:
+    virtual int BasePureVirtualMethod() = 0;
+};
+
+class CClass : public BaseInterface
 {
   public:
     CClass();
@@ -21,6 +27,7 @@ class CClass
 
     void DoC();
     virtual bool CVirtualMethod(bool arg);
+    virtual int BasePureVirtualMethod() { return 0; }
 
     int mC;
 

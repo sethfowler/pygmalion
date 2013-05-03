@@ -18,6 +18,7 @@ int main(int argc, char** argv)
   bPtr->CVirtualMethod(false);
   cPtr->CVirtualMethod(false);
   bInCPtr->CVirtualMethod(false);
+  bPtr->BasePureVirtualMethod();
 
   return ADD(b, c) + bInstance.mB + CINST_MACRO.mC;
 }

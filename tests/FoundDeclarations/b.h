@@ -14,6 +14,7 @@ class BClass : public ns::CClass
 
     void DoB();
     virtual bool CVirtualMethod(bool arg);
+    virtual int BasePureVirtualMethod() { return 1; }
 
     int mB;
 
