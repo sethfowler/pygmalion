@@ -29,7 +29,6 @@ main = do
   initLogger (logLevel cf)
   ensureDB
   stopWatching <- newEmptyMVar
-  port <- newEmptyMVar
   aChan <- newLenChan
   dbChan <- newLenChan
   dbQueryChan <- newLenChan
@@ -46,7 +45,7 @@ main = do
     logDebug $ "Launching analysis thread #" ++ (show i)
     asyncBound (runAnalysisManager (ifPort cf) aChan dbChan dbQueryChan fileLox)
   mapM_ (link2 waiterThread) threads
-  rpcThread <- async (runRPCServer cf port aChan dbChan dbQueryChan)
+  rpcThread <- async (runRPCServer cf aChan dbChan dbQueryChan)
   link2 waiterThread rpcThread
   watchThread <- async (doWatch aChan stopWatching)
   link2 waiterThread watchThread

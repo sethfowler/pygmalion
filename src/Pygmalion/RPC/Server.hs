@@ -4,8 +4,6 @@ module Pygmalion.RPC.Server
 ( runRPCServer
 ) where
 
--- import Control.Concurrent.Chan
-import Control.Concurrent.MVar
 import Control.Monad
 import Control.Monad.Trans
 import Data.ByteString.Char8 (ByteString)
@@ -14,7 +12,6 @@ import Data.Conduit.Cereal
 import Data.Conduit.Network
 import Data.Serialize
 import Data.String
-import Network.Socket
 
 import Control.Concurrent.Chan.Len
 import Pygmalion.Analysis.Manager
@@ -24,15 +21,13 @@ import Pygmalion.Database.Manager
 import Pygmalion.Log
 import Pygmalion.RPC.Request
 
-runRPCServer :: Config -> MVar Int -> AnalysisChan -> DBChan -> DBChan -> IO ()
-runRPCServer cf port aChan dbChan dbQueryChan =
+runRPCServer :: Config -> AnalysisChan -> DBChan -> DBChan -> IO ()
+runRPCServer cf aChan dbChan dbQueryChan =
     runTCPServer settings (serverApp aChan dbChan dbQueryChan)
   where
-    settings = baseSettings { serverAfterBind = notifyPort }
-    baseSettings = (serverSettings confPort confAddr) :: ServerSettings IO
-    confPort = ifPort cf
-    confAddr = fromString (ifAddr cf)
-    notifyPort s = socketPort s >>= (putMVar port) . fromIntegral
+    settings = (serverSettings port addr) :: ServerSettings IO
+    port = ifPort cf
+    addr = fromString (ifAddr cf)
 
 serverApp :: AnalysisChan -> DBChan -> DBChan -> Application IO
 serverApp aChan dbChan dbQueryChan ad =
