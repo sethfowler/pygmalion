@@ -598,7 +598,15 @@ getReferencesSQL = T.concat
   , "order by F.Name, R.Line, R.Col, R.EndLine desc, R.EndCol desc" ]
 
 getCallers :: DBHandle -> USR -> IO [Invocation]
-getCallers h usr = execQuery h getCallersStmt (fromEnum CallExpr, fromEnum MacroExpansion, hash usr)
+getCallers h usr = do
+    is <- execQuery h getCallersStmt (fromEnum CallExpr, fromEnum MacroExpansion, hash usr)
+    os <- getOverrided h usr
+    foldM accumCallers is os
+  where
+    accumCallers :: [Invocation] -> DefInfo -> IO [Invocation]
+    accumCallers is o = do
+      is' <- getCallers h (diUSR o)
+      return $ is' ++ is
 
 getCallersSQL :: T.Text
 getCallersSQL = T.concat
