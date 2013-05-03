@@ -98,6 +98,8 @@ defsVisitor :: RPCConnection -> CommandInfo -> TranslationUnit -> ChildVisitor
 defsVisitor conn ci tu cursor _ = do
   let thisFile = ciSourceFile ci
   loc <- getCursorLocation cursor
+  -- TODO: What to do about inclusions that aren't normal inclusions?
+  -- Ones that are intended to be multiply included, etc?
   case (thisFile == slFile loc) of
     True -> do  cKind <- C.getKind cursor
                 defC <- C.getDefinition cursor
@@ -109,8 +111,6 @@ defsVisitor conn ci tu cursor _ = do
                 cursorIsDecl <- C.isDeclaration cKind
 
                 -- Record references.
-                -- TODO: The 'goodRef' criteria below is still experimental, and
-                -- definitely doesn't consider C++.
                 -- TODO: Ignore CallExpr children that start at the same
                 -- position as the CallExpr. This always refers to the same
                 -- thing as the CallExpr itself. We don't want to just ignore
@@ -122,7 +122,8 @@ defsVisitor conn ci tu cursor _ = do
                                             C.Cursor_MemberRefExpr,
                                             C.Cursor_TypeRef,
                                             C.Cursor_MacroExpansion,
-                                            C.Cursor_MacroDefinition]
+                                            C.Cursor_MacroDefinition,
+                                            C.Cursor_CXXMethod]
                                            || cursorIsDef
                                            || cursorIsRef
                                            || cursorIsDecl
