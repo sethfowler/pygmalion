@@ -109,6 +109,8 @@ defsVisitor conn ci tu cursor _ = do
                 cursorIsDef <- isDef cursor cKind
                 cursorIsRef <- C.isReference cKind
                 cursorIsDecl <- C.isDeclaration cKind
+                cursorIsPV <- if cKind == C.Cursor_CXXMethod then C.isPureVirtualCppMethod cursor
+                                                             else return False
 
                 -- Record references.
                 -- TODO: Ignore CallExpr children that start at the same
@@ -170,7 +172,7 @@ defsVisitor conn ci tu cursor _ = do
 
                 -- Record definitions.
                 -- TODO: Support labels.
-                when (cursorIsDef || cKind == C.Cursor_MacroDefinition) $ do
+                when (cursorIsDef || cKind == C.Cursor_MacroDefinition || cursorIsPV) $ do
                     usr <- XRef.getUSR cursor >>= CS.unpackByteString
                     name <- fqn cursor
                     let kind = toSourceKind cKind
