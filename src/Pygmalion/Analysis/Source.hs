@@ -144,7 +144,8 @@ defsVisitor conn ci tu cursor _ = do
                     ctxUSR <- XRef.getUSR ctxC >>= CS.unpackByteString
 
                     -- Record.
-                    let refKind = toSourceKind cKind
+                    refKind <- if cKind == C.Cursor_CallExpr then toCallSourceKind =<< C.isDynamicCall cursor
+                                                             else return $ toSourceKind cKind
                     reference <- return $! ReferenceUpdate (hash . slFile $ loc)
                                                            (slLine loc)
                                                            (slCol loc)
@@ -212,6 +213,10 @@ getCursorLocation cursor = do
   file <- case f of Just f' -> File.getName f' >>= CS.unpackByteString
                     Nothing -> return ""
   return $! SourceLocation file ln col
+
+toCallSourceKind :: Bool -> ClangApp SourceKind
+toCallSourceKind True  = return DynamicCallExpr
+toCallSourceKind False = return CallExpr
 
 isDef :: C.Cursor -> C.CursorKind -> ClangApp Bool
 isDef c k = do

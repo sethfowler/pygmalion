@@ -74,6 +74,7 @@ data SourceKind = UnexposedDecl
                 | DeclRefExpr
                 | MemberRefExpr
                 | CallExpr
+                | DynamicCallExpr
                 | ObjCMessageExpr
                 | BlockExpr
                 | IntegerLiteral

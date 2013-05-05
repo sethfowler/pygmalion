@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BangPatterns, OverloadedStrings #-}
 
 module Pygmalion.Database.IO
 ( ensureDB
@@ -242,7 +242,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int64
 dbMajorVersion = 0
-dbMinorVersion = 14
+dbMinorVersion = 15
 
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c (mkQueryT sql)
@@ -598,14 +598,15 @@ getReferencesSQL = T.concat
   , "order by F.Name, R.Line, R.Col, R.EndLine desc, R.EndCol desc" ]
 
 getCallers :: DBHandle -> USR -> IO [Invocation]
-getCallers h usr = do
-    is <- execQuery h getCallersStmt (fromEnum CallExpr, fromEnum MacroExpansion, hash usr)
-    os <- getOverrided h usr
-    foldM accumCallers is os
+getCallers h usr = go CallExpr DynamicCallExpr MacroExpansion usr
   where
+    go !k1 !k2 !k3 !nextUSR = do
+      is <- execQuery h getCallersStmt (fromEnum k1, fromEnum k2, fromEnum k3, hash nextUSR)
+      os <- getOverrided h nextUSR
+      foldM accumCallers is os
     accumCallers :: [Invocation] -> DefInfo -> IO [Invocation]
     accumCallers is o = do
-      is' <- getCallers h (diUSR o)
+      is' <- go DynamicCallExpr DynamicCallExpr MacroExpansion (diUSR o)
       return $ is' ++ is
 
 getCallersSQL :: T.Text
@@ -615,7 +616,7 @@ getCallersSQL = T.concat
   , "join Files as FR on R.File = FR.Hash                                        "
   , "join Definitions as D on R.RefContext = D.USRHash                           "
   , "join Files as F on D.File = F.Hash                                          "
-  , "where R.RefKind in (?, ?) and R.Ref = ?                                     "
+  , "where R.RefKind in (?, ?, ?) and R.Ref = ?                                  "
   , "order by FR.Name, R.Line, R.Col" ]
 
 getCallees :: DBHandle -> USR -> IO [DefInfo]
