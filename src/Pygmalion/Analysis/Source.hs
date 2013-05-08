@@ -17,6 +17,7 @@ import qualified Clang.Source as Source
 import qualified Clang.String as CS
 import Clang.TranslationUnit
 import Clang.Traversal
+import qualified Clang.Type as T
 import Control.Applicative
 import Control.Exception
 import Control.Monad
@@ -348,8 +349,15 @@ dumpSubtree cursor = do
           refName <- C.getDisplayName refCursor >>= CS.unpack
           refUSR <- XRef.getUSR refCursor >>= CS.unpack
 
+          -- Get type.
+          typ <- C.getType c
+          sTyp <- T.getTypeSpelling typ >>= CS.unpack
+          typKind <- T.getKind typ
+          sTypKind <- T.getTypeKindSpelling typKind >>= CS.unpack
+
           -- Display.
-          liftIO $ putStrLn $ (replicate i ' ') ++ "[" ++ kind ++ "] " ++ name ++ " (" ++ usr ++ ") @ " ++
+          liftIO $ putStrLn $ (replicate i ' ') ++ "[" ++ kind ++ "] " ++ name ++ " (" ++ usr ++ ") " ++
+                              "{" ++ sTyp ++ "/" ++ sTypKind ++ "} @ " ++
                               "<" ++ (show ln) ++ "," ++ (show col) ++ "> " ++
                               (show startLn) ++ "," ++ (show startCol) ++ " -> " ++
                               (show endLn) ++ "," ++ (show endCol) ++ " " ++
