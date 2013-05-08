@@ -33,7 +33,6 @@ import Control.Applicative
 import Control.Exception (bracket)
 import Control.Monad
 import qualified Data.ByteString as B
-import Data.Hashable
 import Data.Int
 import Data.String
 import qualified Data.Text as T
@@ -43,6 +42,7 @@ import System.FilePath.Posix
 
 import Control.Exception.Labeled
 import Pygmalion.Core
+import Pygmalion.Hash
 import Pygmalion.Log
 
 {-

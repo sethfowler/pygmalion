@@ -24,12 +24,12 @@ import Control.Monad
 import Control.Monad.IO.Class
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as BU
-import Data.Hashable
 import Data.Maybe
 import Data.Typeable
 
 import Data.Bool.Predicate
 import Pygmalion.Core
+import Pygmalion.Hash
 import Pygmalion.Log
 import Pygmalion.RPC.Client
 import Pygmalion.SourceKind
