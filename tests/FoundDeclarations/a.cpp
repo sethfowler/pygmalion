@@ -21,6 +21,12 @@ BClass& foo()
   return myBClass;
 }
 
+BClass fooByVal()
+{
+  BClass myBClassByVal;
+  return myBClassByVal;
+}
+
 int main(int argc, char** argv)
 {
   BClass bInstance;
@@ -35,6 +41,7 @@ int main(int argc, char** argv)
   bPtrStruct* pBPS = new bPtrStruct;
   pBPS->b = bPtr;
   BClass& bInstanceRef = bInstance;
+  BClass& (*ptrFunc)() = foo;
 
   bInstance.CVirtualMethod(false);
   bInstanceRef.CVirtualMethod(false);
@@ -50,6 +57,8 @@ int main(int argc, char** argv)
   bPS.b->CVirtualMethod(false);
   pBPS->b->CVirtualMethod(false);
   foo().CVirtualMethod(false);
+  (*ptrFunc)().CVirtualMethod(false);
+  fooByVal().CVirtualMethod(false);
 
   return ADD(b, c) + bInstance.mB + CINST_MACRO.mC;
 }

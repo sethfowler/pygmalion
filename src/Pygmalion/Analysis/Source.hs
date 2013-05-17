@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable, OverloadedStrings #-}
+{-# LANGUAGE DeriveDataTypeable, OverloadedStrings, RankNTypes #-}
 
 module Pygmalion.Analysis.Source
 ( runSourceAnalyses
@@ -64,11 +64,11 @@ displayAST ci = do
     Left (ClangException e) -> logWarn ("Clang exception: " ++ e )
 
 inclusionsAnalysis :: RPCConnection -> WorkingPath -> CommandInfo -> TranslationUnit
-                   -> ClangApp ()
+                   -> ClangApp s ()
 inclusionsAnalysis conn wd ci tu = void $ getInclusions tu
                                           (inclusionsVisitor conn wd ci)
 
-inclusionsVisitor :: RPCConnection -> WorkingPath -> CommandInfo -> InclusionVisitor
+inclusionsVisitor :: RPCConnection -> WorkingPath -> CommandInfo -> InclusionVisitor s
 inclusionsVisitor conn wd ci file iStack = do
     ic <- File.getName file >>= CS.unpackByteString
     when (isLocalHeader wd ic) $ do
@@ -90,12 +90,12 @@ inclusionsVisitor conn wd ci file iStack = do
 isLocalHeader :: WorkingPath -> SourceFile -> Bool
 isLocalHeader wd p = (wd `B.isPrefixOf`) .&&. (not . B.null) $ p
 
-defsAnalysis :: RPCConnection -> CommandInfo -> TranslationUnit -> ClangApp ()
+defsAnalysis :: RPCConnection -> CommandInfo -> TranslationUnit -> ClangApp s ()
 defsAnalysis conn ci tu = do
     cursor <- getCursor tu
     void $ visitChildren cursor (defsVisitor conn ci tu)
 
-defsVisitor :: RPCConnection -> CommandInfo -> TranslationUnit -> ChildVisitor
+defsVisitor :: RPCConnection -> CommandInfo -> TranslationUnit -> ChildVisitor s
 defsVisitor conn ci tu cursor _ = do
   let thisFile = ciSourceFile ci
   loc <- getCursorLocation cursor
@@ -194,7 +194,7 @@ defsVisitor conn ci tu cursor _ = do
     -- Don't recurse into out-of-project header files.
     False -> return ChildVisit_Continue
 
-classVisitor :: RPCConnection -> C.Cursor -> ChildVisitor
+classVisitor :: RPCConnection -> C.Cursor -> ChildVisitor s
 classVisitor conn thisClassC cursor _ = do
   cKind <- C.getKind cursor
   case cKind of
@@ -207,7 +207,7 @@ classVisitor conn thisClassC cursor _ = do
       return ChildVisit_Break
     _ -> return ChildVisit_Continue
 
-getCursorLocation :: C.Cursor -> ClangApp SourceLocation
+getCursorLocation :: C.Cursor -> ClangApp s SourceLocation
 getCursorLocation cursor = do
   loc <- C.getLocation cursor
   (f, ln, col, _) <- Source.getSpellingLocation loc
@@ -215,23 +215,23 @@ getCursorLocation cursor = do
                     Nothing -> return ""
   return $! SourceLocation file ln col
 
-toCallSourceKind :: Bool -> ClangApp SourceKind
+toCallSourceKind :: Bool -> ClangApp s SourceKind
 toCallSourceKind True  = return DynamicCallExpr
 toCallSourceKind False = return CallExpr
 
-isDef :: C.Cursor -> C.CursorKind -> ClangApp Bool
+isDef :: C.Cursor -> C.CursorKind -> ClangApp s Bool
 isDef c k = do
   q1 <- C.isDefinition c
   return $ q1 && not (k == C.Cursor_CXXAccessSpecifier)
 
-fqn :: C.Cursor -> ClangApp Identifier 
+fqn :: C.Cursor -> ClangApp s Identifier 
 fqn cursor = (B.intercalate "::" . reverse) <$> go cursor
   where go c = do isNull <- C.isNullCursor c
                   isTU <- C.getKind c >>= C.isTranslationUnit
                   if isNull || isTU then return [] else go' c
         go' c =  (:) <$> (cursorName c) <*> (C.getSemanticParent c >>= go)
 
-getContext :: TranslationUnit -> C.Cursor -> ClangApp C.Cursor
+getContext :: TranslationUnit -> C.Cursor -> ClangApp s C.Cursor
 getContext tu cursor = do
     isNull <- C.isNullCursor cursor
     cKind <- C.getKind cursor
@@ -253,12 +253,12 @@ getContext tu cursor = do
                            _                       -> getContext tu srcCursor
     go c _ _ = C.getSemanticParent c >>= getContext tu
 
-cursorName :: C.Cursor -> ClangApp Identifier
+cursorName :: C.Cursor -> ClangApp s Identifier
 cursorName c = C.getDisplayName c >>= CS.unpackByteString >>= anonymize
   where anonymize s | B.null s  = return "<anonymous>"
                     | otherwise = return s
 
-inspectIdentifier :: SourceLocation -> TranslationUnit -> ClangApp LookupInfo
+inspectIdentifier :: SourceLocation -> TranslationUnit -> ClangApp s LookupInfo
 inspectIdentifier (SourceLocation f ln col) tu = do
     dumpDiagnostics tu
     file <- File.getFile tu (unSourceFile f)
@@ -301,7 +301,7 @@ inspectIdentifier (SourceLocation f ln col) tu = do
 
 -- We need to decide on a policy, but it'd be good to figure out a way to let
 -- the user display these, and maybe always display errors.
-dumpDiagnostics :: TranslationUnit -> ClangApp ()
+dumpDiagnostics :: TranslationUnit -> ClangApp s ()
 dumpDiagnostics tu = do
     opts <- Diag.defaultDisplayOptions
     dias <- Diag.getDiagnostics tu
@@ -313,19 +313,19 @@ dumpDiagnostics tu = do
   where
     isError = (== Diag.Diagnostic_Error) .||. (== Diag.Diagnostic_Fatal)
 
-doDisplayAST :: TranslationUnit -> ClangApp ()
+doDisplayAST :: TranslationUnit -> ClangApp s ()
 doDisplayAST tu = getCursor tu >>= dumpSubtree
 
-dumpSubtree :: C.Cursor -> ClangApp ()
+dumpSubtree :: C.Cursor -> ClangApp s ()
 dumpSubtree cursor = do
     dump 0 cursor
     void $ visitChildren cursor (dumpVisitor 0)
     liftIO $ putStrLn "Finished recursing"
-  where dumpVisitor :: Int -> ChildVisitor
+  where dumpVisitor :: Int -> ChildVisitor s
         dumpVisitor i c _ = do dump i c
                                void $ visitChildren c (dumpVisitor $ i + 1)
                                return ChildVisit_Continue
-        dump :: Int -> C.Cursor -> ClangApp ()
+        dump :: Int -> C.Cursor -> ClangApp s ()
         dump i c = do
           -- Get location.
           loc <- C.getLocation c
@@ -339,7 +339,8 @@ dumpSubtree cursor = do
           -- Get metadata.
           name <- C.getDisplayName c >>= CS.unpack
           usr <- XRef.getUSR c >>= CS.unpack
-          kind <- C.getKind c >>= C.getCursorKindSpelling >>= CS.unpack
+          cKind <- C.getKind c
+          kind <- C.getCursorKindSpelling cKind >>= CS.unpack
 
           -- Get definition metadata.
           defCursor <- C.getDefinition c
@@ -355,6 +356,18 @@ dumpSubtree cursor = do
           typKind <- T.getKind typ
           sTypKind <- T.getTypeKindSpelling typKind >>= CS.unpack
 
+          -- Special stuff for CallExpr
+          when (cKind == C.Cursor_CallExpr) $ do
+            baseExpr <- C.getBaseExpression c
+            baseName <- C.getDisplayName baseExpr >>= CS.unpack
+            baseExprKind <- C.getKind baseExpr
+            baseType <- C.getType baseExpr
+            baseTypeKind <- T.getKind baseType 
+            isVirtual <- isVirtualCall baseExpr baseExprKind
+            baseTypeSpelling <- T.getTypeSpelling baseType >>= CS.unpack
+            baseKindSpelling <- T.getTypeKindSpelling baseTypeKind >>= CS.unpack
+            liftIO $ putStrLn $ (replicate i ' ') ++ "[==] CallExpr base: " ++ baseName ++ " type: " ++ baseTypeSpelling ++ "/" ++ baseKindSpelling ++ " virtual? " ++ (show isVirtual)
+
           -- Display.
           liftIO $ putStrLn $ (replicate i ' ') ++ "[" ++ kind ++ "] " ++ name ++ " (" ++ usr ++ ") " ++
                               "{" ++ sTyp ++ "/" ++ sTypKind ++ "} @ " ++
@@ -364,7 +377,23 @@ dumpSubtree cursor = do
                               "definition [" ++ defName ++ "/" ++ defUSR ++ "] " ++
                               "reference [" ++ refName ++ "/" ++ refUSR ++ "]"
 
-withTranslationUnit :: CommandInfo -> (TranslationUnit -> ClangApp a) -> IO a
+isVirtualCall :: C.Cursor -> C.CursorKind -> ClangApp s Bool
+isVirtualCall c C.Cursor_CallExpr = do baseRef <- C.getReferenced c
+                                       baseRefType <- C.getType baseRef
+                                       retType <- T.getResultType baseRefType
+                                       retKind <- T.getKind retType 
+                                       return (retKind `elem` [T.Type_LValueReference, T.Type_Pointer, T.Type_Unexposed, T.Type_Invalid])
+isVirtualCall c C.Cursor_MemberRefExpr = do baseRef <- C.getReferenced c
+                                            baseRefType <- C.getType baseRef
+                                            baseRefKind <- T.getKind baseRefType
+                                            return (baseRefKind `elem` [T.Type_LValueReference, T.Type_Pointer, T.Type_Unexposed, T.Type_Invalid])
+isVirtualCall c C.Cursor_DeclRefExpr = do baseRef <- C.getReferenced c
+                                          baseRefType <- C.getType baseRef
+                                          baseRefKind <- T.getKind baseRefType
+                                          return (baseRefKind `elem` [T.Type_LValueReference, T.Type_Pointer, T.Type_Unexposed, T.Type_Invalid])
+isVirtualCall _ _ = return True
+
+withTranslationUnit :: CommandInfo -> (forall s. TranslationUnit -> ClangApp s a) -> IO a
 withTranslationUnit ci f = do
     withCreateIndex False False $ \index -> do
       setGlobalOptions index GlobalOpt_ThreadBackgroundPriorityForAll
