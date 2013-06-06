@@ -1,5 +1,6 @@
-import Control.Applicative
+import Control.Exception (catch, SomeException)
 import Data.List
+import Prelude hiding (catch)
 import System.Environment
 import System.Exit
 import System.Directory
@@ -15,7 +16,10 @@ main = do
   cf <- getConfiguration
   initLogger (logLevel cf)
   args <- (getArgs >>= parseArgs)
-  withRPC cf $ runRPC rpcPing  -- Make sure pygd is running.
+
+  -- Make sure pygd is running.
+  (withRPC cf $ runRPC rpcPing) `catch` handleRPCFailure
+
   useCMake <- doesFileExist "CMakeLists.txt"
   if useCMake then executeCMake cf args
               else executeMake cf args
@@ -44,7 +48,7 @@ executeMake cf args = do
        "--make", (show . ifPort $ cf), cmd cf]
        ++ (cmdArgs cf)
 
-executeCMake:: Config -> [String] -> IO ()
+executeCMake :: Config -> [String] -> IO ()
 executeCMake cf args = do
     (_, _, _, handle) <- createProcess $ proc (cmake cf) newArgs
     ensureSuccess =<< waitForProcess handle
@@ -60,6 +64,9 @@ executeCMake cf args = do
                                                          ++ (cppArgs cf)))]
               ++ (cmakeArgs cf) ++ args
     p = show . ifPort $ cf
+
+handleRPCFailure :: SomeException -> IO ()
+handleRPCFailure _ = putStrLn "Can't connect to pygd. Build information will not be recorded."
 
 ensureSuccess :: ExitCode -> IO ()
 ensureSuccess code@(ExitFailure _) = exitWith code

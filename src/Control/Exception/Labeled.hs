@@ -3,7 +3,7 @@ module Control.Exception.Labeled
 ) where
 
 import Prelude hiding (catch)
-import Control.Exception(catch, SomeException)
+import Control.Exception (catch, SomeException)
 
 -- Labels and rethrows an exception.
 labeledCatch :: String -> IO a -> IO a

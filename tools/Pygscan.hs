@@ -1,6 +1,8 @@
 import Control.Concurrent.Async
+import Control.Exception (catch, SomeException)
 import Control.Monad
 import Control.Monad.Trans
+import Prelude hiding (catch)
 import System.Environment
 import System.Exit
 import System.Process
@@ -44,5 +46,8 @@ indexIfValid :: Port -> String -> [String] -> IO ()
 indexIfValid port cmd args = do
   result <- getCommandInfo cmd args
   case result of
-    Just cmdInfo -> withRPCRaw port $ runRPC (rpcIndex cmdInfo)
-    _            -> return ()   -- Can't do anything with this command.
+    Just ci -> (withRPCRaw port $ runRPC (rpcIndex ci)) `catch` handleRPCFailure
+    _       -> return ()   -- Can't do anything with this command.
+
+handleRPCFailure :: SomeException -> IO ()
+handleRPCFailure _ = return ()  -- Silently ignore failure.
