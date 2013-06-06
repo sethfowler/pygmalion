@@ -7,7 +7,6 @@ module Pygmalion.Analysis.Source
 , displayAST
 ) where
 
-import Clang.Alloc.Storable()
 import qualified Clang.CrossReference as XRef
 import qualified Clang.Cursor as C
 import qualified Clang.Diagnostic as Diag
