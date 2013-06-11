@@ -14,14 +14,14 @@ import Data.Serialize
 import Data.String
 
 import Control.Concurrent.Chan.Len
-import Pygmalion.Analysis.Manager
 import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.Database.Manager
+import Pygmalion.Index.Manager
 import Pygmalion.Log
 import Pygmalion.RPC.Request
 
-runRPCServer :: Config -> AnalysisChan -> DBChan -> DBChan -> IO ()
+runRPCServer :: Config -> IndexChan -> DBChan -> DBChan -> IO ()
 runRPCServer cf aChan dbChan dbQueryChan =
     runTCPServer settings (serverApp aChan dbChan dbQueryChan)
   where
@@ -29,7 +29,7 @@ runRPCServer cf aChan dbChan dbQueryChan =
     port = ifPort cf
     addr = fromString (ifAddr cf)
 
-serverApp :: AnalysisChan -> DBChan -> DBChan -> Application IO
+serverApp :: IndexChan -> DBChan -> DBChan -> Application IO
 serverApp aChan dbChan dbQueryChan ad =
     (appSource ad) $= conduitGet getCI =$= process $$ (appSink ad)
   where
@@ -57,10 +57,10 @@ serverApp aChan dbChan dbQueryChan ad =
         _                                  -> do liftIO $ logError "RPC server got bad request"
                                                  yield . encode $ (RPCError :: RPCResponse ())
 
-doSendCommandInfo :: AnalysisChan -> CommandInfo -> IO ()
+doSendCommandInfo :: IndexChan -> CommandInfo -> IO ()
 doSendCommandInfo aChan ci = do
   logDebug $ "RPCSendCommandInfo: " ++ (show ci)
-  writeLenChan aChan $ Analyze (FromBuild ci)
+  writeLenChan aChan $ Index (FromBuild ci)
 
 doGetCommandInfo :: DBChan -> SourceFile -> IO ByteString
 doGetCommandInfo dbQueryChan f = do
@@ -137,10 +137,10 @@ doFoundRef dbChan rf = do
   logDebug $ "RPCFoundRef: " ++ (show rf)
   writeLenChan dbChan $ DBUpdateRef rf
 
-doFoundInclusion :: AnalysisChan -> DBChan -> DBChan -> Inclusion -> IO ()
+doFoundInclusion :: IndexChan -> DBChan -> DBChan -> Inclusion -> IO ()
 doFoundInclusion aChan dbChan dbQueryChan ic = do
   logDebug $ "RPCFoundInclusion: " ++ (show ic)
   writeLenChan dbChan (DBUpdateInclusion ic)
   existing <- callLenChan dbQueryChan (DBInsertFileAndCheck . icHeaderFile $ ic)
   when (not existing) $
-    writeLenChan aChan (Analyze . FromBuild . icCommandInfo $ ic)
+    writeLenChan aChan (Index . FromBuild . icCommandInfo $ ic)

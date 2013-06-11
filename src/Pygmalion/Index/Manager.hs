@@ -1,10 +1,10 @@
 {-# LANGUAGE OverloadedStrings, BangPatterns #-}
 
-module Pygmalion.Analysis.Manager
-( runAnalysisManager
-, AnalysisRequest (..)
-, AnalysisSource (..)
-, AnalysisChan
+module Pygmalion.Index.Manager
+( runIndexManager
+, IndexRequest (..)
+, IndexSource (..)
+, IndexChan
 ) where
 
 import Control.Concurrent
@@ -23,38 +23,38 @@ import Pygmalion.Core
 import Pygmalion.Database.Manager
 import Pygmalion.Log
 
-data AnalysisSource = FromBuild  CommandInfo
-                    | FromNotify SourceFile
+data IndexSource = FromBuild  CommandInfo
+                 | FromNotify SourceFile
 
-sfFromSource :: AnalysisSource -> SourceFile
+sfFromSource :: IndexSource -> SourceFile
 sfFromSource (FromBuild  ci) = ciSourceFile ci
 sfFromSource (FromNotify sf) = sf
 
-data AnalysisRequest = Analyze AnalysisSource
-                     | ShutdownAnalysis
+data IndexRequest = Index IndexSource
+                  | ShutdownIndexer
 
-type AnalysisChan = LenChan AnalysisRequest
+type IndexChan = LenChan IndexRequest
 
-data AnalysisContext = AnalysisContext
+data IndexContext = IndexContext
   { acPort         :: !Port
-  , acAnalysisChan :: !AnalysisChan
+  , acIndexChan    :: !IndexChan
   , acDBChan       :: !DBChan
   , acDBQueryChan  :: !DBChan
   }
-type Analysis a = ReaderT AnalysisContext IO a
+type Indexer a = ReaderT IndexContext IO a
 
-runAnalysisManager :: Port -> AnalysisChan -> DBChan -> DBChan -> MVar (Set.Set SourceFile) -> IO ()
-runAnalysisManager port aChan dbChan dbQueryChan lox = go
+runIndexManager :: Port -> IndexChan -> DBChan -> DBChan -> MVar (Set.Set SourceFile) -> IO ()
+runIndexManager port aChan dbChan dbQueryChan lox = go
   where
-    go = {-# SCC "analysisThread" #-} do
+    go = {-# SCC "indexThread" #-} do
          (!newCount, !req) <- readLenChan aChan
-         logDebug $ "Analysis channel now has " ++ (show newCount) ++ " items waiting"
+         logDebug $ "Index channel now has " ++ (show newCount) ++ " items waiting"
          case req of
-             Analyze src -> do let ctx = AnalysisContext port aChan dbChan dbQueryChan
-                               runReaderT (checkLock lox src) ctx >> go
-             ShutdownAnalysis -> logInfo "Shutting down analysis thread"
+             Index src    -> do let ctx = IndexContext port aChan dbChan dbQueryChan
+                                runReaderT (checkLock lox src) ctx >> go
+             ShutdownIndexer -> logInfo "Shutting down analysis thread"
 
-checkLock :: MVar (Set.Set SourceFile) -> AnalysisSource -> Analysis ()
+checkLock :: MVar (Set.Set SourceFile) -> IndexSource -> Indexer ()
 checkLock !lox !src = do
   let sf = sfFromSource src
   lockedFiles <- lift $ takeMVar lox
@@ -79,7 +79,7 @@ getMTime sf = do
                                  ++ (show (e :: IOException))
                           return 0  -- Most likely the file has been deleted.
 
-analyzeIfDirty :: AnalysisSource -> Analysis ()
+analyzeIfDirty :: IndexSource -> Indexer ()
 analyzeIfDirty src = do
   ctx <- ask
   let sf = sfFromSource src
@@ -103,36 +103,36 @@ commandInfoChanged a b | (ciWorkingPath a) /= (ciWorkingPath b) = True
                        | (ciLanguage a)    /= (ciLanguage b)    = True
                        | otherwise                              = False
 
-analyze :: CommandInfo -> Analysis ()
+analyze :: CommandInfo -> Indexer ()
 analyze ci = do
   ctx <- ask
   others <- otherFilesToReindex ci
   forM_ others $ \f ->
-    lift $ writeLenChan (acAnalysisChan ctx) (Analyze . FromBuild $ f)
+    lift $ writeLenChan (acIndexChan ctx) (Index . FromBuild $ f)
   analyzeCode ci
 
-ignoreUnchanged :: AnalysisSource -> Time -> Analysis ()
+ignoreUnchanged :: IndexSource -> Time -> Indexer ()
 ignoreUnchanged src mtime = lift $ logInfo $ "Index is up-to-date for file "
                                           ++ (show . sfFromSource $ src)
                                           ++ " (file mtime: " ++ (show mtime) ++ ")"
 
-ignoreUnknown :: AnalysisSource -> Analysis ()
+ignoreUnknown :: IndexSource -> Indexer ()
 ignoreUnknown src = lift $ logInfo $ "Not indexing unknown file "
                                   ++ (show . sfFromSource $ src)
 
 -- If the source file associated with this CommandInfo has changed, what must
 -- we reindex?
-otherFilesToReindex :: CommandInfo -> Analysis [CommandInfo]
+otherFilesToReindex :: CommandInfo -> Indexer [CommandInfo]
 otherFilesToReindex ci = do
   ctx <- ask
   lift $ callLenChan (acDBQueryChan ctx) $ DBGetIncluders (ciSourceFile ci)
 
-updateCommand :: CommandInfo -> Analysis ()
+updateCommand :: CommandInfo -> Indexer ()
 updateCommand ci = do
   ctx <- ask
   lift $ writeLenChan (acDBChan ctx) (DBUpdateCommandInfo ci)
 
-analyzeCode :: CommandInfo -> Analysis ()
+analyzeCode :: CommandInfo -> Indexer ()
 analyzeCode ci = do
     ctx <- ask
     let sf = ciSourceFile ci

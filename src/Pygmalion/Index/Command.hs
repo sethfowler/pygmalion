@@ -1,6 +1,6 @@
 {-# LANGUAGE ViewPatterns #-}
 
-module Pygmalion.Analysis.Command
+module Pygmalion.Index.Command
 ( getCommandInfo
 ) where
 
@@ -11,7 +11,7 @@ import Data.Maybe
 import System.Directory
 import System.Path
 
-import Pygmalion.Analysis.Extension
+import Pygmalion.Index.Extension
 import Pygmalion.Core
 
 getCommandInfo :: String -> [String] -> IO (Maybe CommandInfo)

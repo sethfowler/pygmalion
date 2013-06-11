@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable, OverloadedStrings, RankNTypes #-}
 
-module Pygmalion.Analysis.Source
+module Pygmalion.Index.Source
 ( runSourceAnalyses
 , getLookupInfo
 , LookupInfo (..)

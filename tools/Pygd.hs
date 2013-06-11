@@ -14,8 +14,8 @@ import System.FSNotify
 import System.Path.NameManip
 
 import Control.Concurrent.Chan.Len
-import Pygmalion.Analysis.Extension
-import Pygmalion.Analysis.Manager
+import Pygmalion.Index.Extension
+import Pygmalion.Index.Manager
 import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.Database.Manager
@@ -42,8 +42,8 @@ main = do
   --let maxThreads = numCapabilities
   let maxThreads = 4 :: Int
   threads <- forM [1..maxThreads] $ \i -> do
-    logDebug $ "Launching analysis thread #" ++ (show i)
-    asyncBound (runAnalysisManager (ifPort cf) aChan dbChan dbQueryChan fileLox)
+    logDebug $ "Launching indexing thread #" ++ (show i)
+    asyncBound (runIndexManager (ifPort cf) aChan dbChan dbQueryChan fileLox)
   mapM_ (link2 waiterThread) threads
   rpcThread <- async (runRPCServer cf aChan dbChan dbQueryChan)
   link2 waiterThread rpcThread
@@ -57,7 +57,7 @@ main = do
   putMVar stopWatching ()
   ensureNoException =<< waitCatch watchThread
   logDebug "Terminated watch thread."
-  forM_ threads $ \_ -> writeLenChan aChan ShutdownAnalysis  -- Signifies end of data.
+  forM_ threads $ \_ -> writeLenChan aChan ShutdownIndexer  -- Signifies end of data.
   forM_ (zip threads [1..numCapabilities]) $ \(thread, i) -> do
     ensureNoException =<< waitCatch thread
     logDebug $ "Termination of thread #" ++ (show i)
@@ -68,7 +68,7 @@ main = do
 doWait :: IO ()
 doWait = getLine >> return () 
 
-doWatch :: AnalysisChan -> MVar () -> IO ()
+doWatch :: IndexChan -> MVar () -> IO ()
 doWatch aChan stopWatching = do
   -- Restart every 10 minutes until a better fix is found. =(
   _ <- race (withManager $ watch aChan stopWatching) (threadDelay $ 10 * 60 * 1000000)
@@ -77,7 +77,7 @@ doWatch aChan stopWatching = do
     Just _  -> return ()
     Nothing -> doWatch aChan stopWatching
 
-watch :: AnalysisChan -> MVar () -> WatchManager -> IO ()
+watch :: IndexChan -> MVar () -> WatchManager -> IO ()
 watch aChan stopWatching m = do
     curDir <- getCurrentDirectory
     logDebug $ "Started watching " ++ (show curDir) ++ "."
@@ -89,17 +89,17 @@ checkEvent (Added f _)    = isSource $! FP.encodeString $! f
 checkEvent (Modified f _) = isSource $! FP.encodeString $! f
 checkEvent (Removed f _)  = isSource $! FP.encodeString $! f
 
-handleEvent :: AnalysisChan -> Event -> IO ()
+handleEvent :: IndexChan -> Event -> IO ()
 handleEvent aChan (Added f _)    = handleSource aChan f
 handleEvent aChan (Modified f _) = handleSource aChan f
 handleEvent aChan (Removed f _)  = handleSource aChan f
 
-handleSource :: AnalysisChan -> FP.FilePath -> IO ()
+handleSource :: IndexChan -> FP.FilePath -> IO ()
 handleSource aChan f = do
   let file = FP.encodeString f
   fileExists <- doesFileExist file
   when (isSource file && fileExists) $ do
-    writeLenChan aChan $ Analyze . FromNotify . mkSourceFile $ file
+    writeLenChan aChan $ Index . FromNotify . mkSourceFile $ file
 
 isSource :: FilePath -> Bool
 isSource f = (hasSourceExtension f || hasHeaderExtension f) &&

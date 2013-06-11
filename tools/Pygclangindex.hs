@@ -5,7 +5,7 @@ import System.Directory
 import System.Environment
 import System.Posix.Process
 
-import Pygmalion.Analysis.Source
+import Pygmalion.Index.Source
 import Pygmalion.Core
 import Pygmalion.Log
 import Pygmalion.RPC.Client

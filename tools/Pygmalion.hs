@@ -11,7 +11,7 @@ import System.Environment
 import System.Exit
 import System.Path
 
-import Pygmalion.Analysis.Source
+import Pygmalion.Index.Source
 import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.Log

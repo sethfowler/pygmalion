@@ -7,7 +7,7 @@ import System.Environment
 import System.Exit
 import System.Process
 
-import Pygmalion.Analysis.Command
+import Pygmalion.Index.Command
 import Pygmalion.Core
 import Pygmalion.RPC.Client
 
