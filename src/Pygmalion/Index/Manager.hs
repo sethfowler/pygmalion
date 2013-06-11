@@ -68,8 +68,8 @@ checkLock !lox !src = do
             analyzeIfDirty src
             lift $ modifyMVar_ lox (\s -> return $! sf `Set.delete` s)
   
-getMTime :: SourceFile -> IO Time
-getMTime sf = do
+getMTime :: SourceFile -> Indexer Time
+getMTime sf = liftIO $ do
   result <- try $ getModificationTime (unSourceFile sf)
   case result of
     Right clockTime -> return . floor . utcTimeToPOSIXSeconds . fromClockTime $
@@ -83,8 +83,8 @@ analyzeIfDirty :: IndexSource -> Indexer ()
 analyzeIfDirty src = do
   ctx <- ask
   let sf = sfFromSource src
-  mayOldCI <- lift $ callLenChan (acDBQueryChan ctx) $ DBGetCommandInfo sf
-  mtime <- lift $ getMTime sf
+  mayOldCI <- callLenChan (acDBQueryChan ctx) $ DBGetCommandInfo sf
+  mtime <- getMTime sf
   case (src, mayOldCI) of
     (FromBuild ci, Just oldCI)
       | (ciLastIndexed oldCI) < mtime -> analyze ci
@@ -108,7 +108,7 @@ analyze ci = do
   ctx <- ask
   others <- otherFilesToReindex ci
   forM_ others $ \f ->
-    lift $ writeLenChan (acIndexChan ctx) (Index . FromBuild $ f)
+    writeLenChan (acIndexChan ctx) (Index . FromBuild $ f)
   analyzeCode ci
 
 ignoreUnchanged :: IndexSource -> Time -> Indexer ()
@@ -125,12 +125,12 @@ ignoreUnknown src = logInfo $ "Not indexing unknown file "
 otherFilesToReindex :: CommandInfo -> Indexer [CommandInfo]
 otherFilesToReindex ci = do
   ctx <- ask
-  lift $ callLenChan (acDBQueryChan ctx) $ DBGetIncluders (ciSourceFile ci)
+  callLenChan (acDBQueryChan ctx) $ DBGetIncluders (ciSourceFile ci)
 
 updateCommand :: CommandInfo -> Indexer ()
 updateCommand ci = do
   ctx <- ask
-  lift $ writeLenChan (acDBChan ctx) (DBUpdateCommandInfo ci)
+  writeLenChan (acDBChan ctx) (DBUpdateCommandInfo ci)
 
 analyzeCode :: CommandInfo -> Indexer ()
 analyzeCode ci = do
@@ -138,7 +138,7 @@ analyzeCode ci = do
     let sf = ciSourceFile ci
     logInfo $ "Indexing " ++ (show sf)
     time <- lift getPOSIXTime
-    lift $ writeLenChan (acDBChan ctx) (DBResetMetadata sf)
+    writeLenChan (acDBChan ctx) (DBResetMetadata sf)
     (_, _, _, h) <- lift $ createProcess
                          (proc "pygclangindex" [show (acPort ctx), show ci])
     code <- lift $ waitForProcess h
