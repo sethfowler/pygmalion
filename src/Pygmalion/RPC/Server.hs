@@ -60,7 +60,7 @@ serverApp aChan dbChan dbQueryChan ad =
 doSendCommandInfo :: AnalysisChan -> CommandInfo -> IO ()
 doSendCommandInfo aChan ci = do
   logDebug $ "RPCSendCommandInfo: " ++ (show ci)
-  writeLenChan aChan $ AnalyzeBuiltFile ci
+  writeLenChan aChan $ Analyze (FromBuild ci)
 
 doGetCommandInfo :: DBChan -> SourceFile -> IO ByteString
 doGetCommandInfo dbQueryChan f = do
@@ -143,4 +143,4 @@ doFoundInclusion aChan dbChan dbQueryChan ic = do
   writeLenChan dbChan (DBUpdateInclusion ic)
   existing <- callLenChan dbQueryChan (DBInsertFileAndCheck . icHeaderFile $ ic)
   when (not existing) $
-    writeLenChan aChan (AnalyzeBuiltFile . icCommandInfo $ ic)
+    writeLenChan aChan (Analyze . FromBuild . icCommandInfo $ ic)
