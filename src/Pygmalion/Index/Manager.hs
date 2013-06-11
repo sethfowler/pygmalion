@@ -59,8 +59,8 @@ checkLock !lox !src = do
   let sf = sfFromSource src
   lockedFiles <- lift $ takeMVar lox
   if sf `Set.member` lockedFiles
-    then do lift $ logInfo $ "Contention detected on source file "
-                          ++ (unSourceFile sf) ++ "; sleeping..."
+    then do logInfo $ "Contention detected on source file "
+                   ++ (unSourceFile sf) ++ "; sleeping..."
             lift $ putMVar lox lockedFiles
             lift $ threadDelay 100000
             checkLock lox src
@@ -112,13 +112,13 @@ analyze ci = do
   analyzeCode ci
 
 ignoreUnchanged :: IndexSource -> Time -> Indexer ()
-ignoreUnchanged src mtime = lift $ logInfo $ "Index is up-to-date for file "
-                                          ++ (show . sfFromSource $ src)
-                                          ++ " (file mtime: " ++ (show mtime) ++ ")"
+ignoreUnchanged src mtime = logInfo $ "Index is up-to-date for file "
+                                   ++ (show . sfFromSource $ src)
+                                   ++ " (file mtime: " ++ (show mtime) ++ ")"
 
 ignoreUnknown :: IndexSource -> Indexer ()
-ignoreUnknown src = lift $ logInfo $ "Not indexing unknown file "
-                                  ++ (show . sfFromSource $ src)
+ignoreUnknown src = logInfo $ "Not indexing unknown file "
+                           ++ (show . sfFromSource $ src)
 
 -- If the source file associated with this CommandInfo has changed, what must
 -- we reindex?
@@ -136,7 +136,7 @@ analyzeCode :: CommandInfo -> Indexer ()
 analyzeCode ci = do
     ctx <- ask
     let sf = ciSourceFile ci
-    lift $ logInfo $ "Indexing " ++ (show sf)
+    logInfo $ "Indexing " ++ (show sf)
     time <- lift getPOSIXTime
     lift $ writeLenChan (acDBChan ctx) (DBResetMetadata sf)
     (_, _, _, h) <- lift $ createProcess
@@ -144,5 +144,5 @@ analyzeCode ci = do
     code <- lift $ waitForProcess h
     case code of
       ExitSuccess -> updateCommand $ ci { ciLastIndexed = floor time }
-      _           -> do lift $ logInfo $ "Indexing process failed"
+      _           -> do logInfo $ "Indexing process failed"
                         updateCommand $ ci { ciLastIndexed = 0 }

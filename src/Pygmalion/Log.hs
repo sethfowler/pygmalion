@@ -8,25 +8,26 @@ module Pygmalion.Log
 , logException
 ) where
 
+import Control.Monad.IO.Class
 import System.Log.Logger
 
 logger :: String
 logger = "Pygmalion"
 
-initLogger :: Priority -> IO ()
-initLogger p = updateGlobalLogger logger (setLevel p)
+initLogger :: MonadIO m => Priority -> m ()
+initLogger p = liftIO $ updateGlobalLogger logger (setLevel p)
 
-logDebug :: String -> IO ()
-logDebug = debugM logger
+logDebug :: MonadIO m => String -> m ()
+logDebug str = liftIO $ debugM logger str
 
-logInfo :: String -> IO ()
-logInfo = infoM logger
+logInfo :: MonadIO m => String -> m ()
+logInfo str = liftIO $ infoM logger str
 
-logWarn :: String -> IO ()
-logWarn = warningM logger
+logWarn :: MonadIO m => String -> m ()
+logWarn str = liftIO $ warningM logger str
 
-logError :: String -> IO ()
-logError = errorM logger
+logError :: MonadIO m => String -> m ()
+logError str = liftIO $ errorM logger str
 
-logException :: Priority -> String -> IO a -> IO a
-logException p prefix action = traplogging logger p prefix action
+logException :: MonadIO m => Priority -> String -> IO a -> m a
+logException p prefix action = liftIO $ traplogging logger p prefix action
