@@ -11,8 +11,8 @@ import Data.Maybe
 import System.Directory
 import System.Path
 
-import Pygmalion.Index.Extension
 import Pygmalion.Core
+import Pygmalion.Index.Extension
 
 getCommandInfo :: String -> [String] -> IO (Maybe CommandInfo)
 getCommandInfo cmd args = do

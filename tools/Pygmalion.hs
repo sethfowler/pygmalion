@@ -11,9 +11,9 @@ import System.Environment
 import System.Exit
 import System.Path
 
-import Pygmalion.Index.Source
 import Pygmalion.Config
 import Pygmalion.Core
+import Pygmalion.Index.Source
 import Pygmalion.Log
 import Pygmalion.RPC.Client
 --import Pygmalion.JSON

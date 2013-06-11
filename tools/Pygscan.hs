@@ -7,8 +7,8 @@ import System.Environment
 import System.Exit
 import System.Process
 
-import Pygmalion.Index.Command
 import Pygmalion.Core
+import Pygmalion.Index.Command
 import Pygmalion.RPC.Client
 
 main :: IO ()
