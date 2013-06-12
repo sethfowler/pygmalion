@@ -5,7 +5,7 @@ module Pygmalion.RPC.Server
 ) where
 
 import Control.Monad
-import Control.Monad.Trans
+import Control.Monad.IO.Class
 import Data.ByteString.Char8 (ByteString)
 import Data.Conduit
 import Data.Conduit.Cereal
@@ -37,107 +37,101 @@ serverApp aChan dbChan dbQueryChan ad =
     process = do
       result <- await
       case result of
-        Just (RPCSendCommandInfo ci)       -> liftIO (doSendCommandInfo aChan ci) >> process
-        Just (RPCGetCommandInfo sf)        -> liftIO (doGetCommandInfo dbQueryChan sf) >>= yield >> process
-        Just (RPCGetSimilarCommandInfo sf) -> liftIO (doGetSimilarCommandInfo dbQueryChan sf) >>= yield >> process
-        Just (RPCGetDefinition usr)        -> liftIO (doGetDefinition dbQueryChan usr) >>= yield >> process
-        Just (RPCGetCallers usr)           -> liftIO (doGetCallers dbQueryChan usr) >>= yield >> process
-        Just (RPCGetCallees usr)           -> liftIO (doGetCallees dbQueryChan usr) >>= yield >> process
-        Just (RPCGetBases usr)             -> liftIO (doGetBases dbQueryChan usr) >>= yield >> process
-        Just (RPCGetOverrides usr)         -> liftIO (doGetOverrides dbQueryChan usr) >>= yield >> process
-        Just (RPCGetRefs usr)              -> liftIO (doGetRefs dbQueryChan usr) >>= yield >> process
-        Just (RPCGetReferenced sl)         -> liftIO (doGetReferenced dbQueryChan sl) >>= yield >> process
-        Just (RPCFoundDef du)              -> liftIO (doFoundDef dbChan du) >> process
-        Just (RPCFoundOverride ov)         -> liftIO (doFoundOverride dbChan ov) >> process
-        Just (RPCFoundRef ru)              -> liftIO (doFoundRef dbChan ru) >> process
-        Just (RPCFoundInclusion ic)        -> liftIO (doFoundInclusion aChan dbChan dbQueryChan ic) >> process
-        Just (RPCLog s)                    -> liftIO (logInfo s) >> process
+        Just (RPCSendCommandInfo ci)       -> doSendCommandInfo aChan ci >> process
+        Just (RPCGetCommandInfo sf)        -> doGetCommandInfo dbQueryChan sf >>= yield >> process
+        Just (RPCGetSimilarCommandInfo sf) -> doGetSimilarCommandInfo dbQueryChan sf >>= yield >> process
+        Just (RPCGetDefinition usr)        -> doGetDefinition dbQueryChan usr >>= yield >> process
+        Just (RPCGetCallers usr)           -> doGetCallers dbQueryChan usr >>= yield >> process
+        Just (RPCGetCallees usr)           -> doGetCallees dbQueryChan usr >>= yield >> process
+        Just (RPCGetBases usr)             -> doGetBases dbQueryChan usr >>= yield >> process
+        Just (RPCGetOverrides usr)         -> doGetOverrides dbQueryChan usr >>= yield >> process
+        Just (RPCGetRefs usr)              -> doGetRefs dbQueryChan usr >>= yield >> process
+        Just (RPCGetReferenced sl)         -> doGetReferenced dbQueryChan sl >>= yield >> process
+        Just (RPCFoundDef du)              -> doFoundDef dbChan du >> process
+        Just (RPCFoundOverride ov)         -> doFoundOverride dbChan ov >> process
+        Just (RPCFoundRef ru)              -> doFoundRef dbChan ru >> process
+        Just (RPCFoundInclusion ic)        -> doFoundInclusion aChan dbChan dbQueryChan ic >> process
+        Just (RPCLog s)                    -> logInfo s >> process
         Just RPCPing                       -> yield (encode $ RPCOK ()) >> process
         Just RPCDone                       -> return ()  -- Close connection.
         _                                  -> do liftIO $ logError "RPC server got bad request"
                                                  yield . encode $ (RPCError :: RPCResponse ())
 
-doSendCommandInfo :: IndexChan -> CommandInfo -> IO ()
+doSendCommandInfo :: MonadIO m => IndexChan -> CommandInfo -> m ()
 doSendCommandInfo aChan ci = do
   logDebug $ "RPCSendCommandInfo: " ++ (show ci)
   writeLenChan aChan $ Index (FromBuild ci)
 
-doGetCommandInfo :: DBChan -> SourceFile -> IO ByteString
+doGetCommandInfo :: MonadIO m => DBChan -> SourceFile -> m ByteString
 doGetCommandInfo dbQueryChan f = do
   logDebug $ "RPCGetCommandInfo: " ++ (show f)
   result <- callLenChan dbQueryChan $! DBGetCommandInfo f
   return $! encode $ RPCOK result
 
-doGetSimilarCommandInfo :: DBChan -> SourceFile -> IO ByteString
+doGetSimilarCommandInfo :: MonadIO m => DBChan -> SourceFile -> m ByteString
 doGetSimilarCommandInfo dbQueryChan f = do
   logDebug $ "RPCGetSimilarCommandInfo: " ++ (show f)
   result <- callLenChan dbQueryChan $! DBGetSimilarCommandInfo f
   return $! encode $ RPCOK result
 
-doGetDefinition :: DBChan -> USR -> IO ByteString
+doGetDefinition :: MonadIO m => DBChan -> USR -> m ByteString
 doGetDefinition dbQueryChan usr = do
   logDebug $ "RPCGetDefInfo: " ++ (show usr)
   result <- callLenChan dbQueryChan $! DBGetDefinition usr
   return $! encode $ RPCOK result
 
-doGetCallers :: DBChan -> USR -> IO ByteString
+doGetCallers :: MonadIO m => DBChan -> USR -> m ByteString
 doGetCallers dbQueryChan usr = do
   logDebug $ "RPCGetCallers: " ++ (show usr)
   result <- callLenChan dbQueryChan $! DBGetCallers usr
-  mapM_ print result
   return $! encode $ RPCOK result
 
-doGetCallees :: DBChan -> USR -> IO ByteString
+doGetCallees :: MonadIO m => DBChan -> USR -> m ByteString
 doGetCallees dbQueryChan usr = do
   logDebug $ "RPCGetCallees: " ++ (show usr)
   result <- callLenChan dbQueryChan $! DBGetCallees usr
-  mapM_ print result
   return $! encode $ RPCOK result
 
-doGetBases :: DBChan -> USR -> IO ByteString
+doGetBases :: MonadIO m => DBChan -> USR -> m ByteString
 doGetBases dbQueryChan usr = do
   logDebug $ "RPCGetBases: " ++ (show usr)
   result <- callLenChan dbQueryChan $! DBGetBases usr
-  mapM_ print result
   return $! encode $ RPCOK result
 
-doGetOverrides :: DBChan -> USR -> IO ByteString
+doGetOverrides :: MonadIO m => DBChan -> USR -> m ByteString
 doGetOverrides dbQueryChan usr = do
   logDebug $ "RPCGetOverrides: " ++ (show usr)
   result <- callLenChan dbQueryChan $! DBGetOverrides usr
-  mapM_ print result
   return $! encode $ RPCOK result
 
-doGetRefs :: DBChan -> USR -> IO ByteString
+doGetRefs :: MonadIO m => DBChan -> USR -> m ByteString
 doGetRefs dbQueryChan usr = do
   logDebug $ "RPCGetRefs: " ++ (show usr)
   result <- callLenChan dbQueryChan $! DBGetRefs usr
-  mapM_ print result
   return $! encode $ RPCOK result
 
-doGetReferenced :: DBChan -> SourceLocation -> IO ByteString
+doGetReferenced :: MonadIO m => DBChan -> SourceLocation -> m ByteString
 doGetReferenced dbQueryChan sl = do
   logDebug $ "RPCGetReferenced: " ++ (show sl)
   result <- callLenChan dbQueryChan $! DBGetReferenced sl
-  mapM_ print result
   return $! encode $ RPCOK result
 
-doFoundDef :: DBChan -> DefUpdate -> IO ()
+doFoundDef :: MonadIO m => DBChan -> DefUpdate -> m ()
 doFoundDef dbChan di = do
   logDebug $ "RPCFoundDef: " ++ (show di)
   writeLenChan dbChan $ DBUpdateDef di
 
-doFoundOverride :: DBChan -> Override -> IO ()
+doFoundOverride :: MonadIO m => DBChan -> Override -> m ()
 doFoundOverride dbChan ov = do
   logDebug $ "RPCFoundOverride: " ++ (show ov)
   writeLenChan dbChan $ DBUpdateOverride ov
 
-doFoundRef :: DBChan -> ReferenceUpdate -> IO ()
+doFoundRef :: MonadIO m => DBChan -> ReferenceUpdate -> m ()
 doFoundRef dbChan rf = do
   logDebug $ "RPCFoundRef: " ++ (show rf)
   writeLenChan dbChan $ DBUpdateRef rf
 
-doFoundInclusion :: IndexChan -> DBChan -> DBChan -> Inclusion -> IO ()
+doFoundInclusion :: MonadIO m => IndexChan -> DBChan -> DBChan -> Inclusion -> m ()
 doFoundInclusion aChan dbChan dbQueryChan ic = do
   logDebug $ "RPCFoundInclusion: " ++ (show ic)
   writeLenChan dbChan (DBUpdateInclusion ic)
