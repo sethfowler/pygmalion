@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveDataTypeable, OverloadedStrings #-}
 
 module Pygmalion.RPC.Client
 ( RPC
@@ -28,7 +28,7 @@ module Pygmalion.RPC.Client
 
 import Control.Applicative
 import Control.Concurrent (newEmptyMVar, takeMVar, putMVar)
-import Control.Exception (bracket)
+import Control.Exception
 import Control.Monad.Trans
 import qualified Control.Monad.Trans.Reader as Reader
 import Data.ByteString.Char8 ()
@@ -36,6 +36,7 @@ import Data.Conduit
 import Data.Conduit.Cereal
 import Data.Conduit.Network
 import Data.Serialize
+import Data.Typeable
 import Network.Socket
 import System.Timeout
 
@@ -129,8 +130,8 @@ callRPC req conn = liftIO $ do
       result <- await
       case result of
         Just (RPCOK result') -> liftIO $ putMVar mResp $! result'
-        Just RPCError        -> error "Server reported an error"
-        _                    -> error "Unexpected result from server"
+        Just RPCError        -> throw $ RPCException "Server reported an error"
+        _                    -> throw $ RPCException "Unexpected result from server"
 
 callRPC_ :: RPCRequest -> RPCConnection -> RPC ()
 callRPC_ req conn = liftIO $ ensureCompleted =<< timeout 100000000 conduit 
@@ -140,4 +141,8 @@ callRPC_ req conn = liftIO $ ensureCompleted =<< timeout 100000000 conduit
 
 ensureCompleted :: Maybe a -> IO a
 ensureCompleted (Just a) = return a
-ensureCompleted _        = error "Connection to server timed out"
+ensureCompleted _        = throw $ RPCException "Connection to server timed out"
+
+data RPCException = RPCException String
+  deriving (Show, Typeable)
+instance Exception RPCException

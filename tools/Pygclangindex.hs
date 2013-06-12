@@ -10,13 +10,17 @@ import Pygmalion.RPC.Client
 
 main :: IO ()
 main = do
+    args <- getArgs
     result <- try $ do
       initLogger INFO
       nice 10
-      (port, ci) <- parseArgs =<< getArgs
+      (port, ci) <- parseArgs args
       withRPCRaw port (runSourceAnalyses ci)
     case result of
-      Left e   -> logError $ "Indexing process threw exception " ++ (show (e :: SomeException))
+      Left e   -> logError $ "While indexing with arguments "
+                          ++ (show args)
+                          ++ " process threw exception "
+                          ++ (show (e :: SomeException))
       Right () -> return ()
 
 parseArgs :: [String] -> IO (Port, CommandInfo)
