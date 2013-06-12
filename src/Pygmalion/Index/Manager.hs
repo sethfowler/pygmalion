@@ -27,6 +27,7 @@ import Pygmalion.Log
 
 data IndexSource = FromBuild  CommandInfo
                  | FromNotify SourceFile
+                 deriving (Show)
 
 sfFromSource :: IndexSource -> SourceFile
 sfFromSource (FromBuild  ci) = ciSourceFile ci
@@ -34,6 +35,7 @@ sfFromSource (FromNotify sf) = sf
 
 data IndexRequest = Index IndexSource
                   | ShutdownIndexer
+                  deriving (Show)
 
 type IndexChan = LenChan IndexRequest
 
@@ -46,14 +48,15 @@ data IndexContext = IndexContext
 type Indexer a = ReaderT IndexContext IO a
 
 runIndexManager :: Port -> IndexChan -> DBChan -> DBChan -> MVar (Set.Set SourceFile) -> IO ()
-runIndexManager port aChan dbChan dbQueryChan lox = go
+runIndexManager port iChan dbChan dbQueryChan lox = go
   where
+    ctx = IndexContext port iChan dbChan dbQueryChan
     go = {-# SCC "indexThread" #-} do
-         (!newCount, !req) <- readLenChan aChan
+         (!newCount, !req) <- readLenChan iChan
+         logDebug $ "Index request: " ++ (show req)
          logDebug $ "Index channel now has " ++ (show newCount) ++ " items waiting"
          case req of
-             Index src    -> do let ctx = IndexContext port aChan dbChan dbQueryChan
-                                runReaderT (checkLock lox src) ctx >> go
+             Index src       -> runReaderT (checkLock lox src) ctx >> go
              ShutdownIndexer -> logInfo "Shutting down analysis thread"
 
 checkLock :: MVar (Set.Set SourceFile) -> IndexSource -> Indexer ()

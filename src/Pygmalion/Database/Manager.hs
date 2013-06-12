@@ -8,7 +8,6 @@ module Pygmalion.Database.Manager
 ) where
 
 import Control.Applicative
-import Control.Concurrent
 import Control.Monad
 import Data.Time.Clock
 
@@ -22,19 +21,20 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBUpdateOverride Override
                | DBUpdateRef ReferenceUpdate
                | DBUpdateInclusion Inclusion
-               | DBInsertFileAndCheck SourceFile (MVar Bool)
+               | DBInsertFileAndCheck SourceFile (Response Bool)
                | DBResetMetadata SourceFile
-               | DBGetCommandInfo SourceFile (MVar (Maybe CommandInfo))
-               | DBGetSimilarCommandInfo SourceFile (MVar (Maybe CommandInfo))
-               | DBGetDefinition USR (MVar (Maybe DefInfo))
-               | DBGetIncluders SourceFile (MVar [CommandInfo])
-               | DBGetCallers USR (MVar [Invocation])
-               | DBGetCallees USR (MVar [DefInfo])
-               | DBGetBases USR (MVar [DefInfo])
-               | DBGetOverrides USR (MVar [DefInfo])
-               | DBGetRefs USR (MVar [SourceReference])
-               | DBGetReferenced SourceLocation (MVar [SourceReferenced])
+               | DBGetCommandInfo SourceFile (Response (Maybe CommandInfo))
+               | DBGetSimilarCommandInfo SourceFile (Response (Maybe CommandInfo))
+               | DBGetDefinition USR (Response (Maybe DefInfo))
+               | DBGetIncluders SourceFile (Response [CommandInfo])
+               | DBGetCallers USR (Response [Invocation])
+               | DBGetCallees USR (Response [DefInfo])
+               | DBGetBases USR (Response [DefInfo])
+               | DBGetOverrides USR (Response [DefInfo])
+               | DBGetRefs USR (Response [SourceReference])
+               | DBGetReferenced SourceLocation (Response [SourceReferenced])
                | DBShutdown
+               deriving (Show)
 type DBChan = LenChan DBRequest
 
 runDatabaseManager :: DBChan -> DBChan -> IO ()
@@ -50,6 +50,7 @@ runDatabaseManager chan queryChan = do
       go 0 newStart h
     go !n !s !h = {-# SCC "databaseThread" #-}
            do (!tookFirst, !newCount, !req) <- readEitherChan n queryChan chan
+              logDebug $ "Database request: " ++ (show req)
               logDebug $ if tookFirst then "Query channel now has " ++ (show newCount) ++ " queries waiting"
                                       else "Database channel now has " ++ (show newCount) ++ " requests waiting"
               case req of
@@ -102,73 +103,63 @@ doUpdateInclusion h ic = withTransaction h $ do
     logDebug $ "Updating database with inclusion: " ++ (show ic)
     updateInclusion h ic
 
-doInsertFileAndCheck :: DBHandle -> SourceFile -> MVar Bool -> IO ()
+doInsertFileAndCheck :: DBHandle -> SourceFile -> Response Bool -> IO ()
 doInsertFileAndCheck h f v = do
   logDebug $ "Inserting file and checking for " ++ (show f)
-  exists <- insertFileAndCheck h f
-  putMVar v $! exists
+  sendResponse v =<< insertFileAndCheck h f
 
 doResetMetadata :: DBHandle -> SourceFile -> IO ()
 doResetMetadata h sf = withTransaction h $ do
   logDebug $ "Resetting metadata for file: " ++ (show sf)
   resetMetadata h sf
 
-doGetCommandInfo :: DBHandle -> SourceFile -> MVar (Maybe CommandInfo) -> IO ()
+doGetCommandInfo :: DBHandle -> SourceFile -> Response (Maybe CommandInfo) -> IO ()
 doGetCommandInfo h f v = do
   logDebug $ "Getting CommandInfo for " ++ (show f)
-  ci <- getCommandInfo h f
-  putMVar v $! ci
+  sendResponse v =<< getCommandInfo h f
 
-doGetSimilarCommandInfo :: DBHandle -> SourceFile -> MVar (Maybe CommandInfo) -> IO ()
+doGetSimilarCommandInfo :: DBHandle -> SourceFile -> Response (Maybe CommandInfo) -> IO ()
 doGetSimilarCommandInfo h f v = do
   logDebug $ "Getting similar CommandInfo for " ++ (show f)
   ci <- liftM2 (<|>) (getCommandInfo h f) (getSimilarCommandInfo h f)
-  putMVar v $! ci
+  sendResponse v ci
 
-doGetDefinition :: DBHandle -> USR -> MVar (Maybe DefInfo) -> IO ()
+doGetDefinition :: DBHandle -> USR -> Response (Maybe DefInfo) -> IO ()
 doGetDefinition h usr v = do
   logDebug $ "Getting DefInfo for " ++ (show usr)
-  def <- getDef h usr
-  putMVar v $! def
+  sendResponse v =<< getDef h usr
 
-doGetIncluders :: DBHandle -> SourceFile -> MVar [CommandInfo] -> IO ()
+doGetIncluders :: DBHandle -> SourceFile -> Response [CommandInfo] -> IO ()
 doGetIncluders h sf v = do
   logDebug $ "Getting includers for " ++ (show sf)
-  includers <- getIncluders h sf
-  putMVar v $! includers
+  sendResponse v =<< getIncluders h sf
 
-doGetCallers :: DBHandle -> USR -> MVar [Invocation] -> IO ()
+doGetCallers :: DBHandle -> USR -> Response [Invocation] -> IO ()
 doGetCallers h usr v = do
   logDebug $ "Getting callers for " ++ (show usr)
-  callers <- getCallers h usr
-  putMVar v $! callers
+  sendResponse v =<< getCallers h usr
 
-doGetCallees :: DBHandle -> USR -> MVar [DefInfo] -> IO ()
+doGetCallees :: DBHandle -> USR -> Response [DefInfo] -> IO ()
 doGetCallees h usr v = do
   logDebug $ "Getting callees for " ++ (show usr)
-  callees <- getCallees h usr
-  putMVar v $! callees
+  sendResponse v =<< getCallees h usr
 
-doGetBases :: DBHandle -> USR -> MVar [DefInfo] -> IO ()
+doGetBases :: DBHandle -> USR -> Response [DefInfo] -> IO ()
 doGetBases h usr v = do
   logDebug $ "Getting bases for " ++ (show usr)
-  bases <- getOverrided h usr
-  putMVar v $! bases
+  sendResponse v =<< getOverrided h usr
 
-doGetOverrides :: DBHandle -> USR -> MVar [DefInfo] -> IO ()
+doGetOverrides :: DBHandle -> USR -> Response [DefInfo] -> IO ()
 doGetOverrides h usr v = do
   logDebug $ "Getting overrides for " ++ (show usr)
-  overrides <- getOverriders h usr
-  putMVar v $! overrides
+  sendResponse v =<< getOverriders h usr
 
-doGetRefs :: DBHandle -> USR -> MVar [SourceReference] -> IO ()
+doGetRefs :: DBHandle -> USR -> Response [SourceReference] -> IO ()
 doGetRefs h usr v = do
   logDebug $ "Getting refs for " ++ (show usr)
-  refs <- getReferences h usr
-  putMVar v $! refs
+  sendResponse v =<< getReferences h usr
 
-doGetReferenced :: DBHandle -> SourceLocation -> MVar [SourceReferenced] -> IO ()
+doGetReferenced :: DBHandle -> SourceLocation -> Response [SourceReferenced] -> IO ()
 doGetReferenced h sl v = do
   logDebug $ "Getting referenced for " ++ (show sl)
-  refs <- getReferenced h sl
-  putMVar v $! refs
+  sendResponse v =<< getReferenced h sl

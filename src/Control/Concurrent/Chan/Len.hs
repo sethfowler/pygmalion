@@ -6,6 +6,9 @@ module Control.Concurrent.Chan.Len
 , readLenChanPreferFirst
 , callLenChan
 , getLenChanCount
+, Response
+, newResponse
+, sendResponse
 ) where
 
 import Control.Concurrent.MVar
@@ -51,11 +54,23 @@ readLenChanPreferFirst c1 c2 = liftIO $ atomically $ do
                      writeTVar (counter c2) $! newCount
                      return $! (False, newCount, v2)
 
-callLenChan :: MonadIO m => LenChan a -> (MVar b -> a) -> m b
+callLenChan :: MonadIO m => LenChan a -> (Response b -> a) -> m b
 callLenChan c cmd = do
   mResult <- liftIO newEmptyMVar
-  writeLenChan c (cmd mResult)
+  writeLenChan c $ cmd (Response mResult)
   liftIO $ takeMVar mResult
 
 getLenChanCount :: MonadIO m => LenChan a -> m Int
 getLenChanCount c = liftIO $ atomically $ readTVar (counter c)
+
+newtype Response a = Response (MVar a)
+instance Show (Response a) where
+  show _ = "(Response)"
+
+newResponse :: MonadIO m => m (Response a)
+newResponse = do
+  resp <- liftIO newEmptyMVar
+  return $! Response resp
+
+sendResponse :: MonadIO m => Response a -> a -> m ()
+sendResponse (Response r) v = liftIO $ putMVar r $! v
