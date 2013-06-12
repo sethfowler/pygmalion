@@ -118,10 +118,8 @@ executable pygclangindex
   ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N
   main-is:        Pygclangindex.hs 
   build-depends:  base >= 4
-               ,  directory
                ,  pygmalion
                ,  unix
-               ,  utf8-string
   hs-source-dirs: tools
 
 test-suite pygmalion-quickcheck

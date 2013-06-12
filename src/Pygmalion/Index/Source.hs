@@ -33,10 +33,10 @@ import Pygmalion.Log
 import Pygmalion.RPC.Client
 import Pygmalion.SourceKind
 
-runSourceAnalyses :: WorkingPath -> CommandInfo -> RPCConnection -> IO ()
-runSourceAnalyses wd ci conn = do
+runSourceAnalyses :: CommandInfo -> RPCConnection -> IO ()
+runSourceAnalyses ci conn = do
   result <- try $ withTranslationUnit ci $ \tu -> do
-                    inclusionsAnalysis conn wd ci tu
+                    inclusionsAnalysis conn ci tu
                     defsAnalysis conn ci tu
   case result of
     Right _ -> return ()
@@ -62,20 +62,19 @@ displayAST ci = do
     Right _                 -> return ()
     Left (ClangException e) -> logWarn ("Clang exception: " ++ e )
 
-inclusionsAnalysis :: RPCConnection -> WorkingPath -> CommandInfo -> TranslationUnit
+inclusionsAnalysis :: RPCConnection -> CommandInfo -> TranslationUnit
                    -> ClangApp s ()
-inclusionsAnalysis conn wd ci tu = void $ getInclusions tu
-                                          (inclusionsVisitor conn wd ci)
+inclusionsAnalysis conn ci tu = void $ getInclusions tu
+                                       (inclusionsVisitor conn ci)
 
-inclusionsVisitor :: RPCConnection -> WorkingPath -> CommandInfo -> InclusionVisitor s
-inclusionsVisitor conn wd ci file iStack = do
+inclusionsVisitor :: RPCConnection -> CommandInfo -> InclusionVisitor s
+inclusionsVisitor conn ci file iStack = do
     ic <- File.getName file >>= CS.unpackByteString
-    when (isLocalHeader wd ic) $ do
-      let mkInclusion' = mkInclusion ic
-      case iStack of
-        []       -> return () -- The source file itself.
-        (_ : []) -> liftIO $ runRPC (rpcFoundInclusion (mkInclusion' True)) conn
-        (_ : _)  -> liftIO $ runRPC (rpcFoundInclusion (mkInclusion' False)) conn
+    let mkInclusion' = mkInclusion ic
+    case iStack of
+      []       -> return () -- The source file itself.
+      (_ : []) -> liftIO $ runRPC (rpcFoundInclusion (mkInclusion' True)) conn
+      (_ : _)  -> liftIO $ runRPC (rpcFoundInclusion (mkInclusion' False)) conn
   where
     mkInclusion ic d =
       Inclusion (ci { ciArgs = (ciArgs ci) ++ (incArgs . ciLanguage $ ci)
@@ -85,9 +84,6 @@ inclusionsVisitor conn wd ci file iStack = do
     incArgs CLanguage       = ["-x", "c"]
     incArgs CPPLanguage     = ["-x", "c++"]
     incArgs UnknownLanguage = []
-
-isLocalHeader :: WorkingPath -> SourceFile -> Bool
-isLocalHeader wd p = (wd `B.isPrefixOf`) .&&. (not . B.null) $ p
 
 defsAnalysis :: RPCConnection -> CommandInfo -> TranslationUnit -> ClangApp s ()
 defsAnalysis conn ci tu = do
