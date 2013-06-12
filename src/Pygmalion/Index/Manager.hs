@@ -11,6 +11,8 @@ import Control.Concurrent
 import Control.Exception
 import Control.Monad
 import Control.Monad.Reader
+import Crypto.Hash.SHA1
+import qualified Data.ByteString as B
 import Data.DateTime
 import Data.Time.Clock.POSIX
 import qualified Data.Set as Set
@@ -68,33 +70,45 @@ checkLock !lox !src = do
             analyzeIfDirty src
             lift $ modifyMVar_ lox (\s -> return $! sf `Set.delete` s)
   
-getMTime :: SourceFile -> Indexer Time
-getMTime sf = liftIO $ do
+getMTime :: SourceFile -> Indexer (Maybe Time)
+getMTime sf = lift $ do
   result <- try $ getModificationTime (unSourceFile sf)
   case result of
-    Right clockTime -> return . floor . utcTimeToPOSIXSeconds . fromClockTime $
+    Right clockTime -> return . Just . floor . utcTimeToPOSIXSeconds . fromClockTime $
                           clockTime
     Left e          -> do logInfo $ "Couldn't read mtime for file "
                                  ++ (unSourceFile sf) ++ ": "
                                  ++ (show (e :: IOException))
-                          return 0  -- Most likely the file has been deleted.
+                          return Nothing  -- Most likely the file has been deleted.
+
+getSHA :: SourceFile -> Indexer B.ByteString
+getSHA sf = lift $ do
+  result <- try $ B.readFile (unSourceFile sf)
+  case result of
+    Right file -> return $ hash file
+    Left e     -> do logInfo $ "Couldn't read and hash file "
+                            ++ (unSourceFile sf) ++ ": "
+                            ++ (show (e :: IOException))
+                     return B.empty -- Most likely the file has been deleted.
 
 analyzeIfDirty :: IndexSource -> Indexer ()
 analyzeIfDirty src = do
   ctx <- ask
   let sf = sfFromSource src
   mayOldCI <- callLenChan (acDBQueryChan ctx) $ DBGetCommandInfo sf
-  mtime <- getMTime sf
-  case (src, mayOldCI) of
-    (FromBuild ci, Just oldCI)
-      | (ciLastIndexed oldCI) < mtime -> analyze ci
+  mayMTime <- getMTime sf
+
+  case (src, mayOldCI, mayMTime) of
+    (_, _, Nothing)                   -> ignoreUnreadable src
+    (FromBuild ci, Just oldCI, Just mtime)
       | commandInfoChanged ci oldCI   -> analyze ci
+      | (ciLastIndexed oldCI) < mtime -> analyzeIfSHADirty ci oldCI
       | otherwise                     -> ignoreUnchanged src mtime
-    (FromBuild ci, Nothing)           -> analyze ci
-    (FromNotify _, Just oldCI)
-      | (ciLastIndexed oldCI) < mtime -> analyze oldCI
+    (FromBuild ci, Nothing, _)        -> analyze ci
+    (FromNotify _, Just oldCI, Just mtime)
+      | (ciLastIndexed oldCI) < mtime -> analyzeIfSHADirty oldCI oldCI
       | otherwise                     -> ignoreUnchanged src mtime
-    (FromNotify _, Nothing)           -> ignoreUnknown src
+    (FromNotify _, Nothing, _)        -> ignoreUnknown src
 
 commandInfoChanged :: CommandInfo -> CommandInfo -> Bool
 commandInfoChanged a b | (ciWorkingPath a) /= (ciWorkingPath b) = True
@@ -102,6 +116,23 @@ commandInfoChanged a b | (ciWorkingPath a) /= (ciWorkingPath b) = True
                        | (ciArgs a)        /= (ciArgs b)        = True
                        | (ciLanguage a)    /= (ciLanguage b)    = True
                        | otherwise                              = False
+
+analyzeIfSHADirty :: CommandInfo -> CommandInfo -> Indexer ()
+analyzeIfSHADirty ci oldCI = do
+  -- Note that it's ok if ci and oldCI are the same. We just want to be able to
+  -- pass on the new version to |analyze| if they're different.
+  sha <- getSHA (ciSourceFile ci)
+  if sha /= (ciSHA oldCI) then analyze $ ci { ciSHA = sha }
+                          else shaUnchanged ci
+
+shaUnchanged :: CommandInfo -> Indexer ()
+shaUnchanged ci = do
+  -- Update the last index time so we don't waste time computing the SHA again.
+  logInfo $ "Index is up-to-date for file "
+         ++ (show . ciSourceFile $ ci)
+         ++ " (SHA1 digest is unchanged)"
+  time <- lift getPOSIXTime
+  updateCommand $ ci { ciLastIndexed = floor time }
 
 analyze :: CommandInfo -> Indexer ()
 analyze ci = do
@@ -119,6 +150,10 @@ ignoreUnchanged src mtime = logInfo $ "Index is up-to-date for file "
 ignoreUnknown :: IndexSource -> Indexer ()
 ignoreUnknown src = logInfo $ "Not indexing unknown file "
                            ++ (show . sfFromSource $ src)
+
+ignoreUnreadable :: IndexSource -> Indexer ()
+ignoreUnreadable src = logInfo $ "Not indexing unreadable file "
+                              ++ (show . sfFromSource $ src)
 
 -- If the source file associated with this CommandInfo has changed, what must
 -- we reindex?

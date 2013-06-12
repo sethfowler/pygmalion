@@ -26,6 +26,7 @@ module Pygmalion.Core
 , SourceReference (..)
 , SourceContext
 , Port
+, SHA
 , mkSourceFile
 , unSourceFile
 --, unSourceFileText
@@ -49,6 +50,7 @@ import GHC.Generics
 import Pygmalion.SourceKind
 
 type Port = Int
+type SHA  = B.ByteString
 
 -- The information we collect about a compilation command.
 data CommandInfo = CommandInfo
@@ -58,6 +60,7 @@ data CommandInfo = CommandInfo
   , ciArgs        :: ![B.ByteString]
   , ciLanguage    :: !Language
   , ciLastIndexed :: !Time
+  , ciSHA         :: !SHA
   } deriving (Eq, Read, Show, Generic)
 
 {-
@@ -76,6 +79,7 @@ instance FromRow CommandInfo where
                         <*> (B.lines <$> field) -- ciArgs
                         <*> fromRow             -- ciLanguage
                         <*> field               -- ciLastIndexed
+                        <*> field               -- ciSHA
 
 type SourceFile = B.ByteString
 type SourceFileHash = Int64

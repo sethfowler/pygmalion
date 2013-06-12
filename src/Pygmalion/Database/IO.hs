@@ -242,7 +242,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int64
 dbMajorVersion = 0
-dbMinorVersion = 15
+dbMinorVersion = 16
 
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c (mkQueryT sql)
@@ -315,13 +315,13 @@ getInclusions h sf = execQuery h getInclusionsStmt (Only $ hash sf)
 
 getInclusionsSQL :: T.Text
 getInclusionsSQL = T.concat
-  [ "select F.Name, W.Path, C.Command, A.Args, S.Language, S.LastIndexed "
-  , "from Inclusions as I                                                "
-  , "join SourceFiles as S on I.Inclusion = S.File                       "
-  , "join Files as F on S.File = F.Hash                                  "
-  , "join Paths as W on S.WorkingPath = W.Hash                           "
-  , "join BuildCommands as C on S.BuildCommand = C.Hash                  "
-  , "join BuildArgs as A on S.BuildArgs = A.Hash                         "
+  [ "select F.Name, W.Path, C.Command, A.Args, S.Language, S.LastIndexed, S.SHA "
+  , "from Inclusions as I                                                       "
+  , "join SourceFiles as S on I.Inclusion = S.File                              "
+  , "join Files as F on S.File = F.Hash                                         "
+  , "join Paths as W on S.WorkingPath = W.Hash                                  "
+  , "join BuildCommands as C on S.BuildCommand = C.Hash                         "
+  , "join BuildArgs as A on S.BuildArgs = A.Hash                                "
   , "where I.File = ?" ]
 
 getIncluders :: DBHandle -> SourceFile -> IO [CommandInfo]
@@ -329,13 +329,13 @@ getIncluders h sf = execQuery h getIncludersStmt (Only $ hash sf)
 
 getIncludersSQL :: T.Text
 getIncludersSQL = T.concat
-  [ "select F.Name, W.Path, C.Command, A.Args, S.Language, S.LastIndexed "
-  , "from Inclusions as I                                                "
-  , "join SourceFiles as S on I.File = S.File                            "
-  , "join Files as F on S.File = F.Hash                                  "
-  , "join Paths as W on S.WorkingPath = W.Hash                           "
-  , "join BuildCommands as C on S.BuildCommand = C.Hash                  "
-  , "join BuildArgs as A on S.BuildArgs = A.Hash                         "
+  [ "select F.Name, W.Path, C.Command, A.Args, S.Language, S.LastIndexed, S.SHA "
+  , "from Inclusions as I                                                       "
+  , "join SourceFiles as S on I.File = S.File                                   "
+  , "join Files as F on S.File = F.Hash                                         "
+  , "join Paths as W on S.WorkingPath = W.Hash                                  "
+  , "join BuildCommands as C on S.BuildCommand = C.Hash                         "
+  , "join BuildArgs as A on S.BuildArgs = A.Hash                                "
   , "where I.Inclusion = ?" ]
 
 -- Schema and operations for the Paths table.
@@ -371,22 +371,23 @@ insertArgsSQL = "insert or ignore into BuildArgs (Args, Hash) values (?, ?)"
 -- Schema and operations for the SourceFiles table.
 defineSourceFilesTable :: Connection -> IO ()
 defineSourceFilesTable c = execute_ c (mkQueryT sql)
-  where sql =  T.concat [ "create table if not exists SourceFiles(        "
-                        , "File integer primary key unique not null,      "
-                        , "WorkingPath integer not null,                  "
-                        , "BuildCommand integer not null,                 "
-                        , "BuildArgs integer not null,                    "
-                        , "Language integer not null,                     "
-                        , "LastIndexed integer zerofill unsigned not null)" ]
+  where sql =  T.concat [ "create table if not exists SourceFiles(         "
+                        , "File integer primary key unique not null,       "
+                        , "WorkingPath integer not null,                   "
+                        , "BuildCommand integer not null,                  "
+                        , "BuildArgs integer not null,                     "
+                        , "Language integer not null,                      "
+                        , "LastIndexed integer zerofill unsigned not null, "
+                        , "SHA varchar(20) not null)" ]
 
 updateSourceFileSQL :: T.Text
 updateSourceFileSQL = T.concat
-  [ "replace into SourceFiles                                            "
-  , "(File, WorkingPath, BuildCommand, BuildArgs, Language, LastIndexed) "
-  , "values (?, ?, ?, ?, ?, ?)" ]
+  [ "replace into SourceFiles                                                 "
+  , "(File, WorkingPath, BuildCommand, BuildArgs, Language, LastIndexed, SHA) "
+  , "values (?, ?, ?, ?, ?, ?, ?)" ]
 
 updateSourceFile :: DBHandle -> CommandInfo -> IO ()
-updateSourceFile h (CommandInfo sf wd cmd args lang t) = do
+updateSourceFile h (CommandInfo sf wd cmd args lang t sha) = do
     let sfHash = hash sf
     execStatement h insertFileStmt (sf, sfHash)
     let wdHash = hash wd
@@ -396,15 +397,15 @@ updateSourceFile h (CommandInfo sf wd cmd args lang t) = do
     let argsJoined = B.intercalate "\n" args
     let argsHash = hash argsJoined
     execStatement h insertArgsStmt (argsJoined, argsHash)
-    execStatement h updateSourceFileStmt (sfHash, wdHash, cmdHash, argsHash, fromEnum lang, t)
+    execStatement h updateSourceFileStmt (sfHash, wdHash, cmdHash, argsHash, fromEnum lang, t, sha)
 
 getAllSourceFiles :: DBHandle -> IO [CommandInfo]
 getAllSourceFiles h = query_ (conn h) (mkQueryT sql)
-  where sql = T.concat [ "select F.Name, W.Path, C.Command, A.Args, Language, LastIndexed "
-                       , "from SourceFiles                                                "
-                       , "join Files as F on SourceFiles.File = F.Hash                    "
-                       , "join Paths as W on SourceFiles.WorkingPath = W.Hash             "
-                       , "join BuildCommands as C on SourceFiles.BuildCommand = C.Hash    "
+  where sql = T.concat [ "select F.Name, W.Path, C.Command, A.Args, Language, LastIndexed, SHA "
+                       , "from SourceFiles                                                     "
+                       , "join Files as F on SourceFiles.File = F.Hash                         "
+                       , "join Paths as W on SourceFiles.WorkingPath = W.Hash                  "
+                       , "join BuildCommands as C on SourceFiles.BuildCommand = C.Hash         "
                        , "join BuildArgs as A on SourceFiles.BuildArgs = A.Hash" ]
 
 getCommandInfo :: DBHandle -> SourceFile -> IO (Maybe CommandInfo)
@@ -412,12 +413,12 @@ getCommandInfo h sf = execSingleRowQuery h getCommandInfoStmt (Only $ hash sf)
 
 getCommandInfoSQL :: T.Text
 getCommandInfoSQL = T.concat
-  [ "select F.Name, W.Path, C.Command, A.Args, Language, LastIndexed "
-  , "from SourceFiles                                                "
-  , "join Files as F on SourceFiles.File = F.Hash                    "
-  , "join Paths as W on SourceFiles.WorkingPath = W.Hash             "
-  , "join BuildCommands as C on SourceFiles.BuildCommand = C.Hash    "
-  , "join BuildArgs as A on SourceFiles.BuildArgs = A.Hash           "
+  [ "select F.Name, W.Path, C.Command, A.Args, Language, LastIndexed, SHA "
+  , "from SourceFiles                                                     "
+  , "join Files as F on SourceFiles.File = F.Hash                         "
+  , "join Paths as W on SourceFiles.WorkingPath = W.Hash                  "
+  , "join BuildCommands as C on SourceFiles.BuildCommand = C.Hash         "
+  , "join BuildArgs as A on SourceFiles.BuildArgs = A.Hash                "
   , "where F.Hash = ? limit 1" ]
 
 -- Eventually this should be more statistical, but right now it will just
@@ -432,12 +433,12 @@ getSimilarCommandInfo h sf = do
 
 getSimilarCommandInfoSQL :: T.Text
 getSimilarCommandInfoSQL = T.concat
-  [ "select F.Name, W.Path, C.Command, A.Args, Language, LastIndexed "
-  , "from SourceFiles                                                "
-  , "join Files as F on SourceFiles.File = F.Hash                    "
-  , "join Paths as W on SourceFiles.WorkingPath = W.Hash             "
-  , "join BuildCommands as C on SourceFiles.BuildCommand = C.Hash    "
-  , "join BuildArgs as A on SourceFiles.BuildArgs = A.Hash           "
+  [ "select F.Name, W.Path, C.Command, A.Args, Language, LastIndexed, SHA "
+  , "from SourceFiles                                                     "
+  , "join Files as F on SourceFiles.File = F.Hash                         "
+  , "join Paths as W on SourceFiles.WorkingPath = W.Hash                  "
+  , "join BuildCommands as C on SourceFiles.BuildCommand = C.Hash         "
+  , "join BuildArgs as A on SourceFiles.BuildArgs = A.Hash                "
   , "where F.Name like ? limit 1" ]
 
 -- Schema and operations for the Definitions table.

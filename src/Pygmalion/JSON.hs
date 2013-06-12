@@ -12,7 +12,7 @@ import Pygmalion.Core
 
 sourceRecordsToJSON :: [CommandInfo] -> String
 sourceRecordsToJSON cis = encodeStrict $ map (toJSObject . toKeyValue) cis
-  where toKeyValue (CommandInfo sf wd cmd args _ _) =
+  where toKeyValue (CommandInfo sf wd cmd args _ _ _) =
           [("file", unSourceFile sf),
            ("directory", B.toString wd),
            ("command", intercalate " " $ map B.toString (cmd : args))]

@@ -26,6 +26,7 @@ getCommandInfo cmd args = do
                   finalArgs
                   (inferLang args sf)
                   0
+                  (B.fromString "")
 
 inferLang :: [String] -> String -> Language
 inferLang as f = fromMaybe UnknownLanguage $ inferLangFromArgs as <|>
