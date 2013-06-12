@@ -13,7 +13,6 @@ import Control.Monad
 import Control.Monad.Reader
 import Crypto.Hash.SHA1
 import qualified Data.ByteString as B
-import Data.DateTime
 import Data.Time.Clock.POSIX
 import qualified Data.Set as Set
 import System.Directory
@@ -78,8 +77,7 @@ getMTime :: SourceFile -> Indexer (Maybe Time)
 getMTime sf = lift $ do
   result <- try $ getModificationTime (unSourceFile sf)
   case result of
-    Right clockTime -> return . Just . floor . utcTimeToPOSIXSeconds . fromClockTime $
-                          clockTime
+    Right clockTime -> return . Just . floor . utcTimeToPOSIXSeconds $ clockTime
     Left e          -> do logInfo $ "Couldn't read mtime for file "
                                  ++ (unSourceFile sf) ++ ": "
                                  ++ (show (e :: IOException))

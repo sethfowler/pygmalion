@@ -2,7 +2,6 @@ module Control.Exception.Labeled
 ( labeledCatch
 ) where
 
-import Prelude hiding (catch)
 import Control.Exception (catch, SomeException)
 
 -- Labels and rethrows an exception.

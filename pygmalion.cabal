@@ -23,7 +23,6 @@ library
                    configurator,
                    containers,
                    cryptohash,
-                   datetime,
                    direct-sqlite,
                    directory,
                    filepath,
