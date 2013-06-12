@@ -170,6 +170,14 @@ updateCommand ci = do
   ctx <- ask
   writeLenChan (acDBChan ctx) (DBUpdateCommandInfo ci)
 
+-- If indexing failed, we want to be sure to reattempt indexing on the file next
+-- time we have an opportunity. We make sure this happens by invalidating all of
+-- the metadata that might ordinarily cause us to skip indexing the file.
+invalidateCommand :: CommandInfo -> CommandInfo
+invalidateCommand ci = ci { ciLastIndexed = 0
+                          , ciSHA = B.empty
+                          }
+
 analyzeCode :: CommandInfo -> Indexer ()
 analyzeCode ci = do
     ctx <- ask
@@ -183,4 +191,4 @@ analyzeCode ci = do
     case code of
       ExitSuccess -> updateCommand $ ci { ciLastIndexed = floor time }
       _           -> do logInfo $ "Indexing process failed"
-                        updateCommand $ ci { ciLastIndexed = 0 }
+                        updateCommand (invalidateCommand ci)
