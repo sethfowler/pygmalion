@@ -67,8 +67,9 @@ checkLock !lox !src = do
     then do logInfo $ "Contention detected on source file "
                    ++ (unSourceFile sf) ++ "; sleeping..."
             lift $ putMVar lox lockedFiles
-            lift $ threadDelay 100000
-            checkLock lox src
+            lift $ threadDelay 10000  -- Keep churn under control.
+            ctx <- ask
+            writeLenChan (acIndexChan ctx) (Index src)
     else do lift $ putMVar lox $! (sf `Set.insert` lockedFiles)
             analyzeIfDirty src
             lift $ modifyMVar_ lox (\s -> return $! sf `Set.delete` s)
