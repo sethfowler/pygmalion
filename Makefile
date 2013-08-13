@@ -1,11 +1,10 @@
 default:
-	cabal-dev install
-	cp cabal-dev/bin/pyg* ~/.cabal/bin/
+	cabal install -fbuild-pygclangindex
 
 test:
-	cabal-dev configure --enable-tests
-	cabal-dev install
-	cabal-dev test
+	cabal configure --enable-tests
+	cabal install -fbuild-pygclangindex
+	cabal test
 
 clean:
-	cabal-dev clean
+	cabal clean

@@ -13,7 +13,7 @@ import System.Path
 
 import Pygmalion.Config
 import Pygmalion.Core
-import Pygmalion.Index.Source
+import Pygmalion.Index.Result
 import Pygmalion.Log
 import Pygmalion.RPC.Client
 --import Pygmalion.JSON
@@ -228,9 +228,13 @@ printRefs cf f (Just line) (Just col) = do
                  ": Reference: " ++ (B.toString ctx) ++ " [" ++ (show k) ++ "]"
 printRefs _ _ _ _ = usage
 
+{-
 printAST :: Config -> SourceFile -> IO ()
 printAST cf f = getCommandInfoOr (bailWith err) f cf >>= displayAST
   where err = "No compilation information for this file."
+-}
+printAST :: Config -> SourceFile -> IO ()
+printAST _ _ = error "Broken right now"
 
 {-
 doGetLookupInfo :: Config -> SourceLocation -> IO LookupInfo

@@ -41,26 +41,25 @@ library
                    transformers,
                    unordered-containers,
                    utf8-string,
-                   LibClang >= 0.2,
                    MissingH
   exposed-modules: Control.Concurrent.Chan.Len,
+                   Data.Bool.Predicate,
                    Pygmalion.Index.Command,
                    Pygmalion.Index.Extension,
                    Pygmalion.Index.Manager,
-                   Pygmalion.Index.Source,
                    Pygmalion.Config,
                    Pygmalion.Core,
                    Pygmalion.Database.IO,
                    Pygmalion.Database.Manager,
                    Pygmalion.Hash,
+                   Pygmalion.Index.Result,
                    Pygmalion.JSON,
                    Pygmalion.Log,
                    Pygmalion.RPC.Client,
                    Pygmalion.RPC.Request,
                    Pygmalion.RPC.Server
                    Pygmalion.SourceKind
-  other-modules:   Control.Exception.Labeled,
-                   Data.Bool.Predicate
+  other-modules:   Control.Exception.Labeled
   hs-source-dirs:  src
 
 executable pygmalion
@@ -113,13 +112,26 @@ executable pygd
                ,  MissingH
   hs-source-dirs: tools
 
+flag build-pygclangindex
+  description: Build the clang indexer.
+  default:     False
+
 executable pygclangindex
   ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N
   main-is:        Pygclangindex.hs 
-  build-depends:  base >= 4
-               ,  pygmalion
-               ,  unix
-  hs-source-dirs: tools
+  if flag(build-pygclangindex)
+    buildable:      True
+    build-depends:  base >= 4
+                 ,  bytestring
+                 ,  LibClang >= 0.2
+                 ,  pygmalion
+                 ,  transformers
+                 ,  unix
+                 ,  utf8-string
+    other-modules:  Pygmalion.Index.Source
+  else
+    buildable:      False
+  hs-source-dirs: indexers
 
 test-suite pygmalion-quickcheck
   ghc-options:    -threaded -rtsopts -with-rtsopts=-N

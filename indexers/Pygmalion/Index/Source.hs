@@ -3,7 +3,6 @@
 module Pygmalion.Index.Source
 ( runSourceAnalyses
 , getLookupInfo
-, LookupInfo (..)
 , displayAST
 ) where
 
@@ -29,9 +28,9 @@ import Data.Typeable
 import Data.Bool.Predicate
 import Pygmalion.Core
 import Pygmalion.Hash
+import Pygmalion.Index.Result
 import Pygmalion.Log
 import Pygmalion.RPC.Client
-import Pygmalion.SourceKind
 
 runSourceAnalyses :: CommandInfo -> RPCConnection -> IO ()
 runSourceAnalyses ci conn = do
@@ -41,12 +40,6 @@ runSourceAnalyses ci conn = do
   case result of
     Right _ -> return ()
     Left (ClangException e) -> logWarn ("Clang exception: " ++ e) >> return ()
-
-data LookupInfo = GotDef DefInfo
-                | GotDecl USR DefInfo
-                | GotUSR USR
-                | GotNothing
-                deriving (Eq, Show)
 
 getLookupInfo :: CommandInfo -> SourceLocation -> IO LookupInfo
 getLookupInfo ci sl = do
@@ -404,3 +397,160 @@ withTranslationUnit ci f = do
 data ClangException = ClangException String
   deriving (Show, Typeable)
 instance Exception ClangException
+
+toSourceKind :: C.CursorKind -> SourceKind
+toSourceKind C.Cursor_UnexposedDecl                      = UnexposedDecl
+toSourceKind C.Cursor_StructDecl                         = StructDecl
+toSourceKind C.Cursor_UnionDecl                          = UnionDecl
+toSourceKind C.Cursor_ClassDecl                          = ClassDecl
+toSourceKind C.Cursor_EnumDecl                           = EnumDecl
+toSourceKind C.Cursor_FieldDecl                          = FieldDecl
+toSourceKind C.Cursor_EnumConstantDecl                   = EnumConstantDecl
+toSourceKind C.Cursor_FunctionDecl                       = FunctionDecl
+toSourceKind C.Cursor_VarDecl                            = VarDecl
+toSourceKind C.Cursor_ParmDecl                           = ParmDecl
+toSourceKind C.Cursor_ObjCInterfaceDecl                  = ObjCInterfaceDecl
+toSourceKind C.Cursor_ObjCCategoryDecl                   = ObjCCategoryDecl
+toSourceKind C.Cursor_ObjCProtocolDecl                   = ObjCProtocolDecl
+toSourceKind C.Cursor_ObjCPropertyDecl                   = ObjCPropertyDecl
+toSourceKind C.Cursor_ObjCIvarDecl                       = ObjCIvarDecl
+toSourceKind C.Cursor_ObjCInstanceMethodDecl             = ObjCInstanceMethodDecl
+toSourceKind C.Cursor_ObjCClassMethodDecl                = ObjCClassMethodDecl
+toSourceKind C.Cursor_ObjCImplementationDecl             = ObjCImplementationDecl
+toSourceKind C.Cursor_ObjCCategoryImplDecl               = ObjCCategoryImplDecl
+toSourceKind C.Cursor_TypedefDecl                        = TypedefDecl
+toSourceKind C.Cursor_CXXMethod                          = CXXMethod
+toSourceKind C.Cursor_Namespace                          = Namespace
+toSourceKind C.Cursor_LinkageSpec                        = LinkageSpec
+toSourceKind C.Cursor_Constructor                        = Constructor
+toSourceKind C.Cursor_Destructor                         = Destructor
+toSourceKind C.Cursor_ConversionFunction                 = ConversionFunction
+toSourceKind C.Cursor_TemplateTypeParameter              = TemplateTypeParameter
+toSourceKind C.Cursor_NonTypeTemplateParameter           = NonTypeTemplateParameter
+toSourceKind C.Cursor_TemplateTemplateParameter          = TemplateTemplateParameter
+toSourceKind C.Cursor_FunctionTemplate                   = FunctionTemplate
+toSourceKind C.Cursor_ClassTemplate                      = ClassTemplate
+toSourceKind C.Cursor_ClassTemplatePartialSpecialization = ClassTemplatePartialSpecialization
+toSourceKind C.Cursor_NamespaceAlias                     = NamespaceAlias
+toSourceKind C.Cursor_UsingDirective                     = UsingDirective
+toSourceKind C.Cursor_UsingDeclaration                   = UsingDeclaration
+toSourceKind C.Cursor_TypeAliasDecl                      = TypeAliasDecl
+toSourceKind C.Cursor_ObjCSynthesizeDecl                 = ObjCSynthesizeDecl
+toSourceKind C.Cursor_ObjCDynamicDecl                    = ObjCDynamicDecl
+toSourceKind C.Cursor_CXXAccessSpecifier                 = CXXAccessSpecifier
+toSourceKind C.Cursor_FirstDecl                          = FirstDecl
+toSourceKind C.Cursor_LastDecl                           = LastDecl
+toSourceKind C.Cursor_FirstRef                           = FirstRef
+toSourceKind C.Cursor_ObjCSuperClassRef                  = ObjCSuperClassRef
+toSourceKind C.Cursor_ObjCProtocolRef                    = ObjCProtocolRef
+toSourceKind C.Cursor_ObjCClassRef                       = ObjCClassRef
+toSourceKind C.Cursor_TypeRef                            = TypeRef
+toSourceKind C.Cursor_CXXBaseSpecifier                   = CXXBaseSpecifier
+toSourceKind C.Cursor_TemplateRef                        = TemplateRef
+toSourceKind C.Cursor_NamespaceRef                       = NamespaceRef
+toSourceKind C.Cursor_MemberRef                          = MemberRef
+toSourceKind C.Cursor_LabelRef                           = LabelRef
+toSourceKind C.Cursor_OverloadedDeclRef                  = OverloadedDeclRef
+toSourceKind C.Cursor_LastRef                            = LastRef
+toSourceKind C.Cursor_FirstInvalid                       = FirstInvalid
+toSourceKind C.Cursor_InvalidFile                        = InvalidFile
+toSourceKind C.Cursor_NoDeclFound                        = NoDeclFound
+toSourceKind C.Cursor_NotImplemented                     = NotImplemented
+toSourceKind C.Cursor_InvalidCode                        = InvalidCode
+toSourceKind C.Cursor_LastInvalid                        = LastInvalid
+toSourceKind C.Cursor_FirstExpr                          = FirstExpr
+toSourceKind C.Cursor_UnexposedExpr                      = UnexposedExpr
+toSourceKind C.Cursor_DeclRefExpr                        = DeclRefExpr
+toSourceKind C.Cursor_MemberRefExpr                      = MemberRefExpr
+toSourceKind C.Cursor_CallExpr                           = CallExpr
+toSourceKind C.Cursor_ObjCMessageExpr                    = ObjCMessageExpr
+toSourceKind C.Cursor_BlockExpr                          = BlockExpr
+toSourceKind C.Cursor_IntegerLiteral                     = IntegerLiteral
+toSourceKind C.Cursor_FloatingLiteral                    = FloatingLiteral
+toSourceKind C.Cursor_ImaginaryLiteral                   = ImaginaryLiteral
+toSourceKind C.Cursor_StringLiteral                      = StringLiteral
+toSourceKind C.Cursor_CharacterLiteral                   = CharacterLiteral
+toSourceKind C.Cursor_ParenExpr                          = ParenExpr
+toSourceKind C.Cursor_UnaryOperator                      = UnaryOperator
+toSourceKind C.Cursor_ArraySubscriptExpr                 = ArraySubscriptExpr
+toSourceKind C.Cursor_BinaryOperator                     = BinaryOperator
+toSourceKind C.Cursor_CompoundAssignOperator             = CompoundAssignOperator
+toSourceKind C.Cursor_ConditionalOperator                = ConditionalOperator
+toSourceKind C.Cursor_CStyleCastExpr                     = CStyleCastExpr
+toSourceKind C.Cursor_CompoundLiteralExpr                = CompoundLiteralExpr
+toSourceKind C.Cursor_InitListExpr                       = InitListExpr
+toSourceKind C.Cursor_AddrLabelExpr                      = AddrLabelExpr
+toSourceKind C.Cursor_StmtExpr                           = StmtExpr
+toSourceKind C.Cursor_GenericSelectionExpr               = GenericSelectionExpr
+toSourceKind C.Cursor_GNUNullExpr                        = GNUNullExpr
+toSourceKind C.Cursor_CXXStaticCastExpr                  = CXXStaticCastExpr
+toSourceKind C.Cursor_CXXDynamicCastExpr                 = CXXDynamicCastExpr
+toSourceKind C.Cursor_CXXReinterpretCastExpr             = CXXReinterpretCastExpr
+toSourceKind C.Cursor_CXXConstCastExpr                   = CXXConstCastExpr
+toSourceKind C.Cursor_CXXFunctionalCastExpr              = CXXFunctionalCastExpr
+toSourceKind C.Cursor_CXXTypeidExpr                      = CXXTypeidExpr
+toSourceKind C.Cursor_CXXBoolLiteralExpr                 = CXXBoolLiteralExpr
+toSourceKind C.Cursor_CXXNullPtrLiteralExpr              = CXXNullPtrLiteralExpr
+toSourceKind C.Cursor_CXXThisExpr                        = CXXThisExpr
+toSourceKind C.Cursor_CXXThrowExpr                       = CXXThrowExpr
+toSourceKind C.Cursor_CXXNewExpr                         = CXXNewExpr
+toSourceKind C.Cursor_CXXDeleteExpr                      = CXXDeleteExpr
+toSourceKind C.Cursor_UnaryExpr                          = UnaryExpr
+toSourceKind C.Cursor_ObjCStringLiteral                  = ObjCStringLiteral
+toSourceKind C.Cursor_ObjCEncodeExpr                     = ObjCEncodeExpr
+toSourceKind C.Cursor_ObjCSelectorExpr                   = ObjCSelectorExpr
+toSourceKind C.Cursor_ObjCProtocolExpr                   = ObjCProtocolExpr
+toSourceKind C.Cursor_ObjCBridgedCastExpr                = ObjCBridgedCastExpr
+toSourceKind C.Cursor_PackExpansionExpr                  = PackExpansionExpr
+toSourceKind C.Cursor_SizeOfPackExpr                     = SizeOfPackExpr
+toSourceKind C.Cursor_LastExpr                           = LastExpr
+toSourceKind C.Cursor_FirstStmt                          = FirstStmt
+toSourceKind C.Cursor_UnexposedStmt                      = UnexposedStmt
+toSourceKind C.Cursor_LabelStmt                          = LabelStmt
+toSourceKind C.Cursor_CompoundStmt                       = CompoundStmt
+toSourceKind C.Cursor_CaseStmt                           = CaseStmt
+toSourceKind C.Cursor_DefaultStmt                        = DefaultStmt
+toSourceKind C.Cursor_IfStmt                             = IfStmt
+toSourceKind C.Cursor_SwitchStmt                         = SwitchStmt
+toSourceKind C.Cursor_WhileStmt                          = WhileStmt
+toSourceKind C.Cursor_DoStmt                             = DoStmt
+toSourceKind C.Cursor_ForStmt                            = ForStmt
+toSourceKind C.Cursor_GotoStmt                           = GotoStmt
+toSourceKind C.Cursor_IndirectGotoStmt                   = IndirectGotoStmt
+toSourceKind C.Cursor_ContinueStmt                       = ContinueStmt
+toSourceKind C.Cursor_BreakStmt                          = BreakStmt
+toSourceKind C.Cursor_ReturnStmt                         = ReturnStmt
+toSourceKind C.Cursor_AsmStmt                            = AsmStmt
+toSourceKind C.Cursor_ObjCAtTryStmt                      = ObjCAtTryStmt
+toSourceKind C.Cursor_ObjCAtCatchStmt                    = ObjCAtCatchStmt
+toSourceKind C.Cursor_ObjCAtFinallyStmt                  = ObjCAtFinallyStmt
+toSourceKind C.Cursor_ObjCAtThrowStmt                    = ObjCAtThrowStmt
+toSourceKind C.Cursor_ObjCAtSynchronizedStmt             = ObjCAtSynchronizedStmt
+toSourceKind C.Cursor_ObjCAutoreleasePoolStmt            = ObjCAutoreleasePoolStmt
+toSourceKind C.Cursor_ObjCForCollectionStmt              = ObjCForCollectionStmt
+toSourceKind C.Cursor_CXXCatchStmt                       = CXXCatchStmt
+toSourceKind C.Cursor_CXXTryStmt                         = CXXTryStmt
+toSourceKind C.Cursor_CXXForRangeStmt                    = CXXForRangeStmt
+toSourceKind C.Cursor_SEHTryStmt                         = SEHTryStmt
+toSourceKind C.Cursor_SEHExceptStmt                      = SEHExceptStmt
+toSourceKind C.Cursor_SEHFinallyStmt                     = SEHFinallyStmt
+toSourceKind C.Cursor_NullStmt                           = NullStmt
+toSourceKind C.Cursor_DeclStmt                           = DeclStmt
+toSourceKind C.Cursor_LastStmt                           = LastStmt
+toSourceKind C.Cursor_TranslationUnit                    = TranslationUnit
+toSourceKind C.Cursor_FirstAttr                          = FirstAttr
+toSourceKind C.Cursor_UnexposedAttr                      = UnexposedAttr
+toSourceKind C.Cursor_IBActionAttr                       = IBActionAttr
+toSourceKind C.Cursor_IBOutletAttr                       = IBOutletAttr
+toSourceKind C.Cursor_IBOutletCollectionAttr             = IBOutletCollectionAttr
+toSourceKind C.Cursor_CXXFinalAttr                       = CXXFinalAttr
+toSourceKind C.Cursor_CXXOverrideAttr                    = CXXOverrideAttr
+toSourceKind C.Cursor_AnnotateAttr                       = AnnotateAttr
+toSourceKind C.Cursor_LastAttr                           = LastAttr
+toSourceKind C.Cursor_PreprocessingDirective             = PreprocessingDirective
+toSourceKind C.Cursor_MacroDefinition                    = MacroDefinition
+toSourceKind C.Cursor_MacroExpansion                     = MacroExpansion
+toSourceKind C.Cursor_MacroInstantiation                 = MacroInstantiation
+toSourceKind C.Cursor_InclusionDirective                 = InclusionDirective
+toSourceKind C.Cursor_FirstPreprocessing                 = FirstPreprocessing
+toSourceKind C.Cursor_LastPreprocessing                  = LastPreprocessing
