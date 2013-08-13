@@ -44,7 +44,6 @@ usage = do
   putStrLn   " --bases [file] [line] [col]"
   putStrLn   " --overrides [file] [line] [col]"
   putStrLn   " --references [file] [line] [col]"
-  putStrLn   " --display-ast [file]"
   bail
 
 parseArgs :: Config -> FilePath -> [String] -> IO ()
@@ -63,7 +62,6 @@ parseArgs c wd ["--overrides", f, line, col] = printOverrides c (asSourceFile wd
                                                                 (readMay line) (readMay col)
 parseArgs c wd ["--references", f, line, col] = printRefs c (asSourceFile wd f)
                                                             (readMay line) (readMay col)
-parseArgs c wd ["--display-ast", f] = printAST c (asSourceFile wd f)
 parseArgs _ _  ["--help"] = usage
 parseArgs _ _  ["-h"]     = usage
 parseArgs _ _ _           = usage
@@ -227,14 +225,6 @@ printRefs cf f (Just line) (Just col) = do
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Reference: " ++ (B.toString ctx) ++ " [" ++ (show k) ++ "]"
 printRefs _ _ _ _ = usage
-
-{-
-printAST :: Config -> SourceFile -> IO ()
-printAST cf f = getCommandInfoOr (bailWith err) f cf >>= displayAST
-  where err = "No compilation information for this file."
--}
-printAST :: Config -> SourceFile -> IO ()
-printAST _ _ = error "Broken right now"
 
 {-
 doGetLookupInfo :: Config -> SourceLocation -> IO LookupInfo
