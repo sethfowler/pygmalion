@@ -1,6 +1,5 @@
 import Control.Exception (catch, SomeException)
 import Data.List
-import Prelude hiding (catch)
 import System.Environment
 import System.Exit
 import System.Directory

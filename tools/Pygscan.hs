@@ -2,7 +2,6 @@ import Control.Concurrent.Async
 import Control.Exception (catch, SomeException)
 import Control.Monad
 import Control.Monad.Trans
-import Prelude hiding (catch)
 import System.Environment
 import System.Exit
 import System.Process
