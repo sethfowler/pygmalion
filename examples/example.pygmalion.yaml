@@ -1,0 +1,10 @@
+address: 127.0.0.1
+port: 7999
+make-command: make CC="$(idx) $(idx-args) $(cc) $(cc-args)" CXX="$(idx) $(idx-args) $(cpp) $(cpp-args)" $(mk-args)
+compilation-database: false
+tags: false
+cc: clang
+cc-args:
+cpp: clang++
+cpp-args:
+log-level: info

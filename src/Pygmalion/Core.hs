@@ -245,5 +245,5 @@ clangExecutable  = "pygclangindex"
 -- Data files.
 dbFile, configFile, compileCommandsFile :: String
 dbFile              = ".pygmalion.sqlite"
-configFile          = ".pygmalion.conf"
+configFile          = ".pygmalion.yaml"
 compileCommandsFile = "compile_commands.json"

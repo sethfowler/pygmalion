@@ -8,8 +8,8 @@ module Pygmalion.Config
 
 import Control.Applicative
 import Control.Monad
-import Data.Aeson
-import qualified Data.ByteString.Lazy as B
+import Data.Yaml
+import qualified Data.ByteString as B
 
 import Pygmalion.Core
 import Pygmalion.Log
@@ -99,5 +99,5 @@ checkConfig conf@Config { ifPort = port }
 
 getConfiguration :: IO Config
 getConfiguration = do
-  result <- (eitherDecode <$> readConfigFile) :: IO (Either String Config)
-  either reportError checkConfig result
+  result <- (decodeEither' <$> readConfigFile)
+  either (reportError . show) checkConfig result

@@ -42,6 +42,7 @@ library
                    transformers,
                    unordered-containers,
                    utf8-string,
+                   yaml,
                    MissingH
   exposed-modules: Control.Concurrent.Chan.Len,
                    Data.Bool.Predicate,
