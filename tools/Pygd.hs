@@ -37,8 +37,9 @@ main = do
   -- Launch threads.
   logDebug "Launching database thread"
   dbThread <- asyncBound (runDatabaseManager dbChan dbQueryChan)
-  --let maxThreads = numCapabilities
-  let maxThreads = 4 :: Int
+  let maxThreads = case (idxThreads cf) of
+                     0 -> numCapabilities
+                     n -> n
   indexThreads <- forM [1..maxThreads] $ \i -> do
     logDebug $ "Launching indexing thread #" ++ (show i)
     asyncBound (runIndexManager (ifPort cf) aChan dbChan dbQueryChan fileLox)

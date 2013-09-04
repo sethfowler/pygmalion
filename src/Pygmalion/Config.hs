@@ -33,31 +33,33 @@ import Pygmalion.Log
 --   -DCMAKE_CXX_FLAGS="$(idx-args) $(cxx) $(cxx-args)"
 
 data Config = Config
-  { ifAddr    :: String   -- Address of interface to bind to.
-  , ifPort    :: Port     -- Port to bind to.
-  , makeCmd   :: String   -- Format string for the make command. See above.
-  , makeCDB   :: Bool     -- If true, pygmake generates a CDB automatically.
-  , makeTAGS  :: Bool     -- If true, pygmake generates a TAGS file automatically.
-  , cc        :: String   -- C compiler executable to use.
-  , ccArgs    :: [String] -- Extra C compiler args, if any.
-  , cpp       :: String   -- C++ compiler executable to use.
-  , cppArgs   :: [String] -- Extra C++ compiler args, if any.
-  , logLevel  :: Priority -- The level of logging to enable.
+  { ifAddr     :: String   -- Address of interface to bind to.
+  , ifPort     :: Port     -- Port to bind to.
+  , makeCmd    :: String   -- Format string for the make command. See above.
+  , makeCDB    :: Bool     -- If true, pygmake generates a CDB automatically.
+  , makeTAGS   :: Bool     -- If true, pygmake generates a TAGS file automatically.
+  , cc         :: String   -- C compiler executable to use.
+  , ccArgs     :: [String] -- Extra C compiler args, if any.
+  , cpp        :: String   -- C++ compiler executable to use.
+  , cppArgs    :: [String] -- Extra C++ compiler args, if any.
+  , idxThreads :: Int      -- Number of indexing threads to run.
+  , logLevel   :: Priority -- The level of logging to enable.
   } deriving (Eq, Show)
 
 defaultConfig :: Config
 defaultConfig = Config
-  { ifAddr    = "127.0.0.1"
-  , ifPort    = 7999
-  , makeCmd   = "make CC=\"$(idx) $(idx-args) $(cc) $(cc-args)\" " ++
-                "CXX=\"$(idx) $(idx-args) $(cpp) $(cpp-args)\" $(mk-args)"
-  , makeCDB   = False
-  , makeTAGS  = False
-  , cc        = "clang"
-  , ccArgs    = []
-  , cpp       = "clang++"
-  , cppArgs   = []
-  , logLevel  = INFO
+  { ifAddr     = "127.0.0.1"
+  , ifPort     = 7999
+  , makeCmd    = "make CC=\"$(idx) $(idx-args) $(cc) $(cc-args)\" " ++
+                 "CXX=\"$(idx) $(idx-args) $(cpp) $(cpp-args)\" $(mk-args)"
+  , makeCDB    = False
+  , makeTAGS   = False
+  , cc         = "clang"
+  , ccArgs     = []
+  , cpp        = "clang++"
+  , cppArgs    = []
+  , idxThreads = 4
+  , logLevel   = INFO
   }
 
 instance FromJSON Priority where
@@ -83,6 +85,7 @@ instance FromJSON Config where
            <*> o .:? "cc-args"              .!= (ccArgs defaultConfig)
            <*> o .:? "cpp"                  .!= (cpp defaultConfig)
            <*> o .:? "cpp-args"             .!= (cppArgs defaultConfig)
+           <*> o .:? "indexing-threads"     .!= (idxThreads defaultConfig)
            <*> o .:? "log-level"            .!= (logLevel defaultConfig)
   parseJSON _ = mzero
 

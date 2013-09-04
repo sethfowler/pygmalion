@@ -11,4 +11,5 @@ cc: clang
 cc-args:
 cpp: clang++
 cpp-args:
+indexing-threads: 4  # Use 0 for 'use every core'.
 log-level: info
