@@ -69,6 +69,7 @@ executable pygmalion
   main-is:        Pygmalion.hs 
   build-depends:  base >= 4,
                   directory,
+                  process,
                   pygmalion,
                   safe,
                   utf8-string,

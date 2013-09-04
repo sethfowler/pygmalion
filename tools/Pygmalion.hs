@@ -10,6 +10,7 @@ import System.Directory
 import System.Environment
 import System.Exit
 import System.Path
+import System.Process
 
 import Pygmalion.Config
 import Pygmalion.Core
@@ -32,6 +33,7 @@ usage = do
   putStrLn $ "Usage: " ++ queryExecutable ++ " [command]"
   putStrLn   "where [command] is one of the following:"
   putStrLn   " --help                      Prints this message."
+  putStrLn   " --start                     Starts the pygmalion daemon."
   putStrLn   " --stop                      Terminates the pygmalion daemon."
   putStrLn   " --index [compiler] [args]   Manually request indexing of a file."
   putStrLn   " --generate-compile-commands Prints a clang compilation database."
@@ -50,6 +52,7 @@ usage = do
   bail
 
 parseArgs :: Config -> FilePath -> [String] -> IO ()
+parseArgs _ _  ["--start"] = start
 parseArgs c _  ["--stop"] = stop c
 parseArgs c _  ("--index" : cmd : args) = index c cmd args
 parseArgs c _  ["--generate-compile-commands"] = printCDB c
@@ -73,6 +76,9 @@ parseArgs _ _ _           = usage
 
 asSourceFile :: FilePath -> FilePath -> SourceFile
 asSourceFile wd p = mkSourceFile $ maybe p id (absNormPath wd p)
+
+start :: IO ()
+start = void $ waitForProcess =<< runCommand "pygd"
 
 stop :: Config -> IO ()
 stop cf = withRPC cf $ runRPC rpcStop
