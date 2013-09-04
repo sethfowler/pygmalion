@@ -14,6 +14,7 @@ cabal-version:       >=1.8
 library
   ghc-options:     -Wall -O -threaded
   build-depends:   base >= 4,
+                   aeson,
                    async,
                    bytestring,
                    cereal,
@@ -78,10 +79,10 @@ executable pygmake
   main-is:        Pygmake.hs 
   build-depends:  base >= 4,
                   async,
-                  directory,
                   process,
                   pygmalion,
-                  text
+                  text,
+                  MissingH
   hs-source-dirs: tools
 
 executable pygscan

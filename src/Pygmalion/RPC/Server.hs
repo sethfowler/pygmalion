@@ -28,7 +28,7 @@ runRPCServer cf iChan dbChan dbQueryChan =
   where
     settings = (serverSettings port addr) :: ServerSettings IO
     port = ifPort cf
-    addr = fromString (ifAddr cf)
+    addr = fromString $ ifAddr cf
 
 serverApp :: RPCServerContext -> Application IO
 serverApp ctx ad =
