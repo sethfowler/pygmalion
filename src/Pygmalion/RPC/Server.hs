@@ -1,9 +1,12 @@
-{-# LANGUAGE OverloadedStrings, BangPatterns #-}
+{-# LANGUAGE OverloadedStrings, BangPatterns, DeriveDataTypeable #-}
 
 module Pygmalion.RPC.Server
 ( runRPCServer
+, RPCServerExit(..)
 ) where
 
+import Control.Concurrent (ThreadId, myThreadId)
+import Control.Exception
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Reader
@@ -13,7 +16,9 @@ import Data.Conduit.Cereal
 import Data.Conduit.Network
 import Data.Serialize
 import Data.String
+import Data.Typeable
 
+import Control.Concurrent.MVar
 import Control.Concurrent.Chan.Len
 import Pygmalion.Config
 import Pygmalion.Core
@@ -23,8 +28,10 @@ import Pygmalion.Log
 import Pygmalion.RPC.Request
 
 runRPCServer :: Config -> IndexChan -> DBChan -> DBChan -> IO ()
-runRPCServer cf iChan dbChan dbQueryChan =
-    runTCPServer settings (serverApp $ RPCServerContext iChan dbChan dbQueryChan)
+runRPCServer cf iChan dbChan dbQueryChan = do
+    conns <- newMVar 0
+    threadId <- myThreadId
+    runTCPServer settings (serverApp $ RPCServerContext threadId iChan dbChan dbQueryChan conns)
   where
     settings = (serverSettings port addr) :: ServerSettings IO
     port = ifPort cf
@@ -35,21 +42,43 @@ serverApp ctx ad =
     (appSource ad) $= conduitGet getCI =$= process $$ (appSink ad)
   where
     getCI = {-# SCC "serverget" #-} get :: Get RPCRequest
+
     process = do
+      liftIO $ modifyMVar_ (rsConnections ctx) (\c -> return (c + 1))
+      process'
+
+    close = terminate' 1
+    terminate = terminate' 2
+
+    terminate' v = do
+      -- If v == 1, this balances the increment we got when starting
+      -- this connecting. If v > 1, this ensures that rsConnections
+      -- will eventually drop below 0, terminating the server.
+      conns <- liftIO $ takeMVar (rsConnections ctx)
+      let newConns = conns - v
+      liftIO $ putMVar (rsConnections ctx) newConns
+      when (newConns < 0) $ do
+        liftIO $ throwTo (rsThread ctx) RPCServerExit -- Terminate the server.
+
+    process' = do
       result <- await
       case result of
-        Just RPCDone -> return ()  -- Close connection.
+        Just RPCDone -> close
+        Just RPCStop -> terminate
         Just req     -> do res <- liftIO $ runReaderT (route req) ctx
                            case res of
-                              Just res' -> yield res' >> process
-                              Nothing   -> process
+                              Just res' -> yield res' >> process'
+                              Nothing   -> process'
         _            -> do logError "RPC server got bad request"
                            yield . encode $ (RPCError :: RPCResponse ())
+                           close
 
 data RPCServerContext = RPCServerContext
-  { rsIndexChan   :: !IndexChan
+  { rsThread      :: !ThreadId
+  , rsIndexChan   :: !IndexChan
   , rsDBChan      :: !DBChan
   , rsDBQueryChan :: !DBChan
+  , rsConnections :: !(MVar Int)
   }
 type RPCServer a = ReaderT RPCServerContext IO a
 
@@ -71,6 +100,7 @@ route (RPCFoundInclusion ic)        = sendInclusionUpdate_ ic
 route (RPCLog s)                    = logInfo s >> return Nothing
 route (RPCPing)                     = return . Just $! encode (RPCOK ())
 route (RPCDone)                     = error "Should not route RPCDone"
+route (RPCStop)                     = error "Should not route RPCStop"
 
 sendIndex_ :: IndexRequest -> RPCServer (Maybe ByteString)
 sendIndex_ !req = do
@@ -99,3 +129,6 @@ sendInclusionUpdate_ ic = do
   when (not existing) $
     writeLenChan (rsIndexChan ctx) (Index . FromBuild . icCommandInfo $ ic)
   return Nothing
+
+data RPCServerExit = RPCServerExit deriving (Show, Typeable)
+instance Exception RPCServerExit

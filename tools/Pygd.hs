@@ -2,7 +2,7 @@
 
 import Control.Concurrent
 import Control.Concurrent.Async
-import Control.Exception (Exception)
+import Control.Exception (Exception, fromException, toException)
 import Control.Monad
 import Data.List
 import qualified Data.Set as Set
@@ -35,38 +35,37 @@ main = do
   fileLox <- newMVar Set.empty
 
   -- Launch threads.
-  waiterThread <- async doWait
   logDebug "Launching database thread"
   dbThread <- asyncBound (runDatabaseManager dbChan dbQueryChan)
-  link2 waiterThread dbThread
   --let maxThreads = numCapabilities
   let maxThreads = 4 :: Int
-  threads <- forM [1..maxThreads] $ \i -> do
+  indexThreads <- forM [1..maxThreads] $ \i -> do
     logDebug $ "Launching indexing thread #" ++ (show i)
     asyncBound (runIndexManager (ifPort cf) aChan dbChan dbQueryChan fileLox)
-  mapM_ (link2 waiterThread) threads
   rpcThread <- async (runRPCServer cf aChan dbChan dbQueryChan)
-  link2 waiterThread rpcThread
   watchThread <- async (doWatch aChan stopWatching)
-  link2 waiterThread watchThread
 
-  -- When the waiter thread finishes, we begin shutdown.
-  ensureNoException =<< waitCatch waiterThread
-  cancel rpcThread  -- We have to cancel because the RPC server runs forever.
-  logDebug "Terminated RPC thread."
+  -- Wait for something to terminate.
+  void $ waitAnyCatch ([dbThread, rpcThread, watchThread] ++ indexThreads)
+
+  -- Shut down RPC server.
+  rpcResult <- poll rpcThread
+  case rpcResult of
+    Just r  -> ensureCleanExit r
+    Nothing -> cancel rpcThread
+  logDebug "Termination of RPC Server thread."
+
+  -- Shut down the other threads.
   putMVar stopWatching ()
   ensureNoException =<< waitCatch watchThread
   logDebug "Terminated watch thread."
-  forM_ threads $ \_ -> writeLenChan aChan ShutdownIndexer  -- Signifies end of data.
-  forM_ (zip threads [1..numCapabilities]) $ \(thread, i) -> do
+  forM_ indexThreads $ \_ -> writeLenChan aChan ShutdownIndexer  -- Signifies end of data.
+  forM_ (zip indexThreads [1..numCapabilities]) $ \(thread, i) -> do
     ensureNoException =<< waitCatch thread
     logDebug $ "Termination of thread #" ++ (show i)
   writeLenChan dbChan DBShutdown  -- Terminate the database thread.
   ensureNoException =<< waitCatch dbThread
   logDebug $ "Termination of database thread"
-
-doWait :: IO ()
-doWait = getLine >> return () 
 
 doWatch :: IndexChan -> MVar () -> IO ()
 doWatch aChan stopWatching = do
@@ -112,3 +111,11 @@ illegalPaths = [".git", ".hg", ".svn", "_darcs"]
 ensureNoException :: Exception a => Either a b -> IO ()
 ensureNoException (Right _) = return ()
 ensureNoException (Left e)  = logError $ "Thread threw an exception: " ++ (show e)
+
+ensureCleanExit :: Exception a => Either a b -> IO ()
+ensureCleanExit (Right _) = return ()
+ensureCleanExit (Left e) = do
+  let mayRPCServerExit = (fromException . toException $ e) :: Maybe RPCServerExit
+  case mayRPCServerExit of
+    Just _  -> return ()
+    Nothing -> logError $ "RPC server threw an exception: " ++ (show e)

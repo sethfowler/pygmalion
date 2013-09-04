@@ -9,6 +9,7 @@ module Pygmalion.RPC.Client
 , withRPC
 , withRPCRaw
 , runRPC
+, rpcStop
 , rpcPing
 , rpcLog
 , rpcIndex
@@ -69,6 +70,9 @@ runRPC = Reader.runReaderT
 
 rpcDone :: RPC ()
 rpcDone = callRPC_ RPCDone =<< Reader.ask
+
+rpcStop :: RPC ()
+rpcStop = callRPC_ RPCStop =<< Reader.ask
 
 rpcPing :: RPC ()
 rpcPing = callRPC RPCPing =<< Reader.ask

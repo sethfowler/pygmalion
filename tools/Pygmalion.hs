@@ -13,6 +13,7 @@ import System.Path
 
 import Pygmalion.Config
 import Pygmalion.Core
+import Pygmalion.Index.Command
 import Pygmalion.Index.Result
 import Pygmalion.Log
 import Pygmalion.RPC.Client
@@ -31,6 +32,8 @@ usage = do
   putStrLn $ "Usage: " ++ queryExecutable ++ " [command]"
   putStrLn   "where [command] is one of the following:"
   putStrLn   " --help                      Prints this message."
+  putStrLn   " --stop                      Terminates the pygmalion daemon."
+  putStrLn   " --index [compiler] [args]   Manually request indexing of a file."
   putStrLn   " --generate-compile-commands Prints a clang compilation database."
   putStrLn   " --compile-flags [file]      Prints the compilation flags for the"
   putStrLn   "                             given file, or nothing on failure. If"
@@ -47,6 +50,8 @@ usage = do
   bail
 
 parseArgs :: Config -> FilePath -> [String] -> IO ()
+parseArgs c _  ["--stop"] = stop c
+parseArgs c _  ("--index" : cmd : args) = index c cmd args
 parseArgs c _  ["--generate-compile-commands"] = printCDB c
 parseArgs c wd ["--compile-flags", f] = printFlags c (asSourceFile wd f)
 parseArgs c wd ["--working-directory", f] = printDir c (asSourceFile wd f)
@@ -68,6 +73,16 @@ parseArgs _ _ _           = usage
 
 asSourceFile :: FilePath -> FilePath -> SourceFile
 asSourceFile wd p = mkSourceFile $ maybe p id (absNormPath wd p)
+
+stop :: Config -> IO ()
+stop cf = withRPC cf $ runRPC rpcStop
+
+index :: Config -> String -> [String] -> IO ()
+index cf cmd args = do
+  result <- getCommandInfo cmd args
+  case result of
+    Just ci -> (withRPC cf $ runRPC (rpcIndex ci))
+    _       -> return ()   -- Can't do anything with this command.
 
 -- FIXME: Reimplement with RPC.
 printCDB :: Config -> IO ()

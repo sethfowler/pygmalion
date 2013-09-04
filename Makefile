@@ -2,8 +2,8 @@ default:
 	cabal install -fbuild-pygclangindex
 
 test:
-	cabal configure --enable-tests
-	cabal install -fbuild-pygclangindex
+	cabal configure --enable-tests -fbuild-pygclangindex
+	cabal build
 	cabal test
 
 clean:

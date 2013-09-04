@@ -35,6 +35,7 @@ module Pygmalion.Core
 , makeExecutable
 , daemonExecutable
 , clangExecutable
+, pygmalionDir
 , dbFile
 , configFile
 , compileCommandsFile
@@ -245,8 +246,9 @@ daemonExecutable = "pygd"
 clangExecutable  = "pygclangindex"
 
 -- Data files.
-dbFile, configFile, compileCommandsFile, tagsFile :: FilePath
-dbFile              = ".pygmalion" </> "pygmalion.sqlite"
-configFile          = ".pygmalion" </> "pygmalion.yaml"
+pygmalionDir, dbFile, configFile, compileCommandsFile, tagsFile :: FilePath
+pygmalionDir        = ".pygmalion"
+dbFile              = pygmalionDir </> "pygmalion.sqlite"
+configFile          = pygmalionDir </> "pygmalion.yaml"
 compileCommandsFile = "compile_commands.json"
 tagsFile            = "TAGS"

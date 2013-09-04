@@ -137,27 +137,15 @@ executable pygclangindex
     buildable:      False
   hs-source-dirs: indexers
 
-test-suite pygmalion-quickcheck
+test-suite pygmalion-hspec
   ghc-options:    -threaded -rtsopts -with-rtsopts=-N
   type:           exitcode-stdio-1.0
-  main-is:        QuickCheck.hs
-  build-depends:  base >= 4,
-                  pygmalion,
-                  QuickCheck,
-                  test-framework,
-                  test-framework-quickcheck2
-  other-modules:  Data.Bool.Predicate
-  hs-source-dirs: src,
-                  tests
-
-test-suite pygmalion-functional
-  ghc-options:    -threaded -rtsopts -with-rtsopts=-N
-  type:           exitcode-stdio-1.0
-  main-is:        Functional.hs
+  main-is:        Spec.hs
   build-depends:  base >= 4,
                   directory,
+                  hspec,
                   process,
                   pygmalion,
-                  test-framework,
-                  test-framework-golden
+                  HUnit,
+                  QuickCheck
   hs-source-dirs: tests

@@ -1,4 +1,4 @@
 dist
-.pygmalion.sqlite
+pygmalion.sqlite
 compile_commands.json
 cabal-dev
