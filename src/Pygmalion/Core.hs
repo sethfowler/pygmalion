@@ -38,6 +38,7 @@ module Pygmalion.Core
 , dbFile
 , configFile
 , compileCommandsFile
+, tagsFile
 ) where
 
 import Control.Applicative
@@ -46,6 +47,7 @@ import Data.Int
 import Data.Serialize
 import Database.SQLite.Simple (FromRow(..), field)
 import GHC.Generics
+import System.FilePath.Posix ((</>))
 
 import Pygmalion.SourceKind
 
@@ -243,7 +245,8 @@ daemonExecutable = "pygd"
 clangExecutable  = "pygclangindex"
 
 -- Data files.
-dbFile, configFile, compileCommandsFile :: String
-dbFile              = ".pygmalion.sqlite"
-configFile          = ".pygmalion.yaml"
+dbFile, configFile, compileCommandsFile, tagsFile :: FilePath
+dbFile              = ".pygmalion" </> "pygmalion.sqlite"
+configFile          = ".pygmalion" </> "pygmalion.yaml"
 compileCommandsFile = "compile_commands.json"
+tagsFile            = "TAGS"
