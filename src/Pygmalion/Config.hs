@@ -52,7 +52,7 @@ defaultConfig = Config
   { ifAddr     = "127.0.0.1"
   , ifPort     = 7999
   , makeCmd    = "make CC=\"$(idx) $(idxargs) $(cc) $(ccargs)\" " ++
-                 "CXX=\"$(idx) $(idxargs) $(cpp) $(cppargs)\" $(mkargs)"
+                 "CXX=\"$(idx) $(idxargs) $(cpp) $(cppargs)\" $(makeargs)"
   , makeArgs   = ""
   , ccCmd      = "clang"
   , ccArgs     = ""
