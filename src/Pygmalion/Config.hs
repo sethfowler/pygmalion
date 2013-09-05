@@ -17,32 +17,33 @@ import Pygmalion.Log
 -- The make command is a shell command specified as a format string
 -- with the following substitutions:
 -- $(idx)      - The indexer.
--- $(idx-args) - Arguments for the indexer.
+-- $(idxargs)  - Arguments for the indexer.
 -- $(cc)       - The C compiler.
--- $(cc-args)  - Arguments for the C compiler.
+-- $(ccargs)   - Arguments for the C compiler.
 -- $(cpp)      - The C++ compiler.
--- $(cpp-args) - Arguments for the C++ compiler.
--- $(mk-args)  - Commandline arguments for pygmake.
+-- $(cppargs)  - Arguments for the C++ compiler.
+-- $(makeargs) - Arguments for make.
 --
 -- A default format string for GNU make is below.
 -- For CMake, this would work:
--- cmake $(mk-args)
+-- cmake $(makeargs)
 --   -DCMAKE_C_COMPILER="$(idx)"
---   -DCMAKE_C_FLAGS="$(idx-args) $(cc) $(cc-args)"
+--   -DCMAKE_C_FLAGS="$(idxargs) $(cc) $(ccargs)"
 --   -DCMAKE_CXX_COMPILER="$(idx)"
---   -DCMAKE_CXX_FLAGS="$(idx-args) $(cxx) $(cxx-args)"
+--   -DCMAKE_CXX_FLAGS="$(idxargs) $(cxx) $(cxxargs)"
 
 data Config = Config
   { ifAddr     :: String   -- Address of interface to bind to.
   , ifPort     :: Port     -- Port to bind to.
   , makeCmd    :: String   -- Format string for the make command. See above.
-  , makeCDB    :: Bool     -- If true, pygmake generates a CDB automatically.
-  , makeTAGS   :: Bool     -- If true, pygmake generates a TAGS file automatically.
-  , cc         :: String   -- C compiler executable to use.
-  , ccArgs     :: [String] -- Extra C compiler args, if any.
-  , cpp        :: String   -- C++ compiler executable to use.
-  , cppArgs    :: [String] -- Extra C++ compiler args, if any.
+  , makeArgs   :: String   -- Format string for the make command. See above.
+  , ccCmd      :: String   -- C compiler executable to use.
+  , ccArgs     :: String   -- Extra C compiler args, if any.
+  , cppCmd     :: String   -- C++ compiler executable to use.
+  , cppArgs    :: String   -- Extra C++ compiler args, if any.
   , idxThreads :: Int      -- Number of indexing threads to run.
+  , genCDB     :: Bool     -- If true, pygmake generates a CDB automatically.
+  , genTAGS    :: Bool     -- If true, pygmake generates a TAGS file automatically.
   , logLevel   :: Priority -- The level of logging to enable.
   } deriving (Eq, Show)
 
@@ -50,15 +51,16 @@ defaultConfig :: Config
 defaultConfig = Config
   { ifAddr     = "127.0.0.1"
   , ifPort     = 7999
-  , makeCmd    = "make CC=\"$(idx) $(idx-args) $(cc) $(cc-args)\" " ++
-                 "CXX=\"$(idx) $(idx-args) $(cpp) $(cpp-args)\" $(mk-args)"
-  , makeCDB    = False
-  , makeTAGS   = False
-  , cc         = "clang"
-  , ccArgs     = []
-  , cpp        = "clang++"
-  , cppArgs    = []
+  , makeCmd    = "make CC=\"$(idx) $(idxargs) $(cc) $(ccargs)\" " ++
+                 "CXX=\"$(idx) $(idxargs) $(cpp) $(cppargs)\" $(mkargs)"
+  , makeArgs   = ""
+  , ccCmd      = "clang"
+  , ccArgs     = ""
+  , cppCmd     = "clang++"
+  , cppArgs    = ""
   , idxThreads = 4
+  , genCDB     = False
+  , genTAGS    = False
   , logLevel   = INFO
   }
 
@@ -76,17 +78,18 @@ instance FromJSON Priority where
 
 instance FromJSON Config where
   parseJSON (Object o) =
-    Config <$> o .:? "address"              .!= (ifAddr defaultConfig)
-           <*> o .:? "port"                 .!= (ifPort defaultConfig)
-           <*> o .:? "make-command"         .!= (makeCmd defaultConfig)
-           <*> o .:? "compilation-database" .!= (makeCDB defaultConfig)
-           <*> o .:? "tags"                 .!= (makeTAGS defaultConfig)
-           <*> o .:? "cc"                   .!= (cc defaultConfig)
-           <*> o .:? "cc-args"              .!= (ccArgs defaultConfig)
-           <*> o .:? "cpp"                  .!= (cpp defaultConfig)
-           <*> o .:? "cpp-args"             .!= (cppArgs defaultConfig)
-           <*> o .:? "indexing-threads"     .!= (idxThreads defaultConfig)
-           <*> o .:? "log-level"            .!= (logLevel defaultConfig)
+    Config <$> o .:? "address"             .!= (ifAddr defaultConfig)
+           <*> o .:? "port"                .!= (ifPort defaultConfig)
+           <*> o .:? "make"                .!= (makeCmd defaultConfig)
+           <*> o .:? "makeArgs"            .!= (makeArgs defaultConfig)
+           <*> o .:? "cc"                  .!= (ccCmd defaultConfig)
+           <*> o .:? "ccArgs"              .!= (ccArgs defaultConfig)
+           <*> o .:? "cpp"                 .!= (cppCmd defaultConfig)
+           <*> o .:? "cppArgs"             .!= (cppArgs defaultConfig)
+           <*> o .:? "indexingThreads"     .!= (idxThreads defaultConfig)
+           <*> o .:? "compilationDatabase" .!= (genCDB defaultConfig)
+           <*> o .:? "tags"                .!= (genTAGS defaultConfig)
+           <*> o .:? "logLevel"            .!= (logLevel defaultConfig)
   parseJSON _ = mzero
 
 readConfigFile :: IO B.ByteString

@@ -4,12 +4,16 @@
 # your configuration file, it will receive its default value.
 address: 127.0.0.1
 port: 7999
-make-command: make CC="$(idx) $(idx-args) $(cc) $(cc-args)" CXX="$(idx) $(idx-args) $(cpp) $(cpp-args)" $(mk-args)
-compilation-database: false
-tags: false
+make: make CC="$(idx) $(idxargs) $(cc) $(ccargs)" CXX="$(idx) $(idxargs) $(cpp) $(cppargs)" $(makeargs)
+# Note that the full flexibility of 'make' is usually not necessary. For most users, 'makeArgs' is enough.
+# For example, to execute the equivalent of 'make -f client.mk' you would use:
+# makeArgs: "-f client.mk"
+makeArgs:
 cc: clang
-cc-args:
+ccArgs:
 cpp: clang++
-cpp-args:
-indexing-threads: 4  # Use 0 for 'use every core'.
-log-level: info
+cppArgs:
+indexingThreads: 4  # Use 0 for 'use every core'.
+compilationDatabase: false
+tags: false
+logLevel: info

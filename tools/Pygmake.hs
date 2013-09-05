@@ -32,12 +32,12 @@ parseArgs as         = return as
 
 getMakeCommand :: Config -> [String] -> String
 getMakeCommand cf mkArgs = replace "$(idx)" scanExecutable
-                         . replace "$(idx-args)" ("--make " ++ (show . ifPort $ cf))
-                         . replace "$(cc)" (cc cf)
-                         . replace "$(cc-args)" (join " " $ ccArgs cf)
-                         . replace "$(cpp)" (cpp cf)
-                         . replace "$(cpp-args)" (join " " $ cppArgs cf)
-                         . replace "$(mk-args)" (join " " mkArgs)
+                         . replace "$(idxargs)" ("--make " ++ (show . ifPort $ cf))
+                         . replace "$(cc)" (ccCmd cf)
+                         . replace "$(ccargs)" (ccArgs cf)
+                         . replace "$(cpp)" (cppCmd cf)
+                         . replace "$(cppargs)" (cppArgs cf)
+                         . replace "$(makeargs)" (makeArgs cf ++ (join " " mkArgs))
                          . makeCmd $ cf
 
 executeMake :: Config -> [String] -> IO ()
