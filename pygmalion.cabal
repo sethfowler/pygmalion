@@ -115,14 +115,14 @@ executable pygd
                ,  MissingH
   hs-source-dirs: tools
 
-flag build-pygclangindex
+flag build-pygindex-clang
   description: Build the clang indexer.
   default:     False
 
-executable pygclangindex
+executable pygindex-clang
   ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N
-  main-is:        Pygclangindex.hs 
-  if flag(build-pygclangindex)
+  main-is:        Pygindexclang.hs 
+  if flag(build-pygindex-clang)
     buildable:      True
     build-depends:  base >= 4
                  ,  bytestring

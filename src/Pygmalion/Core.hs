@@ -34,7 +34,7 @@ module Pygmalion.Core
 , scanExecutable
 , makeExecutable
 , daemonExecutable
-, clangExecutable
+, indexExecutable
 , pygmalionDir
 , dbFile
 , configFile
@@ -238,12 +238,12 @@ instance FromRow SourceReference where
 type SourceContext = B.ByteString
 
 -- Tool names.
-queryExecutable, scanExecutable, makeExecutable, daemonExecutable, clangExecutable :: String
+queryExecutable, scanExecutable, makeExecutable, daemonExecutable, indexExecutable :: String
 queryExecutable  = "pygmalion"
 scanExecutable   = "pygscan"
 makeExecutable   = "pygmake"
 daemonExecutable = "pygd"
-clangExecutable  = "pygclangindex"
+indexExecutable  = "pygindex-clang"
 
 -- Data files.
 pygmalionDir, dbFile, configFile, compileCommandsFile, tagsFile :: FilePath

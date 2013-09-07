@@ -185,7 +185,7 @@ analyzeCode ci = do
     time <- lift getPOSIXTime
     writeLenChan (acDBChan ctx) (DBResetMetadata sf)
     (_, _, _, h) <- lift $ createProcess
-                         (proc "pygclangindex" [show (acPort ctx), show ci])
+                         (proc indexExecutable [show (acPort ctx), show ci])
     code <- lift $ waitForProcess h
     case code of
       ExitSuccess -> updateCommand $ ci { ciLastIndexed = floor time }
