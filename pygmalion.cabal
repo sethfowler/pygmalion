@@ -68,7 +68,9 @@ executable pygmalion
   ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N
   main-is:        Pygmalion.hs 
   build-depends:  base >= 4,
+                  async,
                   directory,
+                  mtl,
                   process,
                   pygmalion,
                   safe,
@@ -85,17 +87,6 @@ executable pygmake
                   pygmalion,
                   text,
                   MissingH
-  hs-source-dirs: tools
-
-executable pygscan
-  ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N
-  main-is:        Pygscan.hs 
-  build-depends:  base >= 4,
-                  async,
-                  mtl,
-                  process,
-                  pygmalion,
-                  text
   hs-source-dirs: tools
 
 executable pygd

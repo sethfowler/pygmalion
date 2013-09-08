@@ -12,7 +12,8 @@ module Pygmalion.RPC.Client
 , rpcStop
 , rpcPing
 , rpcLog
-, rpcIndex
+, rpcIndexCommand
+, rpcIndexFile
 , rpcGetSimilarCommandInfo
 , rpcGetDefinition
 , rpcGetCallers
@@ -80,8 +81,11 @@ rpcPing = callRPC RPCPing =<< Reader.ask
 rpcLog :: String -> RPC ()
 rpcLog s = callRPC_ (RPCLog s) =<< Reader.ask
 
-rpcIndex :: CommandInfo -> RPC ()
-rpcIndex ci = callRPC_ (RPCSendCommandInfo ci) =<< Reader.ask
+rpcIndexCommand :: CommandInfo -> RPC ()
+rpcIndexCommand ci = callRPC_ (RPCIndexCommand ci) =<< Reader.ask
+
+rpcIndexFile :: SourceFile -> RPC ()
+rpcIndexFile sf = callRPC_ (RPCIndexFile sf) =<< Reader.ask
 
 rpcGetSimilarCommandInfo :: SourceFile -> RPC (Maybe CommandInfo)
 rpcGetSimilarCommandInfo sf = callRPC (RPCGetSimilarCommandInfo sf) =<< Reader.ask

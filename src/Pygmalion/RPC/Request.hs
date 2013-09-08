@@ -10,7 +10,8 @@ import GHC.Generics
 
 import Pygmalion.Core
 
-data RPCRequest = RPCSendCommandInfo CommandInfo
+data RPCRequest = RPCIndexCommand CommandInfo
+                | RPCIndexFile SourceFile
                 | RPCGetCommandInfo SourceFile
                 | RPCGetSimilarCommandInfo SourceFile
                 | RPCGetDefinition USR

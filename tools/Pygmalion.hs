@@ -1,6 +1,9 @@
 {-# LANGUAGE OverloadedStrings, ViewPatterns #-}
 
+import Control.Concurrent.Async
+import Control.Exception (catch, SomeException)
 import Control.Monad
+import Control.Monad.Trans (liftIO)
 import qualified Data.ByteString.UTF8 as B
 import Data.List
 import Data.Maybe
@@ -35,7 +38,15 @@ usage = do
   putStrLn   " --help                      Prints this message."
   putStrLn   " --start                     Starts the pygmalion daemon."
   putStrLn   " --stop                      Terminates the pygmalion daemon."
-  putStrLn   " --index [compiler] [args]   Manually request indexing of a file."
+  putStrLn   " --index ([file]|[command])  Manually request indexing. If a single"
+  putStrLn   "                             argument is provided, it's interpreted"
+  putStrLn   "                             as a file to index using the default"
+  putStrLn   "                             compiler flags. Multiple arguments are"
+  putStrLn   "                             interpreted as a compiler invocation"
+  putStrLn   "                             (e.g. 'clang -c file.c') and the compiler"
+  putStrLn   "                             flags to use will be extracted appropriately."
+  putStrLn   " --make [command]            Both requests indexing and executes the"
+  putStrLn   "                             provided command."
   putStrLn   " --generate-compile-commands Prints a clang compilation database."
   putStrLn   " --compile-flags [file]      Prints the compilation flags for the"
   putStrLn   "                             given file, or nothing on failure. If"
@@ -54,7 +65,9 @@ usage = do
 parseArgs :: Config -> FilePath -> [String] -> IO ()
 parseArgs _ _  ["--start"] = start
 parseArgs c _  ["--stop"] = stop c
-parseArgs c _  ("--index" : cmd : args) = index c cmd args
+parseArgs c wd ("--index" : file : []) = indexFile c (asSourceFile wd file)
+parseArgs c _  ("--index" : cmd : args) = indexCommand c cmd args
+parseArgs c _  ("--make" : cmd : args) = makeCommand c cmd args
 parseArgs c _  ["--generate-compile-commands"] = printCDB c
 parseArgs c wd ["--compile-flags", f] = printFlags c (asSourceFile wd f)
 parseArgs c wd ["--working-directory", f] = printDir c (asSourceFile wd f)
@@ -83,12 +96,29 @@ start = void $ waitForProcess =<< runCommand "pygd"
 stop :: Config -> IO ()
 stop cf = withRPC cf $ runRPC rpcStop
 
-index :: Config -> String -> [String] -> IO ()
-index cf cmd args = do
+indexCommand :: Config -> String -> [String] -> IO ()
+indexCommand cf cmd args = do
   result <- getCommandInfo cmd args
   case result of
-    Just ci -> (withRPC cf $ runRPC (rpcIndex ci))
+    Just ci -> withRPC cf $ runRPC (rpcIndexCommand ci)
     _       -> return ()   -- Can't do anything with this command.
+
+indexFile :: Config -> SourceFile -> IO ()
+indexFile cf f = withRPC cf $ runRPC (rpcIndexFile f)
+
+makeCommand :: Config -> String -> [String] -> IO ()
+makeCommand cf cmd args = do
+    void $ concurrently invoke (indexCommand cf cmd args `catch` ignoreRPCFailure)
+  where
+    invoke = do
+      (_, _, _, handle) <- createProcess (proc cmd args)
+      code <- waitForProcess handle
+      case code of
+        ExitSuccess -> return ()
+        _           -> liftIO $ bailWith' code $ queryExecutable ++ ": Command failed"
+
+ignoreRPCFailure :: SomeException -> IO ()
+ignoreRPCFailure _ = return ()  -- Silently ignore failure.
 
 -- FIXME: Reimplement with RPC.
 printCDB :: Config -> IO ()
@@ -282,5 +312,11 @@ doGetLookupInfo cf sl = do
 bail :: IO ()
 bail = exitWith (ExitFailure (-1))
 
+bail' :: ExitCode -> IO ()
+bail' code = exitWith code
+
 bailWith :: String -> IO ()
 bailWith s = putStrLn s >> bail
+
+bailWith' :: ExitCode -> String -> IO ()
+bailWith' code s = putStrLn s >> bail' code
