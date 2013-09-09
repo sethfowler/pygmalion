@@ -135,9 +135,10 @@ test-suite pygmalion-hspec
   main-is:        Spec.hs
   build-depends:  base >= 4,
                   directory,
-                  hspec,
+                  hspec >= 1.7.2,
                   process,
                   pygmalion,
+                  tuple,
                   HUnit,
                   QuickCheck
   hs-source-dirs: tests
