@@ -1,1 +1,0 @@
-[{"file":"a.c","directory":"/Users/swift/Code/pygmalion/tests/Simple","command":"clang -O0 -I."},{"file":"b.c","directory":"/Users/swift/Code/pygmalion/tests/Simple","command":"clang -O0 -I."},{"file":"c.c","directory":"/Users/swift/Code/pygmalion/tests/Simple","command":"clang -O0 -I."}]
