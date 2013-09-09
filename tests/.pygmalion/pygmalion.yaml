@@ -1,2 +1,2 @@
 port: 7999
-log-level: info
+logLevel: warning
