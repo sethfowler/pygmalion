@@ -74,8 +74,47 @@ runTests = do
       ("unions.cpp", 36, 36) `defShouldBe` "23:9: Definition: main(int, char **)::<anonymous>::local_anonymous_union_val_int [FieldDecl]"
       ("unions.cpp", 37, 36) `defShouldBe` "24:10: Definition: main(int, char **)::<anonymous>::local_anonymous_union_val_char [FieldDecl]"
 
-    -- typedefs, C++ classes, nested classes, templates, enum class, varargs,
-    -- namespaces, extern, lamdas, virtual, fields
+    it "indexes classes" $ do
+      index "classes.cpp"
+      ("classes.cpp", 51, 3) `defShouldBe` "1:7: Definition: global_class [ClassDecl]"
+      --("classes.cpp", 51, 16) `defShouldBe` "XXX constructors don't work"
+      ("classes.cpp", 52, 3) `defShouldBe` "1:7: Definition: global_class [ClassDecl]"
+      --("classes.cpp", 52, 16) `defShouldBe` "XXX constructors don't work"
+      ("classes.cpp", 53, 3) `defShouldBe` "37:9: Definition: main(int, char **)::local_class [ClassDecl]"
+      --("classes.cpp", 53, 15) `defShouldBe` "XXX constructors don't work"
+      ("classes.cpp", 54, 3) `defShouldBe` "1:7: Definition: global_class [ClassDecl]"
+      ("classes.cpp", 54, 17) `defShouldBe` "13:9: Definition: global_class::nested_class [ClassDecl]"
+      --("classes.cpp", 54, 30) `defShouldBe` "XXX constructors don't work"
+      ("classes.cpp", 55, 17) `defShouldBe` "21:9: Definition: global_class::nested_union [UnionDecl]"
+      ("classes.cpp", 56, 17) `defShouldBe` "27:8: Definition: global_class::nested_enum [EnumDecl]"
+      ("classes.cpp", 58, 13) `defShouldBe` "1:7: Definition: global_class [ClassDecl]"
+      ("classes.cpp", 58, 27) `defShouldBe` "4:14: Definition: global_class::static_method(int) [CXXMethod]"
+      ("classes.cpp", 59, 27) `defShouldBe` "5:20: Definition: global_class::static_field [VarDecl]"
+      ("classes.cpp", 60, 27) `defShouldBe` "13:9: Definition: global_class::nested_class [ClassDecl]"
+      ("classes.cpp", 60, 41) `defShouldBe` "16:22: Definition: global_class::nested_class::nested_static_field [VarDecl]"
+      ("classes.cpp", 61, 27) `defShouldBe` "29:5: Definition: global_class::nested_enum::nested_enum_val [EnumConstantDecl]"
+      ("classes.cpp", 63, 10) `defShouldBe` "33:14: Definition: global_instance [VarDecl]"
+      ("classes.cpp", 63, 26) `defShouldBe` "11:7: Definition: global_class::field [FieldDecl]"
+      ("classes.cpp", 64, 26) `defShouldBe` "10:7: Definition: global_class::method(int) [CXXMethod]"
+      ("classes.cpp", 65, 10) `defShouldBe` "51:16: Definition: main(int, char **)::local_instance [VarDecl]"
+      ("classes.cpp", 65, 25) `defShouldBe` "11:7: Definition: global_class::field [FieldDecl]"
+      ("classes.cpp", 66, 25) `defShouldBe` "10:7: Definition: global_class::method(int) [CXXMethod]"
+      ("classes.cpp", 67, 10) `defShouldBe` "54:30: Definition: main(int, char **)::nested_instance [VarDecl]"
+      ("classes.cpp", 67, 26) `defShouldBe` "18:9: Definition: global_class::nested_class::nested_field [FieldDecl]"
+      ("classes.cpp", 68, 26) `defShouldBe` "17:9: Definition: global_class::nested_class::nested_method(int) [CXXMethod]"
+      ("classes.cpp", 69, 10) `defShouldBe` "55:30: Definition: main(int, char **)::nested_union_var [VarDecl]"
+      ("classes.cpp", 69, 27) `defShouldBe` "23:9: Definition: global_class::nested_union::nested_union_val_int [FieldDecl]"
+      ("classes.cpp", 70, 27) `defShouldBe` "24:10: Definition: global_class::nested_union::nested_union_val_char [FieldDecl]"
+      ("classes.cpp", 71, 10) `defShouldBe` "53:15: Definition: main(int, char **)::local_class_instance [VarDecl]"
+      ("classes.cpp", 71, 31) `defShouldBe` "41:9: Definition: main(int, char **)::local_class::local_field [FieldDecl]"
+      ("classes.cpp", 72, 31) `defShouldBe` "40:9: Definition: main(int, char **)::local_class::local_method(int) [CXXMethod]"
+      ("classes.cpp", 73, 10) `defShouldBe` "49:5: Definition: main(int, char **)::anonymous_instance [VarDecl]"
+      ("classes.cpp", 73, 29) `defShouldBe` "48:9: Definition: main(int, char **)::<anonymous>::anonymous_field [FieldDecl]"
+      ("classes.cpp", 74, 29) `defShouldBe` "47:9: Definition: main(int, char **)::<anonymous>::anonymous_method(int) [CXXMethod]"
+
+    -- typedefs, templates, enum class, varargs,
+    -- namespaces, extern, lamdas, virtual, operator overloads
+    -- const variables, bitfields
 
 defShouldBe :: (FilePath, Int, Int) -> String -> Expectation
 defShouldBe loc s = do
