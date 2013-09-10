@@ -37,16 +37,24 @@ runTests = do
 
     it "indexes enums" $ do
       index "enums.cpp"
-      ("enums.cpp", 9, 3) `defShouldBe` "1:6: Definition: global_enum [EnumDecl]"
-      ("enums.cpp", 10, 3) `defShouldBe` "6:8: Definition: main(int, char **)::local_enum [EnumDecl]"
-      ("enums.cpp", 11, 13) `defShouldBe` "9:15: Definition: main(int, char **)::global_enum_var [VarDecl]"
-      ("enums.cpp", 12, 13) `defShouldBe` "2:36: Definition: global_anonymous_enum_var [VarDecl]"
-      ("enums.cpp", 13, 13) `defShouldBe` "10:14: Definition: main(int, char **)::local_enum_var [VarDecl]"
-      ("enums.cpp", 14, 13) `defShouldBe` "7:37: Definition: main(int, char **)::local_anonymous_enum_var [VarDecl]"
-      ("enums.cpp", 16, 10) `defShouldBe` "1:20: Definition: global_enum::global_enum_val [EnumConstantDecl]"
-      ("enums.cpp", 17, 10) `defShouldBe` "2:8: Definition: <anonymous>::global_anonymous_enum_val [EnumConstantDecl]"
-      ("enums.cpp", 18, 10) `defShouldBe` "6:21: Definition: main(int, char **)::local_enum::local_enum_val [EnumConstantDecl]"
-      ("enums.cpp", 19, 10) `defShouldBe` "7:10: Definition: main(int, char **)::<anonymous>::local_anonymous_enum_val [EnumConstantDecl]"
+      ("enums.cpp", 11, 3) `defShouldBe` "1:6: Definition: global_enum [EnumDecl]"
+      ("enums.cpp", 12, 3) `defShouldBe` "3:12: Definition: global_enum_class [EnumDecl]"
+      ("enums.cpp", 13, 3) `defShouldBe` "7:8: Definition: main(int, char **)::local_enum [EnumDecl]"
+      ("enums.cpp", 14, 3) `defShouldBe` "9:14: Definition: main(int, char **)::local_enum_class [EnumDecl]"
+      ("enums.cpp", 15, 13) `defShouldBe` "11:15: Definition: main(int, char **)::global_enum_var [VarDecl]"
+      ("enums.cpp", 16, 13) `defShouldBe` "2:36: Definition: global_anonymous_enum_var [VarDecl]"
+      ("enums.cpp", 17, 30) `defShouldBe` "12:21: Definition: main(int, char **)::global_enum_class_var [VarDecl]"
+      ("enums.cpp", 18, 13) `defShouldBe` "13:14: Definition: main(int, char **)::local_enum_var [VarDecl]"
+      ("enums.cpp", 19, 13) `defShouldBe` "8:37: Definition: main(int, char **)::local_anonymous_enum_var [VarDecl]"
+      ("enums.cpp", 20, 30) `defShouldBe` "14:20: Definition: main(int, char **)::local_enum_class_var [VarDecl]"
+      ("enums.cpp", 22, 10) `defShouldBe` "1:20: Definition: global_enum::global_enum_val [EnumConstantDecl]"
+      ("enums.cpp", 23, 10) `defShouldBe` "2:8: Definition: <anonymous>::global_anonymous_enum_val [EnumConstantDecl]"
+      ("enums.cpp", 24, 27) `defShouldBe` "3:12: Definition: global_enum_class [EnumDecl]"
+      ("enums.cpp", 24, 46) `defShouldBe` "3:38: Definition: global_enum_class::global_enum_class_val [EnumConstantDecl]"
+      ("enums.cpp", 25, 10) `defShouldBe` "7:21: Definition: main(int, char **)::local_enum::local_enum_val [EnumConstantDecl]"
+      ("enums.cpp", 26, 10) `defShouldBe` "8:10: Definition: main(int, char **)::<anonymous>::local_anonymous_enum_val [EnumConstantDecl]"
+      ("enums.cpp", 27, 27) `defShouldBe` "9:14: Definition: main(int, char **)::local_enum_class [EnumDecl]"
+      ("enums.cpp", 27, 45) `defShouldBe` "9:39: Definition: main(int, char **)::local_enum_class::local_enum_class_val [EnumConstantDecl]"
 
     it "indexes structs" $ do
       index "structs.cpp"
@@ -114,7 +122,7 @@ runTests = do
       ("classes.cpp", 73, 29) `defShouldBe` "48:9: Definition: main(int, char **)::<anonymous>::anonymous_field [FieldDecl]"
       ("classes.cpp", 74, 29) `defShouldBe` "47:9: Definition: main(int, char **)::<anonymous>::anonymous_method(int) [CXXMethod]"
 
-    -- typedefs, templates, enum class, varargs, bitfields,
+    -- typedefs, templates, varargs, bitfields, type refs in cast expressions, macro arguments,
     -- namespaces, extern, lambdas, virtual, operator overloads
 
 defShouldBe :: (FilePath, Int, Int) -> String -> Expectation
@@ -142,7 +150,7 @@ pygmalion args = do
 
 index :: FilePath -> IO ()
 index file = do
-  void $ pygmalion ["--index", "clang++", file]
+  void $ pygmalion ["--index", "clang++", "--std=c++11", file]
   threadDelay 1000000
 
 defsAt :: FilePath -> Int -> Int -> IO [String]
