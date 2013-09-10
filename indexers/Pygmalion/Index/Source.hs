@@ -162,7 +162,11 @@ defsVisitor conn ci tu cursor _ = do
 
                 -- Record definitions.
                 -- TODO: Support labels.
-                when (cursorIsDef || cKind == C.Cursor_MacroDefinition || cursorIsPV) $ do
+                let goodDef = cKind `elem` [C.Cursor_MacroDefinition,
+                                            C.Cursor_VarDecl]
+                                           || cursorIsDef
+                                           || cursorIsPV
+                when goodDef $ do
                     usr <- XRef.getUSR cursor >>= CS.unpackByteString
                     name <- fqn cursor
                     let kind = toSourceKind cKind
