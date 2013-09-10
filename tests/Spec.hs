@@ -21,8 +21,10 @@ runTests = do
 
     it "indexes variables" $ do
       index "variables.cpp"
-      ("variables.cpp", 6, 10) `defShouldBe` "1:12: Definition: global_var [VarDecl]"
-      ("variables.cpp", 7, 10) `defShouldBe` "5:7: Definition: main(int, char **)::local_var [VarDecl]"
+      ("variables.cpp", 9, 10) `defShouldBe` "1:12: Definition: global_var [VarDecl]"
+      ("variables.cpp", 10, 10) `defShouldBe` "2:18: Definition: global_const_var [VarDecl]"
+      ("variables.cpp", 11, 10) `defShouldBe` "6:7: Definition: main(int, char **)::local_var [VarDecl]"
+      ("variables.cpp", 12, 10) `defShouldBe` "7:13: Definition: main(int, char **)::local_const_var [VarDecl]"
 
     it "indexes functions" $ do
       index "functions.cpp"
@@ -112,9 +114,8 @@ runTests = do
       ("classes.cpp", 73, 29) `defShouldBe` "48:9: Definition: main(int, char **)::<anonymous>::anonymous_field [FieldDecl]"
       ("classes.cpp", 74, 29) `defShouldBe` "47:9: Definition: main(int, char **)::<anonymous>::anonymous_method(int) [CXXMethod]"
 
-    -- typedefs, templates, enum class, varargs,
-    -- namespaces, extern, lamdas, virtual, operator overloads
-    -- const variables, bitfields
+    -- typedefs, templates, enum class, varargs, bitfields,
+    -- namespaces, extern, lambdas, virtual, operator overloads
 
 defShouldBe :: (FilePath, Int, Int) -> String -> Expectation
 defShouldBe loc s = do
