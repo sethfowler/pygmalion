@@ -8,6 +8,10 @@ int main(int argc, char** argv)
 
   global_enum global_enum_var;
   local_enum local_enum_var;
+  int val = global_enum_var +
+            global_anonymous_enum_var +
+            local_enum_var +
+            local_anonymous_enum_var;
 
   return global_enum_val +
          global_anonymous_enum_val +

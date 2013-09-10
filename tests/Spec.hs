@@ -43,10 +43,14 @@ runTests = do
         index "enums.cpp"
         ("enums.cpp", 9, 3) `defShouldBe` "1:6: Definition: global_enum [EnumDecl]"
         ("enums.cpp", 10, 3) `defShouldBe` "6:8: Definition: main(int, char **)::local_enum [EnumDecl]"
-        ("enums.cpp", 12, 10) `defShouldBe` "1:20: Definition: global_enum::global_enum_val [EnumConstantDecl]"
-        ("enums.cpp", 13, 10) `defShouldBe` "2:8: Definition: <anonymous>::global_anonymous_enum_val [EnumConstantDecl]"
-        ("enums.cpp", 14, 10) `defShouldBe` "6:21: Definition: main(int, char **)::local_enum::local_enum_val [EnumConstantDecl]"
-        ("enums.cpp", 15, 10) `defShouldBe` "7:10: Definition: main(int, char **)::<anonymous>::local_anonymous_enum_val [EnumConstantDecl]"
+        ("enums.cpp", 11, 13) `defShouldBe` "9:15: Definition: main(int, char **)::global_enum_var [VarDecl]"
+        ("enums.cpp", 12, 13) `defShouldBe` "2:36: Definition: global_anonymous_enum_var [VarDecl]"
+        ("enums.cpp", 13, 13) `defShouldBe` "10:14: Definition: main(int, char **)::local_enum_var [VarDecl]"
+        ("enums.cpp", 14, 13) `defShouldBe` "7:37: Definition: main(int, char **)::local_anonymous_enum_var [VarDecl]"
+        ("enums.cpp", 16, 10) `defShouldBe` "1:20: Definition: global_enum::global_enum_val [EnumConstantDecl]"
+        ("enums.cpp", 17, 10) `defShouldBe` "2:8: Definition: <anonymous>::global_anonymous_enum_val [EnumConstantDecl]"
+        ("enums.cpp", 18, 10) `defShouldBe` "6:21: Definition: main(int, char **)::local_enum::local_enum_val [EnumConstantDecl]"
+        ("enums.cpp", 19, 10) `defShouldBe` "7:10: Definition: main(int, char **)::<anonymous>::local_anonymous_enum_val [EnumConstantDecl]"
 
     it "indexes structs" $ do
         index "structs.cpp"
@@ -56,7 +60,7 @@ runTests = do
         ("structs.cpp", 13, 38) `defShouldBe` "2:14: Definition: <anonymous>::global_anonymous_struct_val [FieldDecl]"
         ("structs.cpp", 14, 10) `defShouldBe` "10:16: Definition: main(int, char **)::local_struct_var [VarDecl]"
         ("structs.cpp", 14, 27) `defShouldBe` "6:29: Definition: main(int, char **)::local_struct::local_struct_val [FieldDecl]"
-        --("structs.cpp", 15, 10) `defShouldBe` "XXX" -- This doesn't work.
+        ("structs.cpp", 15, 10) `defShouldBe` "7:46: Definition: main(int, char **)::local_anonymous_struct_var [VarDecl]"
         ("structs.cpp", 15, 37) `defShouldBe` "7:16: Definition: main(int, char **)::<anonymous>::local_anonymous_struct_val [FieldDecl]"
 
     it "indexes unions" $ do
@@ -72,7 +76,7 @@ runTests = do
         ("unions.cpp", 34, 10) `defShouldBe` "28:15: Definition: main(int, char **)::local_union_var [VarDecl]"
         ("unions.cpp", 34, 26) `defShouldBe` "17:9: Definition: main(int, char **)::local_union::local_union_val_int [FieldDecl]"
         ("unions.cpp", 35, 26) `defShouldBe` "18:10: Definition: main(int, char **)::local_union::local_union_val_char [FieldDecl]"
-        --("unions.cpp", 36, 10) `defShouldBe` "XXX" -- This doesn't work.
+        ("unions.cpp", 36, 10) `defShouldBe` "25:5: Definition: main(int, char **)::local_anonymous_union_var [VarDecl]"
         ("unions.cpp", 36, 36) `defShouldBe` "23:9: Definition: main(int, char **)::<anonymous>::local_anonymous_union_val_int [FieldDecl]"
         ("unions.cpp", 37, 36) `defShouldBe` "24:10: Definition: main(int, char **)::<anonymous>::local_anonymous_union_val_char [FieldDecl]"
 
