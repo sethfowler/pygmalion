@@ -123,8 +123,16 @@ runTests = do
       ("classes.cpp", 73, 29) `defShouldBe` "48:9: Definition: main(int, char **)::<anonymous>::anonymous_field [FieldDecl]"
       ("classes.cpp", 74, 29) `defShouldBe` "47:9: Definition: main(int, char **)::<anonymous>::anonymous_method(int) [CXXMethod]"
 
+    it "indexes virtual methods" $ do
+      index "virtual.cpp"
+      ("virtual.cpp", 37, 3) `defShouldBe` "14:7: Definition: grandchild_class [ClassDecl]"
+      -- TODO: add rest
+
     -- typedefs, templates, varargs, bitfields, type refs in cast expressions,
-    -- namespaces, extern, lambdas, virtual, operator overloads
+    -- namespaces, extern, lambdas, virtual, operator overloads, function ptrs
+    -- need to add tests for 'find references', 'bases', 'overrides', etc.
+    -- remember to ensure that find references works with macro expansions!
+      
 
 defShouldBe :: (FilePath, Int, Int) -> String -> Expectation
 defShouldBe loc s = do
