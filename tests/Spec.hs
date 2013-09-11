@@ -32,8 +32,9 @@ runTests = do
 
     it "indexes macros" $ do
       index "macros.cpp"
-      ("macros.cpp", 6, 10) `defShouldBe` "1:9: Definition: VAR [MacroDefinition]"
-      ("macros.cpp", 7, 10) `defShouldBe` "2:9: Definition: VARF [MacroDefinition]"
+      ("macros.cpp", 8, 10) `defShouldBe` "1:9: Definition: VAR [MacroDefinition]"
+      ("macros.cpp", 9, 10) `defShouldBe` "2:9: Definition: VARF [MacroDefinition]"
+      -- ("macros.cpp", 9, 15) `defShouldBe` "6:8: Definition: main(int, char **)::local_var [VarDecl]"
 
     it "indexes enums" $ do
       index "enums.cpp"
@@ -122,7 +123,7 @@ runTests = do
       ("classes.cpp", 73, 29) `defShouldBe` "48:9: Definition: main(int, char **)::<anonymous>::anonymous_field [FieldDecl]"
       ("classes.cpp", 74, 29) `defShouldBe` "47:9: Definition: main(int, char **)::<anonymous>::anonymous_method(int) [CXXMethod]"
 
-    -- typedefs, templates, varargs, bitfields, type refs in cast expressions, macro arguments,
+    -- typedefs, templates, varargs, bitfields, type refs in cast expressions,
     -- namespaces, extern, lambdas, virtual, operator overloads
 
 defShouldBe :: (FilePath, Int, Int) -> String -> Expectation

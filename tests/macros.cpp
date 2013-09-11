@@ -3,6 +3,8 @@
 
 int main(int argc, char** argv)
 {
+  char local_var = 0;
+
   return VAR
-       + VARF(0);
+       + VARF(local_var);
 }
