@@ -15,8 +15,8 @@ main :: IO ()
 main = setCurrentDirectory "tests" >> runTests
 
 runTests :: IO ()
-runTests = do
-  hspec $ around withPygd $ do
+runTests = hspec $ around withPygd $
+
   describe "pygindex-clang" $ do
 
     it "indexes variables" $ do
@@ -125,8 +125,16 @@ runTests = do
 
     it "indexes virtual methods" $ do
       index "virtual.cpp"
-      ("virtual.cpp", 37, 3) `defShouldBe` "14:7: Definition: grandchild_class [ClassDecl]"
-      -- TODO: add rest
+      ("virtual.cpp", 39, 18) `defShouldBe` "XXX"
+      ("virtual.cpp", 40, 18) `defShouldBe` "XXX"
+      ("virtual.cpp", 43, 23) `defShouldBe` "XXX"
+      ("virtual.cpp", 44, 23) `defShouldBe` "XXX"
+      ("virtual.cpp", 48, 14) `defShouldBe` "XXX"
+      ("virtual.cpp", 49, 14) `defShouldBe` "XXX"
+      ("virtual.cpp", 52, 19) `defShouldBe` "XXX"
+      ("virtual.cpp", 53, 19) `defShouldBe` "XXX"
+      ("virtual.cpp", 56, 28) `defShouldBe` "XXX"
+      ("virtual.cpp", 57, 28) `defShouldBe` "XXX"
 
     -- typedefs, templates, varargs, bitfields, type refs in cast expressions,
     -- namespaces, extern, lambdas, virtual, operator overloads, function ptrs
@@ -136,15 +144,15 @@ runTests = do
 
 defShouldBe :: (FilePath, Int, Int) -> String -> Expectation
 defShouldBe loc s = do
-    ss <- uncurryN defsAt $ loc
+    ss <- uncurryN defsAt loc
     assertBool (errorMsg ss) $ any (s `isInfixOf`) ss
   where
-    errorMsg ss = "Definition for " ++ (show loc) ++ " was " ++ show ss ++ "; expected " ++ show s
+    errorMsg ss = "Definition for " ++ show loc ++ " was " ++ show ss ++ "; expected " ++ show s
 
 withPygd :: IO () -> IO ()
-withPygd action = bracket startPygd stopPygd (\_ -> action)
+withPygd action = bracket startPygd stopPygd (const action)
   where
-    startPygd = do bg $ "../dist/build/pygd/pygd"
+    startPygd = do bg "../dist/build/pygd/pygd"
                    threadDelay 1000000
     stopPygd _ = do void $ pygmalion ["--stop"]
                     sh $ "rm -f " ++ dbFile
@@ -154,7 +162,7 @@ pygmalion args = do
   let cmd = proc "../dist/build/pygmalion/pygmalion" args
   (_, Just out, _, h) <- createProcess $ cmd { std_out = CreatePipe }
   output <- hGetContents out
-  waitForProcess h
+  _ <- waitForProcess h
   return (lines output)
 
 index :: FilePath -> IO ()
