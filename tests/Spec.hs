@@ -28,7 +28,8 @@ runTests = hspec $ around withPygd $
 
     it "indexes functions" $ do
       index "functions.cpp"
-      ("functions.cpp", 5, 10) `defShouldBe` "1:5: Definition: var() [FunctionDecl]"
+      ("functions.cpp", 6, 10) `defShouldBe` "1:5: Definition: var() [FunctionDecl]"
+      ("functions.cpp", 7, 10) `defShouldBe` "2:5: Definition: varargs(int, ...) [FunctionDecl]"
 
     it "indexes macros" $ do
       index "macros.cpp"
@@ -153,7 +154,7 @@ runTests = hspec $ around withPygd $
       ("virtual.cpp", 93, 43) `defShouldBe` "XXX"
       -- Add more starting with 'References to instances.'
 
-    -- typedefs, templates, varargs, bitfields, type refs in cast expressions,
+    -- typedefs, templates, bitfields, type refs in cast expressions,
     -- namespaces, extern, lambdas, multiple inheritance, operator overloads, function ptrs
     -- inherited fields and static members
     -- need to add tests for 'find references', 'bases', 'overrides', etc.
