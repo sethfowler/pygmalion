@@ -125,19 +125,37 @@ runTests = hspec $ around withPygd $
 
     it "indexes virtual methods" $ do
       index "virtual.cpp"
-      ("virtual.cpp", 39, 18) `defShouldBe` "XXX"
-      ("virtual.cpp", 40, 18) `defShouldBe` "XXX"
-      ("virtual.cpp", 43, 23) `defShouldBe` "XXX"
-      ("virtual.cpp", 44, 23) `defShouldBe` "XXX"
-      ("virtual.cpp", 48, 14) `defShouldBe` "XXX"
-      ("virtual.cpp", 49, 14) `defShouldBe` "XXX"
-      ("virtual.cpp", 52, 19) `defShouldBe` "XXX"
-      ("virtual.cpp", 53, 19) `defShouldBe` "XXX"
-      ("virtual.cpp", 56, 28) `defShouldBe` "XXX"
-      ("virtual.cpp", 57, 28) `defShouldBe` "XXX"
+      ("virtual.cpp", 61, 18) `defShouldBe` "XXX"
+      ("virtual.cpp", 62, 18) `defShouldBe` "XXX"
+      ("virtual.cpp", 65, 23) `defShouldBe` "XXX"
+      ("virtual.cpp", 66, 23) `defShouldBe` "XXX"
+      ("virtual.cpp", 67, 23) `defShouldBe` "XXX"
+      ("virtual.cpp", 67, 36) `defShouldBe` "XXX"
+      ("virtual.cpp", 68, 23) `defShouldBe` "XXX"
+      ("virtual.cpp", 68, 41) `defShouldBe` "XXX"
+      ("virtual.cpp", 72, 14) `defShouldBe` "XXX"
+      ("virtual.cpp", 73, 16) `defShouldBe` "XXX"
+      ("virtual.cpp", 74, 14) `defShouldBe` "XXX"
+      ("virtual.cpp", 75, 16) `defShouldBe` "XXX"
+      ("virtual.cpp", 78, 19) `defShouldBe` "XXX"
+      ("virtual.cpp", 79, 21) `defShouldBe` "XXX"
+      ("virtual.cpp", 80, 19) `defShouldBe` "XXX"
+      ("virtual.cpp", 81, 21) `defShouldBe` "XXX"
+      ("virtual.cpp", 82, 32) `defShouldBe` "XXX"
+      ("virtual.cpp", 83, 34) `defShouldBe` "XXX"
+      ("virtual.cpp", 84, 37) `defShouldBe` "XXX"
+      ("virtual.cpp", 85, 39) `defShouldBe` "XXX"
+      ("virtual.cpp", 88, 28) `defShouldBe` "XXX"
+      ("virtual.cpp", 89, 30) `defShouldBe` "XXX"
+      ("virtual.cpp", 90, 28) `defShouldBe` "XXX"
+      ("virtual.cpp", 91, 30) `defShouldBe` "XXX"
+      ("virtual.cpp", 92, 41) `defShouldBe` "XXX"
+      ("virtual.cpp", 93, 43) `defShouldBe` "XXX"
+      -- Add more starting with 'References to instances.'
 
     -- typedefs, templates, varargs, bitfields, type refs in cast expressions,
-    -- namespaces, extern, lambdas, virtual, operator overloads, function ptrs
+    -- namespaces, extern, lambdas, multiple inheritance, operator overloads, function ptrs
+    -- inherited fields and static members
     -- need to add tests for 'find references', 'bases', 'overrides', etc.
     -- remember to ensure that find references works with macro expansions!
       
