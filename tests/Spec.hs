@@ -126,6 +126,10 @@ runTests = hspec $ around withPygd $
 
     it "indexes virtual methods" $ do
       index "virtual.cpp"
+
+      -- Instance values.
+      ("virtual.cpp", 60, 3) `defShouldBe` "XXX"
+      ("virtual.cpp", 61, 3) `defShouldBe` "XXX"
       ("virtual.cpp", 61, 18) `defShouldBe` "XXX"
       ("virtual.cpp", 62, 18) `defShouldBe` "XXX"
       ("virtual.cpp", 65, 23) `defShouldBe` "XXX"
@@ -134,6 +138,9 @@ runTests = hspec $ around withPygd $
       ("virtual.cpp", 67, 36) `defShouldBe` "XXX"
       ("virtual.cpp", 68, 23) `defShouldBe` "XXX"
       ("virtual.cpp", 68, 41) `defShouldBe` "XXX"
+
+      -- Pointers to instances.
+      ("virtual.cpp", 71, 3) `defShouldBe` "XXX"
       ("virtual.cpp", 72, 14) `defShouldBe` "XXX"
       ("virtual.cpp", 73, 16) `defShouldBe` "XXX"
       ("virtual.cpp", 74, 14) `defShouldBe` "XXX"
@@ -152,7 +159,119 @@ runTests = hspec $ around withPygd $
       ("virtual.cpp", 91, 30) `defShouldBe` "XXX"
       ("virtual.cpp", 92, 41) `defShouldBe` "XXX"
       ("virtual.cpp", 93, 43) `defShouldBe` "XXX"
-      -- Add more starting with 'References to instances.'
+
+      -- References to instances.
+      ("virtual.cpp", 96, 3) `defShouldBe` "XXX"
+      ("virtual.cpp", 97, 22) `defShouldBe` "XXX"
+      ("virtual.cpp", 98, 22) `defShouldBe` "XXX"
+      ("virtual.cpp", 101, 27) `defShouldBe` "XXX"
+      ("virtual.cpp", 102, 27) `defShouldBe` "XXX"
+      ("virtual.cpp", 103, 40) `defShouldBe` "XXX"
+      ("virtual.cpp", 104, 45) `defShouldBe` "XXX"
+      ("virtual.cpp", 107, 27) `defShouldBe` "XXX"
+      ("virtual.cpp", 108, 27) `defShouldBe` "XXX"
+      ("virtual.cpp", 109, 40) `defShouldBe` "XXX"
+
+      -- Structs containing instance values.
+      ("virtual.cpp", 113, 34) `defShouldBe` "XXX"
+      ("virtual.cpp", 114, 34) `defShouldBe` "XXX"
+      ("virtual.cpp", 115, 47) `defShouldBe` "XXX"
+      ("virtual.cpp", 116, 52) `defShouldBe` "XXX"
+      ("virtual.cpp", 119, 30) `defShouldBe` "XXX"
+      ("virtual.cpp", 120, 30) `defShouldBe` "XXX"
+      ("virtual.cpp", 121, 43) `defShouldBe` "XXX"
+      ("virtual.cpp", 122, 48) `defShouldBe` "XXX"
+
+      -- Structs containing pointers to instances.
+      ("virtual.cpp", 126, 39) `defShouldBe` "XXX"
+      ("virtual.cpp", 127, 39) `defShouldBe` "XXX"
+      ("virtual.cpp", 128, 52) `defShouldBe` "XXX"
+      ("virtual.cpp", 129, 57) `defShouldBe` "XXX"
+      ("virtual.cpp", 132, 35) `defShouldBe` "XXX"
+      ("virtual.cpp", 133, 35) `defShouldBe` "XXX"
+      ("virtual.cpp", 134, 48) `defShouldBe` "XXX"
+      ("virtual.cpp", 135, 53) `defShouldBe` "XXX"
+
+      -- Functions returning values or pointers.
+      ("virtual.cpp", 138, 28) `defShouldBe` "XXX"
+      ("virtual.cpp", 139, 28) `defShouldBe` "XXX"
+      ("virtual.cpp", 140, 41) `defShouldBe` "XXX"
+      ("virtual.cpp", 141, 46) `defShouldBe` "XXX"
+      ("virtual.cpp", 143, 28) `defShouldBe` "XXX"
+      ("virtual.cpp", 144, 28) `defShouldBe` "XXX"
+      ("virtual.cpp", 145, 41) `defShouldBe` "XXX"
+      ("virtual.cpp", 146, 46) `defShouldBe` "XXX"
+      ("virtual.cpp", 148, 29) `defShouldBe` "XXX"
+      ("virtual.cpp", 149, 29) `defShouldBe` "XXX"
+      ("virtual.cpp", 150, 42) `defShouldBe` "XXX"
+      ("virtual.cpp", 151, 47) `defShouldBe` "XXX"
+
+      -- Function pointers to functions returning values or pointers.
+      ("virtual.cpp", 154, 54) `defShouldBe` "XXX"
+      ("virtual.cpp", 155, 35) `defShouldBe` "XXX"
+      ("virtual.cpp", 156, 35) `defShouldBe` "XXX"
+      ("virtual.cpp", 157, 48) `defShouldBe` "XXX"
+      ("virtual.cpp", 158, 53) `defShouldBe` "XXX"
+      ("virtual.cpp", 161, 35) `defShouldBe` "XXX"
+      ("virtual.cpp", 162, 35) `defShouldBe` "XXX"
+      ("virtual.cpp", 163, 48) `defShouldBe` "XXX"
+      ("virtual.cpp", 164, 53) `defShouldBe` "XXX"
+      ("virtual.cpp", 167, 36) `defShouldBe` "XXX"
+      ("virtual.cpp", 168, 36) `defShouldBe` "XXX"
+      ("virtual.cpp", 169, 49) `defShouldBe` "XXX"
+      ("virtual.cpp", 170, 54) `defShouldBe` "XXX"
+
+      -- Classes which don't override a virtual method defined in an ancestor class.
+      ("virtual.cpp", 174, 35) `defShouldBe` "XXX"
+      ("virtual.cpp", 175, 35) `defShouldBe` "XXX"
+      ("virtual.cpp", 176, 48) `defShouldBe` "XXX"
+      ("virtual.cpp", 177, 65) `defShouldBe` "XXX"
+      ("virtual.cpp", 180, 31) `defShouldBe` "XXX"
+      ("virtual.cpp", 181, 31) `defShouldBe` "XXX"
+      ("virtual.cpp", 182, 44) `defShouldBe` "XXX"
+      ("virtual.cpp", 183, 61) `defShouldBe` "XXX"
+      ("virtual.cpp", 183, 61) `defShouldBe` "XXX"
+      ("virtual.cpp", 186, 30) `defShouldBe` "XXX"
+      ("virtual.cpp", 187, 30) `defShouldBe` "XXX"
+      ("virtual.cpp", 188, 43) `defShouldBe` "XXX"
+      ("virtual.cpp", 189, 60) `defShouldBe` "XXX"
+
+      -- Classes which have a direct ancestor which didn't override a method.
+      ("virtual.cpp", 193, 28) `defShouldBe` "XXX"
+      ("virtual.cpp", 194, 28) `defShouldBe` "XXX"
+      ("virtual.cpp", 195, 41) `defShouldBe` "XXX"
+      ("virtual.cpp", 196, 58) `defShouldBe` "XXX"
+      ("virtual.cpp", 197, 51) `defShouldBe` "XXX"
+      ("virtual.cpp", 200, 24) `defShouldBe` "XXX"
+      ("virtual.cpp", 201, 24) `defShouldBe` "XXX"
+      ("virtual.cpp", 202, 37) `defShouldBe` "XXX"
+      ("virtual.cpp", 203, 54) `defShouldBe` "XXX"
+      ("virtual.cpp", 204, 47) `defShouldBe` "XXX"
+      ("virtual.cpp", 207, 23) `defShouldBe` "XXX"
+      ("virtual.cpp", 208, 23) `defShouldBe` "XXX"
+      ("virtual.cpp", 209, 36) `defShouldBe` "XXX"
+      ("virtual.cpp", 210, 53) `defShouldBe` "XXX"
+      ("virtual.cpp", 211, 46) `defShouldBe` "XXX"
+
+      -- Classes which have an indirect ancestor which didn't override a method.
+      ("virtual.cpp", 215, 33) `defShouldBe` "XXX"
+      ("virtual.cpp", 216, 33) `defShouldBe` "XXX"
+      ("virtual.cpp", 217, 46) `defShouldBe` "XXX"
+      ("virtual.cpp", 218, 63) `defShouldBe` "XXX"
+      ("virtual.cpp", 219, 56) `defShouldBe` "XXX"
+      ("virtual.cpp", 220, 61) `defShouldBe` "XXX"
+      ("virtual.cpp", 223, 29) `defShouldBe` "XXX"
+      ("virtual.cpp", 224, 29) `defShouldBe` "XXX"
+      ("virtual.cpp", 225, 42) `defShouldBe` "XXX"
+      ("virtual.cpp", 226, 59) `defShouldBe` "XXX"
+      ("virtual.cpp", 227, 52) `defShouldBe` "XXX"
+      ("virtual.cpp", 228, 57) `defShouldBe` "XXX"
+      ("virtual.cpp", 231, 28) `defShouldBe` "XXX"
+      ("virtual.cpp", 232, 28) `defShouldBe` "XXX"
+      ("virtual.cpp", 233, 41) `defShouldBe` "XXX"
+      ("virtual.cpp", 234, 58) `defShouldBe` "XXX"
+      ("virtual.cpp", 235, 51) `defShouldBe` "XXX"
+      ("virtual.cpp", 236, 56) `defShouldBe` "XXX"
 
     -- typedefs, templates, bitfields, type refs in cast expressions,
     -- namespaces, extern, lambdas, multiple inheritance, operator overloads, function ptrs
