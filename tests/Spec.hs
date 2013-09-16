@@ -128,38 +128,41 @@ runTests = hspec $ around withPygd $
       index "virtual.cpp"
 
       -- Instance values.
-      ("virtual.cpp", 60, 3) `defShouldBe` "XXX"
-      ("virtual.cpp", 61, 3) `defShouldBe` "XXX"
-      ("virtual.cpp", 61, 18) `defShouldBe` "XXX"
-      ("virtual.cpp", 62, 18) `defShouldBe` "XXX"
-      ("virtual.cpp", 65, 23) `defShouldBe` "XXX"
-      ("virtual.cpp", 66, 23) `defShouldBe` "XXX"
-      ("virtual.cpp", 67, 23) `defShouldBe` "XXX"
-      ("virtual.cpp", 67, 36) `defShouldBe` "XXX"
-      ("virtual.cpp", 68, 23) `defShouldBe` "XXX"
-      ("virtual.cpp", 68, 41) `defShouldBe` "XXX"
+      ("virtual.cpp", 60, 3) `defShouldBe` "8:7: Definition: child_class [ClassDecl]"
+      ("virtual.cpp", 61, 3) `defShouldBe` "60:15: Definition: main(int, char **)::child_instance [VarDecl]"
+      ("virtual.cpp", 61, 18) `defShouldBe` "10:23: Definition: child_class::base_pure_method() [CXXMethod]"
+      ("virtual.cpp", 62, 18) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 65, 23) `defShouldBe` "16:23: Definition: grandchild_class::base_pure_method() [CXXMethod]"
+      ("virtual.cpp", 66, 23) `defShouldBe` "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 67, 23) `defShouldBe` "8:7: Definition: child_class [ClassDecl]"
+      ("virtual.cpp", 67, 36) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 68, 23) `defShouldBe` "14:7: Definition: grandchild_class [ClassDecl]"
+      ("virtual.cpp", 68, 41) `defShouldBe` "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]"
 
       -- Pointers to instances.
-      ("virtual.cpp", 71, 3) `defShouldBe` "XXX"
-      ("virtual.cpp", 72, 14) `defShouldBe` "XXX"
-      ("virtual.cpp", 73, 16) `defShouldBe` "XXX"
-      ("virtual.cpp", 74, 14) `defShouldBe` "XXX"
-      ("virtual.cpp", 75, 16) `defShouldBe` "XXX"
-      ("virtual.cpp", 78, 19) `defShouldBe` "XXX"
-      ("virtual.cpp", 79, 21) `defShouldBe` "XXX"
-      ("virtual.cpp", 80, 19) `defShouldBe` "XXX"
-      ("virtual.cpp", 81, 21) `defShouldBe` "XXX"
-      ("virtual.cpp", 82, 32) `defShouldBe` "XXX"
-      ("virtual.cpp", 83, 34) `defShouldBe` "XXX"
-      ("virtual.cpp", 84, 37) `defShouldBe` "XXX"
-      ("virtual.cpp", 85, 39) `defShouldBe` "XXX"
-      ("virtual.cpp", 88, 28) `defShouldBe` "XXX"
-      ("virtual.cpp", 89, 30) `defShouldBe` "XXX"
-      ("virtual.cpp", 90, 28) `defShouldBe` "XXX"
-      ("virtual.cpp", 91, 30) `defShouldBe` "XXX"
-      ("virtual.cpp", 92, 41) `defShouldBe` "XXX"
-      ("virtual.cpp", 93, 43) `defShouldBe` "XXX"
+      ("virtual.cpp", 71, 3) `defShouldBe` "8:7: Definition: child_class [ClassDecl]"
+      -- XXX: All these are wrong because child_class has a subclass
+      -- with overrides. Should be seeing multiple defs here.
+      --("virtual.cpp", 72, 14) `defShouldBe` "10:23: Definition: child_class::base_pure_method() [CXXMethod]"
+      --("virtual.cpp", 73, 16) `defShouldBe` "10:23: Definition: child_class::base_pure_method() [CXXMethod]"
+      --("virtual.cpp", 74, 14) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
+      --("virtual.cpp", 75, 16) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 78, 19) `defShouldBe` "16:23: Definition: grandchild_class::base_pure_method() [CXXMethod]"
+      ("virtual.cpp", 79, 21) `defShouldBe` "16:23: Definition: grandchild_class::base_pure_method() [CXXMethod]"
+      ("virtual.cpp", 80, 19) `defShouldBe` "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 81, 21) `defShouldBe` "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 82, 32) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 83, 34) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 84, 37) `defShouldBe` "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 85, 39) `defShouldBe` "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]"
+      --("virtual.cpp", 88, 28) `defShouldBe` "10:23: Definition: child_class::base_pure_method() [CXXMethod]"
+      --("virtual.cpp", 89, 30) `defShouldBe` "10:23: Definition: child_class::base_pure_method() [CXXMethod]"
+      --("virtual.cpp", 90, 28) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
+      --("virtual.cpp", 91, 30) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 92, 41) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 93, 43) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
 
+      {-
       -- References to instances.
       ("virtual.cpp", 96, 3) `defShouldBe` "XXX"
       ("virtual.cpp", 97, 22) `defShouldBe` "XXX"
@@ -272,6 +275,7 @@ runTests = hspec $ around withPygd $
       ("virtual.cpp", 234, 58) `defShouldBe` "XXX"
       ("virtual.cpp", 235, 51) `defShouldBe` "XXX"
       ("virtual.cpp", 236, 56) `defShouldBe` "XXX"
+      -}
 
     -- typedefs, templates, bitfields, type refs in cast expressions,
     -- namespaces, extern, lambdas, multiple inheritance, operator overloads, function ptrs
