@@ -17,27 +17,27 @@ main = setCurrentDirectory "tests" >> runTests
 runTests :: IO ()
 runTests = hspec $ around withPygd $
 
-  describe "pygindex-clang" $ do
+  describe "go-to-definition" $ do
 
-    it "indexes variables" $ do
+    it "finds variables" $ do
       index "variables.cpp"
       ("variables.cpp", 9, 10) `defShouldBe` "1:12: Definition: global_var [VarDecl]"
       ("variables.cpp", 10, 10) `defShouldBe` "2:18: Definition: global_const_var [VarDecl]"
       ("variables.cpp", 11, 10) `defShouldBe` "6:7: Definition: main(int, char **)::local_var [VarDecl]"
       ("variables.cpp", 12, 10) `defShouldBe` "7:13: Definition: main(int, char **)::local_const_var [VarDecl]"
 
-    it "indexes functions" $ do
+    it "finds functions" $ do
       index "functions.cpp"
       ("functions.cpp", 6, 10) `defShouldBe` "1:5: Definition: var() [FunctionDecl]"
       ("functions.cpp", 7, 10) `defShouldBe` "2:5: Definition: varargs(int, ...) [FunctionDecl]"
 
-    it "indexes macros" $ do
+    it "finds macros" $ do
       index "macros.cpp"
       ("macros.cpp", 8, 10) `defShouldBe` "1:9: Definition: VAR [MacroDefinition]"
       ("macros.cpp", 9, 10) `defShouldBe` "2:9: Definition: VARF [MacroDefinition]"
       -- ("macros.cpp", 9, 15) `defShouldBe` "6:8: Definition: main(int, char **)::local_var [VarDecl]"
 
-    it "indexes enums" $ do
+    it "finds enums" $ do
       index "enums.cpp"
       ("enums.cpp", 11, 3) `defShouldBe` "1:6: Definition: global_enum [EnumDecl]"
       ("enums.cpp", 12, 3) `defShouldBe` "3:12: Definition: global_enum_class [EnumDecl]"
@@ -58,7 +58,7 @@ runTests = hspec $ around withPygd $
       ("enums.cpp", 27, 27) `defShouldBe` "9:14: Definition: main(int, char **)::local_enum_class [EnumDecl]"
       ("enums.cpp", 27, 45) `defShouldBe` "9:39: Definition: main(int, char **)::local_enum_class::local_enum_class_val [EnumConstantDecl]"
 
-    it "indexes structs" $ do
+    it "finds structs" $ do
       index "structs.cpp"
       ("structs.cpp", 12, 10) `defShouldBe` "9:17: Definition: main(int, char **)::global_struct_var [VarDecl]"
       ("structs.cpp", 12, 28) `defShouldBe` "1:28: Definition: global_struct::global_struct_val [FieldDecl]"
@@ -69,7 +69,7 @@ runTests = hspec $ around withPygd $
       ("structs.cpp", 15, 10) `defShouldBe` "7:46: Definition: main(int, char **)::local_anonymous_struct_var [VarDecl]"
       ("structs.cpp", 15, 37) `defShouldBe` "7:16: Definition: main(int, char **)::<anonymous>::local_anonymous_struct_val [FieldDecl]"
 
-    it "indexes unions" $ do
+    it "finds unions" $ do
       index "unions.cpp"
       ("unions.cpp", 27, 3) `defShouldBe` "1:7: Definition: global_union [UnionDecl]"
       ("unions.cpp", 28, 3) `defShouldBe` "15:9: Definition: main(int, char **)::local_union [UnionDecl]"
@@ -86,7 +86,7 @@ runTests = hspec $ around withPygd $
       ("unions.cpp", 36, 36) `defShouldBe` "23:9: Definition: main(int, char **)::<anonymous>::local_anonymous_union_val_int [FieldDecl]"
       ("unions.cpp", 37, 36) `defShouldBe` "24:10: Definition: main(int, char **)::<anonymous>::local_anonymous_union_val_char [FieldDecl]"
 
-    it "indexes classes" $ do
+    it "finds classes" $ do
       index "classes.cpp"
       ("classes.cpp", 51, 3) `defShouldBe` "1:7: Definition: global_class [ClassDecl]"
       --("classes.cpp", 51, 16) `defShouldBe` "XXX constructors don't work"
@@ -124,7 +124,7 @@ runTests = hspec $ around withPygd $
       ("classes.cpp", 73, 29) `defShouldBe` "48:9: Definition: main(int, char **)::<anonymous>::anonymous_field [FieldDecl]"
       ("classes.cpp", 74, 29) `defShouldBe` "47:9: Definition: main(int, char **)::<anonymous>::anonymous_method(int) [CXXMethod]"
 
-    it "indexes virtual methods" $ do
+    it "finds virtual methods" $ do
       index "virtual.cpp"
 
       -- Instance values.
