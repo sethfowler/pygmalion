@@ -206,6 +206,7 @@ data ReferenceUpdate = ReferenceUpdate
     , rfuEndLine     :: !SourceLine
     , rfuEndCol      :: !SourceCol
     , rfuKind        :: !SourceKind
+    , rfuViaHash     :: !USRHash
     , rfuContextHash :: !USRHash
     , rfuUSRHash     :: !USRHash
     } deriving (Eq, Show, Generic)
@@ -213,15 +214,16 @@ data ReferenceUpdate = ReferenceUpdate
 instance Serialize ReferenceUpdate
 
 data SourceReferenced = SourceReferenced
-    { sdDef   :: !DefInfo
-    , sdRange :: !SourceRange
-    , sdKind  :: !SourceKind
+    { sdDef     :: !DefInfo
+    , sdRange   :: !SourceRange
+    , sdKind    :: !SourceKind
+    , sdViaHash :: !USRHash
     } deriving (Eq, Show, Generic)
 
 instance Serialize SourceReferenced
 
 instance FromRow SourceReferenced where
-  fromRow = SourceReferenced <$> fromRow <*> fromRow <*> fromRow
+  fromRow = SourceReferenced <$> fromRow <*> fromRow <*> fromRow <*> field
 
 data SourceReference = SourceReference
     { srLocation :: !SourceLocation

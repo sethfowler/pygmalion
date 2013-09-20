@@ -244,7 +244,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int64
 dbMajorVersion = 0
-dbMinorVersion = 16
+dbMinorVersion = 17
 
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c (mkQueryT sql)
@@ -476,16 +476,10 @@ resetDefsSQL :: T.Text
 resetDefsSQL = "delete from Definitions where File = ?"
 
 getDef :: DBHandle -> SourceLocation -> IO [DefInfo]
---getDef h usr = execSingleRowQuery h getDefStmt (Only $ hash usr)
 getDef h sl = go =<< getReferenced h sl
   where
     go Nothing   = return []  
     go (Just sr) = do
-      -- XXX This includes all overriders all the time, but we need to
-      -- distinguish between dynamic and static calls. To do this, we
-      -- need these functions to take a SourceLocation instead of a
-      -- USR, which makes sense anyway since we can halve the number of
-      -- DB queries.
       mayDef <- execSingleRowQuery h getDefStmt (Only . hash . diUSR . sdDef $ sr)
       case (mayDef, sdKind sr) of
         (Nothing, _) -> return []
@@ -569,20 +563,21 @@ defineReferencesTable c = do
                    , "EndLine integer not null,               "
                    , "EndCol integer not null,                "
                    , "RefKind integer not null,               "
+                   , "RefVia integer not null,                "
                    , "RefContext integer not null,            "
                    , "Ref integer not null)" ]
     indexSQL = "create index if not exists RefsFileIndex on Refs(File)"
 
 updateReference :: DBHandle -> ReferenceUpdate -> IO ()
-updateReference h (ReferenceUpdate sfHash l c el ec k ctxUSRHash refUSRHash) = do
+updateReference h (ReferenceUpdate sfHash l c el ec k viaUSRHash ctxUSRHash refUSRHash) = do
     let kind = fromEnum k
     execStatement h updateReferenceStmt (sfHash, l, c, el, ec, kind,
-                                         ctxUSRHash, refUSRHash)
+                                         viaUSRHash, ctxUSRHash, refUSRHash)
 
 updateReferenceSQL :: T.Text
 updateReferenceSQL = T.concat
-  [ "replace into Refs (File, Line, Col, EndLine, EndCol, RefKind, RefContext, Ref) "
-  , "values (?, ?, ?, ?, ?, ?, ?, ?)" ]
+  [ "replace into Refs (File, Line, Col, EndLine, EndCol, RefKind, RefVia, RefContext, Ref) "
+  , "values (?, ?, ?, ?, ?, ?, ?, ?, ?)" ]
 
 resetReferences :: DBHandle -> SourceFile -> IO ()
 resetReferences h sf = do
@@ -611,15 +606,16 @@ getReferenced h (SourceLocation sf l c) = do
 -- Note below that the columns of the reference are [Col, EndCol).
 getReferencedSQL :: T.Text
 getReferencedSQL = T.concat
-  [ "select D.Name, D.USR, DF.Name, D.Line, D.Col, D.Kind,    "
-  , "  RF.Name, R.Line, R.Col, R.EndLine, R.EndCol, R.RefKind "
-  , "from Refs as R                                           "
-  , "join Definitions as D on R.Ref = D.USRHash               "
-  , "join Files as DF on D.File = DF.Hash                     "
-  , "join Files as RF on R.File = RF.Hash                     "
-  , "where R.File = ? and                                     "
-  , "  ((? between R.Line and R.EndLine) and                  "
-  , "   (? > R.Line or ? >= R.Col) and                        "
+  [ "select D.Name, D.USR, DF.Name, D.Line, D.Col, D.Kind,     "
+  , "  RF.Name, R.Line, R.Col, R.EndLine, R.EndCol, R.RefKind, "
+  , "  R.RefVia                                                "
+  , "from Refs as R                                            "
+  , "join Definitions as D on R.Ref = D.USRHash                "
+  , "join Files as DF on D.File = DF.Hash                      "
+  , "join Files as RF on R.File = RF.Hash                      "
+  , "where R.File = ? and                                      "
+  , "  ((? between R.Line and R.EndLine) and                   "
+  , "   (? > R.Line or ? >= R.Col) and                         "
   , "   (? < R.EndLine or ? < R.EndCol))" ]
 
 

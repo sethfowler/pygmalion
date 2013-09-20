@@ -21,6 +21,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as BU
+import Data.Int
 import Data.Typeable
 
 --import Data.Bool.Predicate
@@ -122,15 +123,20 @@ defsVisitor conn ci tu cursor _ = do
         ctxC <- getContext tu cursor
         ctxUSR <- XRef.getUSR ctxC >>= CS.unpackByteString
 
-        -- Record.
-        refKind <- if cKind == C.Cursor_CallExpr then analyzeCallKind cursor
+        -- Special analysis for CallExprs.
+        refKind <- if cKind == C.Cursor_CallExpr then analyzeCall cursor
                                                  else return $ toSourceKind cKind
+        viaUSRHash <- if cKind == C.Cursor_CallExpr then callBaseUSRHash cursor
+                                                    else return 0
+
+        -- Record.
         reference <- return $! ReferenceUpdate (hash . slFile $ loc)
                                                (slLine loc)
                                                (slCol loc)
                                                endLn
                                                endCol
                                                refKind
+                                               viaUSRHash
                                                (hash ctxUSR)
                                                (hash referToUSR)
         liftIO $ runRPC (rpcFoundRef reference) conn
@@ -198,8 +204,8 @@ getCursorLocation cursor = do
                     Nothing -> return ""
   return $! SourceLocation file ln col
 
-analyzeCallKind :: C.Cursor -> ClangApp s SourceKind
-analyzeCallKind c = do
+analyzeCall :: C.Cursor -> ClangApp s SourceKind
+analyzeCall c = do
   isDynamicCall <- C.isDynamicCall c
 
   if isDynamicCall then do
@@ -209,6 +215,15 @@ analyzeCallKind c = do
     return $ if isVirtual then DynamicCallExpr else CallExpr
   else 
     return CallExpr
+
+callBaseUSRHash :: C.Cursor -> ClangApp s Int64
+callBaseUSRHash = return . hash
+              <=< (\x -> (liftIO . putStrLn $ "Got base USR: " ++ (show x)) >> return x)
+              <=< CS.unpackByteString
+              <=< XRef.getUSR
+              <=< C.getTypeDeclaration
+              <=< underlyingType
+              <=< C.getBaseExpression
 
 isDef :: C.Cursor -> C.CursorKind -> ClangApp s Bool
 isDef c k = do
@@ -315,11 +330,16 @@ dumpSubtree cursor = do
             baseExprKind <- C.getKind baseExpr
             baseType <- C.getType baseExpr
             baseTypeKind <- T.getKind baseType 
+            uType <- underlyingType baseExpr
+            uTypeKind <- T.getKind uType
             isVirtual <- isVirtualCall baseExprKind baseExpr
             baseTypeSpelling <- T.getTypeSpelling baseType >>= CS.unpack
             baseKindSpelling <- T.getTypeKindSpelling baseTypeKind >>= CS.unpack
+            uTypeSpelling <- T.getTypeSpelling uType >>= CS.unpack
+            uKindSpelling <- T.getTypeKindSpelling uTypeKind >>= CS.unpack
             liftIO $ putStrLn $ replicate i ' ' ++ "[==] CallExpr base: " ++ baseName
                                                 ++ " type: " ++ baseTypeSpelling ++ "/" ++ baseKindSpelling
+                                                ++ " utype: " ++ uTypeSpelling ++ "/" ++ uKindSpelling
                                                 ++ " virtual? " ++ show isVirtual
 
           -- Display.
@@ -331,12 +351,21 @@ dumpSubtree cursor = do
                               "definition [" ++ defName ++ "/" ++ defUSR ++ "] " ++
                               "reference [" ++ refName ++ "/" ++ refUSR ++ "]"
 
+underlyingType :: C.Cursor -> ClangApp s T.Type
+underlyingType c = do
+  t <- C.getType c
+  tKind <- T.getKind t
+  if tKind `elem` [T.Type_LValueReference, T.Type_RValueReference, T.Type_Pointer, T.Type_Unexposed, T.Type_Invalid] then
+    T.getPointeeType t
+  else
+    return t
+    
 isVirtualCall :: C.CursorKind -> C.Cursor -> ClangApp s Bool
 isVirtualCall k | k `elem` [C.Cursor_CallExpr, C.Cursor_MemberRefExpr, C.Cursor_DeclRefExpr] = doesRefKindRequireVirtualDispatch <=< baseRefKind
 isVirtualCall _ = const $ return True
 
 doesRefKindRequireVirtualDispatch :: T.TypeKind -> ClangApp s Bool
-doesRefKindRequireVirtualDispatch k = return $ (`elem` [T.Type_LValueReference, T.Type_Pointer, T.Type_Unexposed, T.Type_Invalid]) k
+doesRefKindRequireVirtualDispatch k = return $ (`elem` [T.Type_LValueReference, T.Type_RValueReference, T.Type_Pointer, T.Type_Unexposed, T.Type_Invalid]) k
 
 baseRefKind :: C.Cursor -> ClangApp s T.TypeKind
 baseRefKind = T.getKind <=< C.getType <=< C.getReferenced
