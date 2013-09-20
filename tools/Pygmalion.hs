@@ -5,9 +5,8 @@ import Control.Exception (catch, SomeException)
 import Control.Monad
 import Control.Monad.Trans (liftIO)
 import qualified Data.ByteString.UTF8 as B
-import Data.List
+import Data.List (intercalate)
 import Data.Maybe
-import Data.Ord
 import Safe (readMay)
 import System.Directory
 import System.Environment
@@ -144,27 +143,17 @@ getCommandInfoOr a f cf = do
 
 printDef :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printDef cf f (Just line) (Just col) = do
-    info <- doGetLookupInfo cf (SourceLocation f line col)
-    case info of
-      GotDef di  -> putDef di
-      -- FIXME Clean this up
-      GotDecl usr di -> do def <- withRPC cf $ runRPC (rpcGetDefinition usr)
-                           if isJust def then putDef (fromJust def)
-                                         else putDecl di
-      GotUSR usr -> do def <- withRPC cf $ runRPC (rpcGetDefinition usr)
-                       unless (isJust def) $ bailWith (defErr usr)
-                       putDef (fromJust def)
-      GotNothing -> bailWith idErr
+    defs <- withRPC cf $ runRPC (rpcGetDefinition (SourceLocation f line col))
+    case defs of
+      [] -> bailWith idErr
+      _  -> mapM_ putDef defs
   where 
     errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
-    idErr = errPrefix ++ "No identifier at this location."
-    defErr usr = errPrefix ++ "No definition for this identifier. USR = [" ++ (B.toString usr) ++ "]"
+    idErr = errPrefix ++ "No identifier at this location. Make sure the file compiles "
+                      ++ "with no errors and the index is up-to-date."
     putDef (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Definition: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
-    putDecl (DefInfo n _ (SourceLocation idF idLine idCol) k) =
-      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Declaration: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
 printDef _ _ _ _ = usage
 
 printCallers :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
@@ -277,37 +266,12 @@ printRefs cf f (Just line) (Just col) = do
                  ": Reference: " ++ (B.toString ctx) ++ " [" ++ (show k) ++ "]"
 printRefs _ _ _ _ = usage
 
-{-
 doGetLookupInfo :: Config -> SourceLocation -> IO LookupInfo
 doGetLookupInfo cf sl = do
-    cmd <- getCommandInfoOr (bailWith cmdErr) (slFile sl) cf
-    getLookupInfo cmd sl
-  where
-    errPrefix = (unSourceFile $ slFile sl) ++
-                ":" ++ (show $ slLine sl) ++ ":" ++ (show $ slCol sl) ++ ": "
-    cmdErr = errPrefix ++ "No compilation information for this file."
--}
-
-doGetLookupInfo :: Config -> SourceLocation -> IO LookupInfo
-doGetLookupInfo cf sl = do
-    rawReferenced <- withRPC cf $ runRPC (rpcGetReferenced sl)
-    when (multipleItems rawReferenced) $ do
-      logInfo "Warning: multiple referenced entities"
-      logInfo (show sl)
-      mapM_ (logInfo . show) rawReferenced
-    let referenced = filterNarrowest . filterExpansion $ rawReferenced
+    referenced <- withRPC cf $ runRPC (rpcGetReferenced sl)
     case referenced of
       Just referenced' -> return (GotDef . sdDef $ referenced')
       Nothing          -> return GotNothing
-  where
-    filterExpansion rs = let exps = filter ((== MacroExpansion) . sdKind) rs in
-                         if null exps then rs else exps
-    filterNarrowest [] = Nothing
-    filterNarrowest rs = Just $ minimumBy (comparing $ rangeSize . sdRange) rs
-    rangeSize (SourceRange _ l c el ec) = (el - l, ec - c)
-    multipleItems [] = False
-    multipleItems (_ : []) = False
-    multipleItems _ = True
 
 bail :: IO ()
 bail = exitWith (ExitFailure (-1))

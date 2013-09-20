@@ -14,7 +14,7 @@ data RPCRequest = RPCIndexCommand CommandInfo
                 | RPCIndexFile SourceFile
                 | RPCGetCommandInfo SourceFile
                 | RPCGetSimilarCommandInfo SourceFile
-                | RPCGetDefinition USR
+                | RPCGetDefinition SourceLocation
                 | RPCGetCallers USR
                 | RPCGetCallees USR
                 | RPCGetBases USR

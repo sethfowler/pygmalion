@@ -25,14 +25,14 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBResetMetadata SourceFile
                | DBGetCommandInfo SourceFile (Response (Maybe CommandInfo))
                | DBGetSimilarCommandInfo SourceFile (Response (Maybe CommandInfo))
-               | DBGetDefinition USR (Response (Maybe DefInfo))
+               | DBGetDefinition SourceLocation (Response [DefInfo])
                | DBGetIncluders SourceFile (Response [CommandInfo])
                | DBGetCallers USR (Response [Invocation])
                | DBGetCallees USR (Response [DefInfo])
                | DBGetBases USR (Response [DefInfo])
                | DBGetOverrides USR (Response [DefInfo])
                | DBGetRefs USR (Response [SourceReference])
-               | DBGetReferenced SourceLocation (Response [SourceReferenced])
+               | DBGetReferenced SourceLocation (Response (Maybe SourceReferenced))
                | DBShutdown
                deriving (Show)
 type DBChan = LenChan DBRequest
@@ -63,7 +63,7 @@ runDatabaseManager chan queryChan = do
                 DBResetMetadata !sf           -> doResetMetadata h sf >> go (n+1) s h
                 DBGetCommandInfo !f !v        -> doGetCommandInfo h f v >> go (n+1) s h
                 DBGetSimilarCommandInfo !f !v -> doGetSimilarCommandInfo h f v >> go (n+1) s h
-                DBGetDefinition !u !v         -> doGetDefinition h u v >> go (n+1) s h
+                DBGetDefinition !sl !v        -> doGetDefinition h sl v >> go (n+1) s h
                 DBGetIncluders !sf !v         -> doGetIncluders h sf v >> go (n+1) s h
                 DBGetCallers !usr !v          -> doGetCallers h usr v >> go (n+1) s h
                 DBGetCallees !usr !v          -> doGetCallees h usr v >> go (n+1) s h
@@ -124,10 +124,10 @@ doGetSimilarCommandInfo h f v = do
   ci <- liftM2 (<|>) (getCommandInfo h f) (getSimilarCommandInfo h f)
   sendResponse v ci
 
-doGetDefinition :: DBHandle -> USR -> Response (Maybe DefInfo) -> IO ()
-doGetDefinition h usr v = do
-  logDebug $ "Getting DefInfo for " ++ (show usr)
-  sendResponse v =<< getDef h usr
+doGetDefinition :: DBHandle -> SourceLocation -> Response [DefInfo] -> IO ()
+doGetDefinition h sl v = do
+  logDebug $ "Getting definition for " ++ (show sl)
+  sendResponse v =<< getDef h sl
 
 doGetIncluders :: DBHandle -> SourceFile -> Response [CommandInfo] -> IO ()
 doGetIncluders h sf v = do
@@ -159,7 +159,7 @@ doGetRefs h usr v = do
   logDebug $ "Getting refs for " ++ (show usr)
   sendResponse v =<< getReferences h usr
 
-doGetReferenced :: DBHandle -> SourceLocation -> Response [SourceReferenced] -> IO ()
+doGetReferenced :: DBHandle -> SourceLocation -> Response (Maybe SourceReferenced) -> IO ()
 doGetReferenced h sl v = do
   logDebug $ "Getting referenced for " ++ (show sl)
   sendResponse v =<< getReferenced h sl

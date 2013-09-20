@@ -34,6 +34,8 @@ import Control.Exception (bracket)
 import Control.Monad
 import qualified Data.ByteString as B
 import Data.Int
+import Data.List (minimumBy)
+import Data.Ord (comparing)
 import Data.String
 import qualified Data.Text as T
 import qualified Database.SQLite3.Direct as Direct
@@ -473,8 +475,30 @@ resetDefs h sf = do
 resetDefsSQL :: T.Text
 resetDefsSQL = "delete from Definitions where File = ?"
 
-getDef :: DBHandle -> USR -> IO (Maybe DefInfo)
-getDef h usr = execSingleRowQuery h getDefStmt (Only $ hash usr)
+getDef :: DBHandle -> SourceLocation -> IO [DefInfo]
+--getDef h usr = execSingleRowQuery h getDefStmt (Only $ hash usr)
+getDef h sl = go =<< getReferenced h sl
+  where
+    go Nothing   = return []  
+    go (Just sr) = do
+      -- XXX This includes all overriders all the time, but we need to
+      -- distinguish between dynamic and static calls. To do this, we
+      -- need these functions to take a SourceLocation instead of a
+      -- USR, which makes sense anyway since we can halve the number of
+      -- DB queries.
+      mayDef <- execSingleRowQuery h getDefStmt (Only . hash . diUSR . sdDef $ sr)
+      case (mayDef, sdKind sr) of
+        (Nothing, _) -> return []
+        (Just def, DynamicCallExpr) -> do os <- getTransitiveOverriders def
+                                          return (def : os)
+        (Just def, _) -> return [def]
+
+    getTransitiveOverriders :: DefInfo -> IO [DefInfo]
+    getTransitiveOverriders di = do
+      -- This is a slow algorithm. Rewrite.
+      os <- (getOverriders h (diUSR di)) :: IO [DefInfo]
+      os' <- (mapM getTransitiveOverriders os) :: IO [[DefInfo]]
+      return $ os ++ (concat os')
 
 getDefSQL :: T.Text
 getDefSQL = T.concat
@@ -568,9 +592,21 @@ resetReferences h sf = do
 resetReferencesSQL :: T.Text
 resetReferencesSQL = "delete from Refs where File = ?"
 
-getReferenced :: DBHandle -> SourceLocation -> IO [SourceReferenced]
-getReferenced h (SourceLocation sf l c) =
-  execQuery h getReferencedStmt (hash sf, l, l, c, l, c)
+getReferenced :: DBHandle -> SourceLocation -> IO (Maybe SourceReferenced)
+getReferenced h (SourceLocation sf l c) = do
+    rs <- execQuery h getReferencedStmt (hash sf, l, l, c, l, c)
+
+    when (multipleItems rs) $ do
+      logDebug $ "Multiple referenced entities:"
+      mapM_ (logDebug . show) rs
+
+    narrowReferenced rs
+
+  where
+
+    multipleItems []       = False
+    multipleItems (_ : []) = False
+    multipleItems _        = True
 
 -- Note below that the columns of the reference are [Col, EndCol).
 getReferencedSQL :: T.Text
@@ -585,6 +621,24 @@ getReferencedSQL = T.concat
   , "  ((? between R.Line and R.EndLine) and                  "
   , "   (? > R.Line or ? >= R.Col) and                        "
   , "   (? < R.EndLine or ? < R.EndCol))" ]
+
+
+narrowReferenced :: [SourceReferenced] -> IO (Maybe SourceReferenced)
+narrowReferenced = return . filterNarrowest . filterCall . filterExpansion
+  where
+    filterExpansion rs = let exps = filter ((== MacroExpansion) . sdKind) rs in
+                         if null exps then rs else exps
+    -- filterCall is a hack until #109 gets fixed.
+    filterCall rs      = case filterNarrowest rs of
+                           Nothing -> []
+                           Just n  -> if sdKind n /= DynamicCallExpr &&
+                                         any ((== DynamicCallExpr) . sdKind) rs
+                                      then filter (/= n) rs
+                                      else rs
+    filterNarrowest [] = Nothing
+    filterNarrowest rs = Just $ minimumBy (comparing $ rangeSize . sdRange) rs
+
+    rangeSize (SourceRange _ l c el ec) = (el - l, ec - c)
 
 getReferences :: DBHandle -> USR -> IO [SourceReference]
 getReferences h usr = execQuery h getReferencesStmt (Only $ hash usr)

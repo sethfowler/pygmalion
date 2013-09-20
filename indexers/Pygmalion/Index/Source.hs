@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable, OverloadedStrings, RankNTypes #-}
+{-# LANGUAGE Haskell2010, DeriveDataTypeable, OverloadedStrings, RankNTypes #-}
 
 module Pygmalion.Index.Source
 ( runSourceAnalyses
@@ -133,7 +133,7 @@ defsVisitor conn ci tu cursor _ = do
                     ctxUSR <- XRef.getUSR ctxC >>= CS.unpackByteString
 
                     -- Record.
-                    refKind <- if cKind == C.Cursor_CallExpr then toCallSourceKind =<< C.isDynamicCall cursor
+                    refKind <- if cKind == C.Cursor_CallExpr then analyzeCallKind cursor
                                                              else return $ toSourceKind cKind
                     reference <- return $! ReferenceUpdate (hash . slFile $ loc)
                                                            (slLine loc)
@@ -207,9 +207,17 @@ getCursorLocation cursor = do
                     Nothing -> return ""
   return $! SourceLocation file ln col
 
-toCallSourceKind :: Bool -> ClangApp s SourceKind
-toCallSourceKind True  = return DynamicCallExpr
-toCallSourceKind False = return CallExpr
+analyzeCallKind :: C.Cursor -> ClangApp s SourceKind
+analyzeCallKind c = do
+  isDynamicCall <- C.isDynamicCall c
+
+  if isDynamicCall then do
+    baseExpr <- C.getBaseExpression c
+    baseExprKind <- C.getKind baseExpr
+    isVirtual <- isVirtualCall baseExpr baseExprKind
+    return $ if isVirtual then DynamicCallExpr else CallExpr
+  else 
+    return CallExpr
 
 isDef :: C.Cursor -> C.CursorKind -> ClangApp s Bool
 isDef c k = do

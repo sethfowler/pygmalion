@@ -141,12 +141,26 @@ runTests = hspec $ around withPygd $
 
       -- Pointers to instances.
       ("virtual.cpp", 71, 3) `defShouldBe` "8:7: Definition: child_class [ClassDecl]"
-      -- XXX: All these are wrong because child_class has a subclass
-      -- with overrides. Should be seeing multiple defs here.
-      --("virtual.cpp", 72, 14) `defShouldBe` "10:23: Definition: child_class::base_pure_method() [CXXMethod]"
-      --("virtual.cpp", 73, 16) `defShouldBe` "10:23: Definition: child_class::base_pure_method() [CXXMethod]"
-      --("virtual.cpp", 74, 14) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
-      --("virtual.cpp", 75, 16) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 72, 14) `defsShouldBe`
+        ["10:23: Definition: child_class::base_pure_method() [CXXMethod]",
+         "16:23: Definition: grandchild_class::base_pure_method() [CXXMethod]",
+         "26:23: Definition: greatgrandchild_class::base_pure_method() [CXXMethod]",
+         "32:23: Definition: greatgreatgrandchild_class::base_pure_method() [CXXMethod]"]
+      ("virtual.cpp", 73, 16) `defsShouldBe`
+        ["10:23: Definition: child_class::base_pure_method() [CXXMethod]",
+         "16:23: Definition: grandchild_class::base_pure_method() [CXXMethod]",
+         "26:23: Definition: greatgrandchild_class::base_pure_method() [CXXMethod]",
+         "32:23: Definition: greatgreatgrandchild_class::base_pure_method() [CXXMethod]"]
+      ("virtual.cpp", 74, 14) `defsShouldBe`
+        ["11:23: Definition: child_class::child_method(int) [CXXMethod]",
+         "27:23: Definition: greatgrandchild_class::child_method(int) [CXXMethod]",
+         "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]",
+         "33:23: Definition: greatgreatgrandchild_class::child_method(int) [CXXMethod]"]
+      ("virtual.cpp", 75, 16) `defsShouldBe`
+        ["11:23: Definition: child_class::child_method(int) [CXXMethod]",
+         "27:23: Definition: greatgrandchild_class::child_method(int) [CXXMethod]",
+         "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]",
+         "33:23: Definition: greatgreatgrandchild_class::child_method(int) [CXXMethod]"]
       ("virtual.cpp", 78, 19) `defShouldBe` "16:23: Definition: grandchild_class::base_pure_method() [CXXMethod]"
       ("virtual.cpp", 79, 21) `defShouldBe` "16:23: Definition: grandchild_class::base_pure_method() [CXXMethod]"
       ("virtual.cpp", 80, 19) `defShouldBe` "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]"
@@ -155,26 +169,58 @@ runTests = hspec $ around withPygd $
       ("virtual.cpp", 83, 34) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
       ("virtual.cpp", 84, 37) `defShouldBe` "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]"
       ("virtual.cpp", 85, 39) `defShouldBe` "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]"
-      --("virtual.cpp", 88, 28) `defShouldBe` "10:23: Definition: child_class::base_pure_method() [CXXMethod]"
-      --("virtual.cpp", 89, 30) `defShouldBe` "10:23: Definition: child_class::base_pure_method() [CXXMethod]"
-      --("virtual.cpp", 90, 28) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
-      --("virtual.cpp", 91, 30) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 88, 28) `defsShouldBe`
+        ["10:23: Definition: child_class::base_pure_method() [CXXMethod]",
+         "16:23: Definition: grandchild_class::base_pure_method() [CXXMethod]",
+         "26:23: Definition: greatgrandchild_class::base_pure_method() [CXXMethod]",
+         "32:23: Definition: greatgreatgrandchild_class::base_pure_method() [CXXMethod]"]
+      ("virtual.cpp", 89, 30) `defsShouldBe`
+        ["10:23: Definition: child_class::base_pure_method() [CXXMethod]",
+         "16:23: Definition: grandchild_class::base_pure_method() [CXXMethod]",
+         "26:23: Definition: greatgrandchild_class::base_pure_method() [CXXMethod]",
+         "32:23: Definition: greatgreatgrandchild_class::base_pure_method() [CXXMethod]"]
+      ("virtual.cpp", 90, 28) `defsShouldBe`
+        ["11:23: Definition: child_class::child_method(int) [CXXMethod]",
+         "27:23: Definition: greatgrandchild_class::child_method(int) [CXXMethod]",
+         "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]",
+         "33:23: Definition: greatgreatgrandchild_class::child_method(int) [CXXMethod]"]
+      ("virtual.cpp", 91, 30) `defsShouldBe`
+        ["11:23: Definition: child_class::child_method(int) [CXXMethod]",
+         "27:23: Definition: greatgrandchild_class::child_method(int) [CXXMethod]",
+         "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]",
+         "33:23: Definition: greatgreatgrandchild_class::child_method(int) [CXXMethod]"]
       ("virtual.cpp", 92, 41) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
       ("virtual.cpp", 93, 43) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
 
-      {-
       -- References to instances.
-      ("virtual.cpp", 96, 3) `defShouldBe` "XXX"
-      ("virtual.cpp", 97, 22) `defShouldBe` "XXX"
-      ("virtual.cpp", 98, 22) `defShouldBe` "XXX"
-      ("virtual.cpp", 101, 27) `defShouldBe` "XXX"
-      ("virtual.cpp", 102, 27) `defShouldBe` "XXX"
-      ("virtual.cpp", 103, 40) `defShouldBe` "XXX"
-      ("virtual.cpp", 104, 45) `defShouldBe` "XXX"
-      ("virtual.cpp", 107, 27) `defShouldBe` "XXX"
-      ("virtual.cpp", 108, 27) `defShouldBe` "XXX"
-      ("virtual.cpp", 109, 40) `defShouldBe` "XXX"
+      ("virtual.cpp", 96, 3) `defShouldBe` "8:7: Definition: child_class [ClassDecl]"
+      ("virtual.cpp", 97, 22) `defsShouldBe`
+        ["10:23: Definition: child_class::base_pure_method() [CXXMethod]",
+         "16:23: Definition: grandchild_class::base_pure_method() [CXXMethod]",
+         "26:23: Definition: greatgrandchild_class::base_pure_method() [CXXMethod]",
+         "32:23: Definition: greatgreatgrandchild_class::base_pure_method() [CXXMethod]"]
+      ("virtual.cpp", 98, 22) `defsShouldBe`
+        ["11:23: Definition: child_class::child_method(int) [CXXMethod]",
+         "27:23: Definition: greatgrandchild_class::child_method(int) [CXXMethod]",
+         "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]",
+         "33:23: Definition: greatgreatgrandchild_class::child_method(int) [CXXMethod]"]
+      ("virtual.cpp", 101, 27) `defShouldBe` "16:23: Definition: grandchild_class::base_pure_method() [CXXMethod]"
+      ("virtual.cpp", 102, 27) `defShouldBe` "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 103, 40) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 104, 45) `defShouldBe` "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 107, 27) `defsShouldBe`
+        ["10:23: Definition: child_class::base_pure_method() [CXXMethod]",
+         "16:23: Definition: grandchild_class::base_pure_method() [CXXMethod]",
+         "26:23: Definition: greatgrandchild_class::base_pure_method() [CXXMethod]",
+         "32:23: Definition: greatgreatgrandchild_class::base_pure_method() [CXXMethod]"]
+      ("virtual.cpp", 108, 27) `defsShouldBe`
+        ["11:23: Definition: child_class::child_method(int) [CXXMethod]",
+         "27:23: Definition: greatgrandchild_class::child_method(int) [CXXMethod]",
+         "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]",
+         "33:23: Definition: greatgreatgrandchild_class::child_method(int) [CXXMethod]"]
+      ("virtual.cpp", 109, 40) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
 
+      {-
       -- Structs containing instance values.
       ("virtual.cpp", 113, 34) `defShouldBe` "XXX"
       ("virtual.cpp", 114, 34) `defShouldBe` "XXX"
@@ -286,10 +332,19 @@ runTests = hspec $ around withPygd $
 
 defShouldBe :: (FilePath, Int, Int) -> String -> Expectation
 defShouldBe loc s = do
-    ss <- uncurryN defsAt loc
-    assertBool (errorMsg ss) $ any (s `isInfixOf`) ss
+    ds <- uncurryN defsAt loc
+    assertBool (errorMsg ds) $ length ds == 1
+    assertBool (errorMsg ds) $ any (s `isInfixOf`) ds
   where
-    errorMsg ss = "Definition for " ++ show loc ++ " was " ++ show ss ++ "; expected " ++ show s
+    errorMsg ds = "Definition for " ++ show loc ++ " was " ++ show ds ++ "; expected " ++ show s
+
+defsShouldBe :: (FilePath, Int, Int) -> [String] -> Expectation
+defsShouldBe loc ss = do
+    ds <- uncurryN defsAt loc
+    forM_ ss $ \s -> do
+      assertBool (errorMsg ds) $ any (s `isInfixOf`) ds
+  where
+    errorMsg ds = "Definition for " ++ show loc ++ " was " ++ show ds ++ "; expected " ++ show ss
 
 withPygd :: IO () -> IO ()
 withPygd action = bracket startPygd stopPygd (const action)

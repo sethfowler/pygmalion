@@ -90,8 +90,8 @@ rpcIndexFile sf = callRPC_ (RPCIndexFile sf) =<< Reader.ask
 rpcGetSimilarCommandInfo :: SourceFile -> RPC (Maybe CommandInfo)
 rpcGetSimilarCommandInfo sf = callRPC (RPCGetSimilarCommandInfo sf) =<< Reader.ask
 
-rpcGetDefinition :: USR -> RPC (Maybe DefInfo)
-rpcGetDefinition usr = callRPC (RPCGetDefinition usr) =<< Reader.ask
+rpcGetDefinition :: SourceLocation -> RPC [DefInfo]
+rpcGetDefinition sl = callRPC (RPCGetDefinition sl) =<< Reader.ask
 
 rpcGetCallers :: USR -> RPC [Invocation]
 rpcGetCallers usr = callRPC (RPCGetCallers usr) =<< Reader.ask
@@ -108,7 +108,7 @@ rpcGetOverrides usr = callRPC (RPCGetOverrides usr) =<< Reader.ask
 rpcGetRefs :: USR -> RPC [SourceReference]
 rpcGetRefs usr = callRPC (RPCGetRefs usr) =<< Reader.ask
 
-rpcGetReferenced :: SourceLocation -> RPC [SourceReferenced]
+rpcGetReferenced :: SourceLocation -> RPC (Maybe SourceReferenced)
 rpcGetReferenced sl = callRPC (RPCGetReferenced sl) =<< Reader.ask
 
 rpcFoundDef :: DefUpdate -> RPC ()

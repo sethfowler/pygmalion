@@ -26,6 +26,7 @@ main :: IO ()
 main = do
   -- Initialize.
   cf <- getConfiguration
+  putStrLn $ "Log level is " ++ (show $ logLevel cf)
   initLogger (logLevel cf)
   ensureDB
   stopWatching <- newEmptyMVar
