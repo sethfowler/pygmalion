@@ -23,9 +23,12 @@ class grandchild_no_override_class : public child_class
 
 class greatgrandchild_class : public grandchild_no_override_class
 {
-  public: virtual int base_pure_method() { return 3; }
-  public: virtual int child_method(int a) { return a + 2; }
+  public: virtual int base_pure_method();
+  public: virtual int child_method(int a);
 };
+
+int greatgrandchild_class::base_pure_method() { return 3; }
+int greatgrandchild_class::child_method(int a) { return a + 2; }
 
 class greatgreatgrandchild_class : public greatgrandchild_class
 {

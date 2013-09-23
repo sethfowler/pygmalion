@@ -220,12 +220,11 @@ runTests = hspec $ around withPygd $
          "33:23: Definition: greatgreatgrandchild_class::child_method(int) [CXXMethod]"]
       ("virtual.cpp", 109, 40) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
 
-      {-
       -- Structs containing instance values.
-      ("virtual.cpp", 113, 34) `defShouldBe` "XXX"
-      ("virtual.cpp", 114, 34) `defShouldBe` "XXX"
-      ("virtual.cpp", 115, 47) `defShouldBe` "XXX"
-      ("virtual.cpp", 116, 52) `defShouldBe` "XXX"
+      ("virtual.cpp", 113, 34) `defShouldBe` "16:23: Definition: grandchild_class::base_pure_method() [CXXMethod]"
+      ("virtual.cpp", 114, 34) `defShouldBe` "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 115, 47) `defShouldBe` "11:23: Definition: child_class::child_method(int) [CXXMethod]"
+      ("virtual.cpp", 116, 52) `defShouldBe` "17:23: Definition: grandchild_class::child_method(int) [CXXMethod]"
       ("virtual.cpp", 119, 30) `defShouldBe` "XXX"
       ("virtual.cpp", 120, 30) `defShouldBe` "XXX"
       ("virtual.cpp", 121, 43) `defShouldBe` "XXX"
@@ -270,6 +269,7 @@ runTests = hspec $ around withPygd $
       ("virtual.cpp", 169, 49) `defShouldBe` "XXX"
       ("virtual.cpp", 170, 54) `defShouldBe` "XXX"
 
+      {-
       -- Classes which don't override a virtual method defined in an ancestor class.
       ("virtual.cpp", 174, 35) `defShouldBe` "XXX"
       ("virtual.cpp", 175, 35) `defShouldBe` "XXX"
