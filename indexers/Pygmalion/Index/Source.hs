@@ -218,7 +218,7 @@ analyzeCall c = do
 
 callBaseUSRHash :: C.Cursor -> ClangApp s Int64
 callBaseUSRHash = return . hash
-              <=< (\x -> (liftIO . putStrLn $ "Got base USR: " ++ (show x)) >> return x)
+              -- <=< (\x -> (liftIO . putStrLn $ "Got base USR: " ++ (show x)) >> return x)
               <=< CS.unpackByteString
               <=< XRef.getUSR
               <=< C.getTypeDeclaration

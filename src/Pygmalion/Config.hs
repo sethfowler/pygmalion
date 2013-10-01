@@ -10,6 +10,8 @@ import Control.Applicative
 import Control.Monad
 import Data.Yaml
 import qualified Data.ByteString as B
+import System.Directory (doesFileExist, getCurrentDirectory)
+import System.FilePath.Posix (takeDirectory, (</>))
 
 import Pygmalion.Core
 import Pygmalion.Log
@@ -93,7 +95,17 @@ instance FromJSON Config where
   parseJSON _ = mzero
 
 readConfigFile :: IO B.ByteString
-readConfigFile = B.readFile configFile
+readConfigFile = B.readFile =<< findConfigFile =<< getCurrentDirectory
+  where
+    findConfigFile dir = do
+      let dirConfigFile = dir </> configFile
+      exists <- doesFileExist dirConfigFile
+
+      case (exists, dir) of
+        (True, _)    -> return dirConfigFile
+        (False, "")  -> error $ "Couldn't locate pygmalion configuration file"
+        (False, "/") -> error $ "Couldn't locate pygmalion configuration file"
+        _            -> findConfigFile $ takeDirectory dir
 
 reportError :: String -> IO a
 reportError err = error $ "Couldn't parse configuration file: " ++ err
