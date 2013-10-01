@@ -248,7 +248,7 @@ indexExecutable  = "pygindex-clang"
 -- Data files.
 pygmalionDir, dbFile, configFile, compileCommandsFile, tagsFile :: FilePath
 pygmalionDir        = ".pygmalion"
-dbFile              = pygmalionDir </> "pygmalion.sqlite"
+dbFile              = pygmalionDir </> "index.sqlite"
 configFile          = pygmalionDir </> "pygmalion.yaml"
 compileCommandsFile = "compile_commands.json"
 tagsFile            = "TAGS"
