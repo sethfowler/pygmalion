@@ -11,6 +11,7 @@ import Safe (readMay)
 import System.Directory
 import System.Environment
 import System.Exit
+import System.IO (withFile, IOMode(ReadWriteMode))
 import System.Path
 import System.Process
 
@@ -24,11 +25,12 @@ import Pygmalion.RPC.Client
 
 main :: IO ()
 main = do
-  cf <- getConfiguration
-  initLogger (logLevel cf)
   args <- getArgs
-  wd <- getCurrentDirectory
-  parseArgs cf wd args
+  parseConfiglessArgs args $ do
+    cf <- getConfiguration
+    initLogger (logLevel cf)
+    wd <- getCurrentDirectory
+    parseArgs cf wd args
 
 usage :: IO ()
 usage = do
@@ -37,6 +39,8 @@ usage = do
   putStrLn   " --help                      Prints this message."
   putStrLn   " --start                     Starts the pygmalion daemon."
   putStrLn   " --stop                      Terminates the pygmalion daemon."
+  putStrLn   " --init                      Initializes a pygmalion index rooted at"
+  putStrLn   "                             the current directory."
   putStrLn   " --index ([file]|[command])  Manually request indexing. If a single"
   putStrLn   "                             argument is provided, it's interpreted"
   putStrLn   "                             as a file to index using the default"
@@ -61,6 +65,13 @@ usage = do
   putStrLn   " --references [file] [line] [col]"
   bail
 
+parseConfiglessArgs :: [String] -> IO () -> IO ()
+parseConfiglessArgs ["--init"] _ = initialize
+parseConfiglessArgs ["--help"] _ = usage
+parseConfiglessArgs ["-h"]     _ = usage
+parseConfiglessArgs []         _ = usage
+parseConfiglessArgs _          c = c
+
 parseArgs :: Config -> FilePath -> [String] -> IO ()
 parseArgs _ _  ["--start"] = start
 parseArgs c _  ["--stop"] = stop c
@@ -82,8 +93,6 @@ parseArgs c wd ["--overrides", f, line, col] = printOverrides c (asSourceFile wd
                                                                 (readMay line) (readMay col)
 parseArgs c wd ["--references", f, line, col] = printRefs c (asSourceFile wd f)
                                                             (readMay line) (readMay col)
-parseArgs _ _  ["--help"] = usage
-parseArgs _ _  ["-h"]     = usage
 parseArgs _ _ _           = usage
 
 asSourceFile :: FilePath -> FilePath -> SourceFile
@@ -94,6 +103,12 @@ start = void $ waitForProcess =<< runCommand "pygd"
 
 stop :: Config -> IO ()
 stop cf = withRPC cf $ runRPC rpcStop
+
+initialize :: IO ()
+initialize = do
+  putStrLn "Initializing a pygmalion index..."
+  createDirectoryIfMissing True pygmalionDir
+  withFile configFile ReadWriteMode (\_ -> return ())
 
 indexCommand :: Config -> String -> [String] -> IO ()
 indexCommand cf cmd args = do

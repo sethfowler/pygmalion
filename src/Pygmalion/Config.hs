@@ -12,6 +12,7 @@ import Data.Yaml
 import qualified Data.ByteString as B
 import System.Directory (doesFileExist, getCurrentDirectory)
 import System.FilePath.Posix (takeDirectory, (</>))
+import Text.Libyaml (Event(..))
 
 import Pygmalion.Core
 import Pygmalion.Log
@@ -107,6 +108,13 @@ readConfigFile = B.readFile =<< findConfigFile =<< getCurrentDirectory
         (False, "/") -> error $ "Couldn't locate pygmalion configuration file"
         _            -> findConfigFile $ takeDirectory dir
 
+checkError :: ParseException -> IO Config
+checkError (UnexpectedEvent Nothing
+                            (Just EventStreamStart)) = return defaultConfig
+checkError (UnexpectedEvent (Just EventStreamEnd)
+                            (Just EventDocumentStart)) = return defaultConfig
+checkError ex = reportError . show $ ex
+
 reportError :: String -> IO a
 reportError err = error $ "Couldn't parse configuration file: " ++ err
 
@@ -118,4 +126,4 @@ checkConfig conf@Config { ifPort = port }
 getConfiguration :: IO Config
 getConfiguration = do
   result <- (decodeEither' <$> readConfigFile)
-  either (reportError . show) checkConfig result
+  either checkError checkConfig result
