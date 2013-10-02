@@ -32,7 +32,7 @@ parseArgs as         = return as
 
 getMakeCommand :: Config -> [String] -> String
 getMakeCommand cf mkArgs = replace "$(idx)" queryExecutable
-                         . replace "$(idxargs)" "--make "
+                         . replace "$(idxargs)" "make"
                          . replace "$(cc)" (ccCmd cf)
                          . replace "$(ccargs)" (ccArgs cf)
                          . replace "$(cpp)" (cppCmd cf)

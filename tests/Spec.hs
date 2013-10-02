@@ -351,7 +351,7 @@ withPygd action = bracket startPygd stopPygd (const action)
   where
     startPygd = do bg "../dist/build/pygd/pygd"
                    threadDelay 1000000
-    stopPygd _ = do void $ pygmalion ["--stop"]
+    stopPygd _ = do void $ pygmalion ["stop"]
                     sh $ "rm -f " ++ dbFile
   
 pygmalion :: [String] -> IO [String]
@@ -364,11 +364,11 @@ pygmalion args = do
 
 index :: FilePath -> IO ()
 index file = do
-  void $ pygmalion ["--index", "clang++", "--std=c++11", file]
+  void $ pygmalion ["index", "clang++", "--std=c++11", file]
   threadDelay 1000000
 
 defsAt :: FilePath -> Int -> Int -> IO [String]
-defsAt file line col = pygmalion ["--definition", file, show line, show col]
+defsAt file line col = pygmalion ["definition", file, show line, show col]
 
 sh :: String -> IO ()
 sh cmd = void $ waitForProcess =<< runCommand cmd

@@ -36,63 +36,62 @@ usage :: IO ()
 usage = do
   putStrLn $ "Usage: " ++ queryExecutable ++ " [command]"
   putStrLn   "where [command] is one of the following:"
-  putStrLn   " --help                      Prints this message."
-  putStrLn   " --start                     Starts the pygmalion daemon."
-  putStrLn   " --stop                      Terminates the pygmalion daemon."
-  putStrLn   " --init                      Initializes a pygmalion index rooted at"
-  putStrLn   "                             the current directory."
-  putStrLn   " --index ([file]|[command])  Manually request indexing. If a single"
-  putStrLn   "                             argument is provided, it's interpreted"
-  putStrLn   "                             as a file to index using the default"
-  putStrLn   "                             compiler flags. Multiple arguments are"
-  putStrLn   "                             interpreted as a compiler invocation"
-  putStrLn   "                             (e.g. 'clang -c file.c') and the compiler"
-  putStrLn   "                             flags to use will be extracted appropriately."
-  putStrLn   " --make [command]            Both requests indexing and executes the"
-  putStrLn   "                             provided command."
-  putStrLn   " --generate-compile-commands Prints a clang compilation database."
-  putStrLn   " --compile-flags [file]      Prints the compilation flags for the"
-  putStrLn   "                             given file, or nothing on failure. If"
-  putStrLn   "                             the file isn't in the database, a guess"
-  putStrLn   "                             will be printed if possible."
-  putStrLn   " --working-directory [file]  Prints the working directory at the time"
-  putStrLn   "                             the file was compiled. Guesses if needed."
-  putStrLn   " --definition [file] [line] [col]"
-  putStrLn   " --callers [file] [line] [col]"
-  putStrLn   " --callees [file] [line] [col]"
-  putStrLn   " --bases [file] [line] [col]"
-  putStrLn   " --overrides [file] [line] [col]"
-  putStrLn   " --references [file] [line] [col]"
+  putStrLn   " help                      Prints this message."
+  putStrLn   " start                     Starts the pygmalion daemon."
+  putStrLn   " stop                      Terminates the pygmalion daemon."
+  putStrLn   " init                      Initializes a pygmalion index rooted at"
+  putStrLn   "                           the current directory."
+  putStrLn   " index ([file]|[command])  Manually request indexing. If a single"
+  putStrLn   "                           argument is provided, it's interpreted"
+  putStrLn   "                           as a file to index using the default"
+  putStrLn   "                           compiler flags. Multiple arguments are"
+  putStrLn   "                           interpreted as a compiler invocation"
+  putStrLn   "                           (e.g. 'clang -c file.c') and the compiler"
+  putStrLn   "                           flags to use will be extracted appropriately."
+  putStrLn   " make [command]            Both requests indexing and executes the"
+  putStrLn   "                           provided command."
+  putStrLn   " generate-compile-commands Prints a clang compilation database."
+  putStrLn   " compile-flags [file]      Prints the compilation flags for the"
+  putStrLn   "                           given file, or nothing on failure. If"
+  putStrLn   "                           the file isn't in the database, a guess"
+  putStrLn   "                           will be printed if possible."
+  putStrLn   " working-directory [file]  Prints the working directory at the time"
+  putStrLn   "                           the file was compiled. Guesses if needed."
+  putStrLn   " definition [file] [line] [col]"
+  putStrLn   " callers [file] [line] [col]"
+  putStrLn   " callees [file] [line] [col]"
+  putStrLn   " bases [file] [line] [col]"
+  putStrLn   " overrides [file] [line] [col]"
+  putStrLn   " references [file] [line] [col]"
   bail
 
 parseConfiglessArgs :: [String] -> IO () -> IO ()
-parseConfiglessArgs ["--init"] _ = initialize
-parseConfiglessArgs ["--help"] _ = usage
-parseConfiglessArgs ["-h"]     _ = usage
+parseConfiglessArgs ["init"] _ = initialize
+parseConfiglessArgs ["help"] _ = usage
 parseConfiglessArgs []         _ = usage
 parseConfiglessArgs _          c = c
 
 parseArgs :: Config -> FilePath -> [String] -> IO ()
-parseArgs _ _  ["--start"] = start
-parseArgs c _  ["--stop"] = stop c
-parseArgs c wd ("--index" : file : []) = indexFile c (asSourceFile wd file)
-parseArgs c _  ("--index" : cmd : args) = indexCommand c cmd args
-parseArgs c _  ("--make" : cmd : args) = makeCommand c cmd args
-parseArgs c _  ["--generate-compile-commands"] = printCDB c
-parseArgs c wd ["--compile-flags", f] = printFlags c (asSourceFile wd f)
-parseArgs c wd ["--working-directory", f] = printDir c (asSourceFile wd f)
-parseArgs c wd ["--definition", f, line, col] = printDef c (asSourceFile wd f)
-                                                           (readMay line) (readMay col)
-parseArgs c wd ["--callers", f, line, col] = printCallers c (asSourceFile wd f)
-                                                            (readMay line) (readMay col)
-parseArgs c wd ["--callees", f, line, col] = printCallees c (asSourceFile wd f)
-                                                            (readMay line) (readMay col)
-parseArgs c wd ["--bases", f, line, col] = printBases c (asSourceFile wd f)
-                                                        (readMay line) (readMay col)
-parseArgs c wd ["--overrides", f, line, col] = printOverrides c (asSourceFile wd f)
-                                                                (readMay line) (readMay col)
-parseArgs c wd ["--references", f, line, col] = printRefs c (asSourceFile wd f)
-                                                            (readMay line) (readMay col)
+parseArgs _ _  ["start"] = start
+parseArgs c _  ["stop"] = stop c
+parseArgs c wd ("index" : file : []) = indexFile c (asSourceFile wd file)
+parseArgs c _  ("index" : cmd : args) = indexCommand c cmd args
+parseArgs c _  ("make" : cmd : args) = makeCommand c cmd args
+parseArgs c _  ["generate-compile-commands"] = printCDB c
+parseArgs c wd ["compile-flags", f] = printFlags c (asSourceFile wd f)
+parseArgs c wd ["working-directory", f] = printDir c (asSourceFile wd f)
+parseArgs c wd ["definition", f, line, col] = printDef c (asSourceFile wd f)
+                                                         (readMay line) (readMay col)
+parseArgs c wd ["callers", f, line, col] = printCallers c (asSourceFile wd f)
+                                                          (readMay line) (readMay col)
+parseArgs c wd ["callees", f, line, col] = printCallees c (asSourceFile wd f)
+                                                          (readMay line) (readMay col)
+parseArgs c wd ["bases", f, line, col] = printBases c (asSourceFile wd f)
+                                                      (readMay line) (readMay col)
+parseArgs c wd ["overrides", f, line, col] = printOverrides c (asSourceFile wd f)
+                                                              (readMay line) (readMay col)
+parseArgs c wd ["references", f, line, col] = printRefs c (asSourceFile wd f)
+                                                          (readMay line) (readMay col)
 parseArgs _ _ _           = usage
 
 asSourceFile :: FilePath -> FilePath -> SourceFile
