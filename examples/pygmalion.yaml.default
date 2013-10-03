@@ -1,7 +1,7 @@
-# This is an example configuration file. These settings are the
-# defaults, so this is the same result you'd get if you had no
-# configuration file at all. If you don't include a certain setting in
-# your configuration file, it will receive its default value.
+# This is an example configuration file. These settings are the defaults, so
+# this is the same result you'd get if you had a totally blank configuration
+# file. If you don't include a certain setting in your configuration file, it
+# will receive its default value.
 address: 127.0.0.1
 port: 7999
 make: make CC="$(idx) $(idxargs) $(cc) $(ccargs)" CXX="$(idx) $(idxargs) $(cpp) $(cppargs)" $(makeargs)

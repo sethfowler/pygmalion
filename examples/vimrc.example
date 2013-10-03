@@ -7,12 +7,13 @@
 " <Leader>po - List the overrides of the identifier under the cursor.
 " <Leader>pr - List locations which reference the identifier under the cursor.
 
-command! PygGoToDefinition cexpr system('pygmalion --definition ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
-command! PygCallers cexpr system('pygmalion --callers ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
-command! PygCallees cexpr system('pygmalion --callees ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
-command! PygBases cexpr system('pygmalion --bases ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
-command! PygOverrides cexpr system('pygmalion --overrides ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
-command! PygReferences cexpr system('pygmalion --references ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
+" pygmalion commands
+command! PygGoToDefinition cexpr system('pygmalion definition ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
+command! PygCallers cexpr system('pygmalion callers ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
+command! PygCallees cexpr system('pygmalion callees ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
+command! PygBases cexpr system('pygmalion bases ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
+command! PygOverrides cexpr system('pygmalion overrides ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
+command! PygReferences cexpr system('pygmalion references ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
 
 augroup pygmalion
   au BufEnter *.c,*.cpp,*.C,*.h,*.hpp,*.H  nnoremap <buffer><silent> <Leader>] :PygGoToDefinition<CR>

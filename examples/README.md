@@ -1,7 +1,17 @@
-Here you'll find examples of integrating Pygmalion with other tools.
+Here you'll find examples of configuring Pygmalion and integrating it with other
+tools.
 
-* `example.ycm_extra_conf.py` shows how to integrate Pygmalion with
+* `pygmalion.yaml.default` shows all of Pygmalion's configuration options and
+  their default values.
+
+* `pygmalion.yaml.ccache` shows how to configure Pygmalion to build with `ccache`.
+
+* `vimrc.example` shows how to integrate Pygmalion with `vim`. (This will
+  eventually get turned into a fully-fledged plugin.)
+
+* `ycm_extra_conf.py.example` shows how to integrate Pygmalion with
   [YouCompleteMe](https://github.com/Valloric/YouCompleteMe).
 
-* `example.vimrc` shows how to integrate Pygmalion with `vim`. (This will
-  eventually get turned into a fully-fledged plugin.)
+* `emacs.el.example` shows how to integrate Pygmalion with `emacs` and
+  [irony-mode](https://github.com/Sarcasm/irony-mode). (This will
+  also eventually get turned into a fully-fledged plugin.)

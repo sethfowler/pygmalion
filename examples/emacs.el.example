@@ -1,0 +1,53 @@
+;; Pygmalion commands.
+(setq compilation-auto-jump-to-first-error 1)
+
+(defun column-number-at-pos (point)
+  (save-excursion
+    (goto-char point)
+    (beginning-of-line)
+    (+ 1 (- point (point)))))
+
+(defun pygmalion-command (cmd)
+  (compilation-start
+    (concat "pygmalion "
+            cmd
+            " "
+            (buffer-file-name)
+            " "
+            (number-to-string (line-number-at-pos))
+            " "
+            (number-to-string (column-number-at-pos (point))))))
+
+(defun pygmalion-go-to-definition () (interactive) (pygmalion-command "definition"))
+(defun pygmalion-callers () (interactive) (pygmalion-command "callers"))
+(defun pygmalion-callees () (interactive) (pygmalion-command "callees"))
+(defun pygmalion-bases () (interactive) (pygmalion-command "bases"))
+(defun pygmalion-overrides () (interactive) (pygmalion-command "overrides"))
+(defun pygmalion-references () (interactive) (pygmalion-command "references"))
+
+(eval-after-load "cc-mode"
+  '(progn
+      (define-key c-mode-base-map (kbd "M-p M-d") 'pygmalion-go-to-definition)
+      (define-key c-mode-base-map (kbd "M-p M-c") 'pygmalion-callers)
+      (define-key c-mode-base-map (kbd "M-p M-C") 'pygmalion-callees)
+      (define-key c-mode-base-map (kbd "M-p M-b") 'pygmalion-bases)
+      (define-key c-mode-base-map (kbd "M-p M-o") 'pygmalion-overrides)
+      (define-key c-mode-base-map (kbd "M-p M-r") 'pygmalion-references)))
+
+;; Pygmalion integration for irony-mode.
+(defun trim-string (string)
+  "Remove white spaces in beginning and ending of STRING.
+White space here is any of: space, tab, emacs newline (line feed, ASCII 10)."
+  (replace-regexp-in-string "\\`[ \t\n]*" "" (replace-regexp-in-string "[ \t\n]*\\'" "" string)))
+
+(defun pygmalion-irony-compile-flags ()
+  (setq irony-compile-flags
+        (cdr
+          (split-string
+           (trim-string
+            (shell-command-to-string
+              (concat "pygmalion compile-flags " (buffer-file-name))))
+           " ")))
+  (irony-reload-flags))
+
+(add-hook 'irony-mode-hook 'pygmalion-irony-compile-flags)
