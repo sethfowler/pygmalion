@@ -14,11 +14,19 @@ int main(int argc, char** argv)
   ABC_instance.ABC::AB_method(0);
 
   // Pointers to instances.
+  A* A_ptr = new AB;
+  A_ptr->A_pure_method();
+  (*A_ptr).A_pure_method();
+  A_ptr->A::A_pure_method();
+  (*A_ptr).A::A_pure_method();
+
   AB* AB_ptr = new AB;
   AB_ptr->A_pure_method();
   (*AB_ptr).A_pure_method();
   AB_ptr->AB_method(0);
   (*AB_ptr).AB_method(0);
+  AB_ptr->AB::AB_method(0);
+  (*AB_ptr).AB::AB_method(0);
 
   ABC* ABC_ptr = new ABC;
   ABC_ptr->A_pure_method();
@@ -39,9 +47,14 @@ int main(int argc, char** argv)
   (*ABC_in_AB_ptr).AB::AB_method(0);
 
   // References to instances.
+  A& A_instance_ref = AB_instance;
+  A_instance_ref.A_pure_method();
+  A_instance_ref.A::A_pure_method();
+
   AB& AB_instance_ref = AB_instance;
   AB_instance_ref.A_pure_method();
   AB_instance_ref.AB_method(0);
+  AB_instance_ref.AB::AB_method(0);
 
   ABC& ABC_instance_ref = ABC_instance;
   ABC_instance_ref.A_pure_method();
