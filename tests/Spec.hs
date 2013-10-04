@@ -9,7 +9,7 @@ import System.Process
 import Test.Hspec
 import Test.HUnit (assertBool)
 
-import Pygmalion.Test
+import Pygmalion.Test (defShouldBe, defsShouldBe, index, withPygd)
 
 main :: IO ()
 main = setCurrentDirectory "tests" >> runTests
