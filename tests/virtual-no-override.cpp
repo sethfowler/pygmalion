@@ -21,7 +21,7 @@ int main(int argc, char** argv)
   ABD_ref.AB::AB_method(0);
   ABD_ref.ABD::AB_method(0);
 
-  // Classes which have a direct ancestor which didn't override a method.
+  // Classes which have an ancestor which didn't override a method.
   ABDE ABDE_instance;
   ABDE_instance.A_pure_method();
   ABDE_instance.AB_method(0);
@@ -42,31 +42,6 @@ int main(int argc, char** argv)
   ABDE_ref.AB::AB_method(0);
   ABDE_ref.ABD::AB_method(0);
   ABDE_ref.ABDE::AB_method(0);
-
-  // Classes which have an indirect ancestor which didn't override a method.
-  ABDEF ABDEF_instance;
-  ABDEF_instance.A_pure_method();
-  ABDEF_instance.AB_method(0);
-  ABDEF_instance.AB::AB_method(0);
-  ABDEF_instance.ABD::AB_method(0);
-  ABDEF_instance.ABDE::AB_method(0);
-  ABDEF_instance.ABDEF::AB_method(0);
-
-  ABDEF* ABDEF_ptr;
-  ABDEF_ptr->A_pure_method();
-  ABDEF_ptr->AB_method(0);
-  ABDEF_ptr->AB::AB_method(0);
-  ABDEF_ptr->ABD::AB_method(0);
-  ABDEF_ptr->ABDE::AB_method(0);
-  ABDEF_ptr->ABDEF::AB_method(0);
-
-  ABDEF& ABDEF_ref = ABDEF_instance;
-  ABDEF_ref.A_pure_method();
-  ABDEF_ref.AB_method(0);
-  ABDEF_ref.AB::AB_method(0);
-  ABDEF_ref.ABD::AB_method(0);
-  ABDEF_ref.ABDE::AB_method(0);
-  ABDEF_ref.ABDEF::AB_method(0);
 
   return 0;
 }

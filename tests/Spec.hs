@@ -377,60 +377,49 @@ runTests = hspec $ around withPygd $
       ("virtual-in-return-value.cpp", 74, 26) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       ("virtual-in-return-value.cpp", 75, 28) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
+      -- TODO: Add tests for method return values as well.
+
     it "finds virtual methods which some classes don't override" $ do
       index "virtual-no-override.cpp"
 
       -- Classes which don't override a virtual method defined in an ancestor class.
-      ("virtual-no-override.cpp", 174, 35) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 175, 35) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 176, 48) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 177, 65) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 180, 31) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 181, 31) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 182, 44) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 183, 61) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 183, 61) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 186, 30) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 187, 30) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 188, 43) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 189, 60) `defShouldBe` "XXX"
+      ("virtual-no-override.cpp", 7, 16) `defShouldBe` "AB::A_pure_method() [CXXMethod]"
+      ("virtual-no-override.cpp", 8, 16) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-no-override.cpp", 9, 20) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-no-override.cpp", 10, 21) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      --("virtual-no-override.cpp", 13, 12) `defShouldBe` "XXX" -- Wrongly includes ABC.
+      --("virtual-no-override.cpp", 14, 12) `defShouldBe` "XXX"
+      ("virtual-no-override.cpp", 15, 16) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-no-override.cpp", 16, 17) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      --("virtual-no-override.cpp", 19, 11) `defShouldBe` "XXX"
+      --("virtual-no-override.cpp", 20, 11) `defShouldBe` "XXX"
+      ("virtual-no-override.cpp", 21, 15) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-no-override.cpp", 22, 16) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
 
-      -- Classes which have a direct ancestor which didn't override a method.
-      ("virtual-no-override.cpp", 193, 28) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 194, 28) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 195, 41) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 196, 58) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 197, 51) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 200, 24) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 201, 24) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 202, 37) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 203, 54) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 204, 47) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 207, 23) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 208, 23) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 209, 36) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 210, 53) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 211, 46) `defShouldBe` "XXX"
-
-      -- Classes which have an indirect ancestor which didn't override a method.
-      ("virtual-no-override.cpp", 215, 33) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 216, 33) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 217, 46) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 218, 63) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 219, 56) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 220, 61) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 223, 29) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 224, 29) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 225, 42) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 226, 59) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 227, 52) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 228, 57) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 231, 28) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 232, 28) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 233, 41) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 234, 58) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 235, 51) `defShouldBe` "XXX"
-      ("virtual-no-override.cpp", 236, 56) `defShouldBe` "XXX"
+      -- Classes which have an ancestor which didn't override a method.
+      ("virtual-no-override.cpp", 26, 17) `defShouldBe` "ABDE::A_pure_method() [CXXMethod]"
+      ("virtual-no-override.cpp", 27, 17) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      ("virtual-no-override.cpp", 28, 21) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-no-override.cpp", 29, 22) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-no-override.cpp", 30, 23) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      ("virtual-no-override.cpp", 33, 13) `defsShouldBe`
+        ["ABDE::A_pure_method() [CXXMethod]",
+         "ABDEF::A_pure_method() [CXXMethod]"]
+      ("virtual-no-override.cpp", 34, 13) `defsShouldBe`
+        ["ABDE::AB_method(int) [CXXMethod]",
+         "ABDEF::AB_method(int) [CXXMethod]"]
+      ("virtual-no-override.cpp", 35, 17) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-no-override.cpp", 36, 18) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-no-override.cpp", 37, 19) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      ("virtual-no-override.cpp", 40, 12) `defsShouldBe`
+        ["ABDE::A_pure_method() [CXXMethod]",
+         "ABDEF::A_pure_method() [CXXMethod]"]
+      ("virtual-no-override.cpp", 41, 12) `defsShouldBe`
+        ["ABDE::AB_method(int) [CXXMethod]",
+         "ABDEF::AB_method(int) [CXXMethod]"]
+      ("virtual-no-override.cpp", 42, 16) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-no-override.cpp", 43, 17) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-no-override.cpp", 44, 18) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
     -- typedefs, templates, bitfields, type refs in cast expressions,
     -- namespaces, extern, lambdas, multiple inheritance, operator overloads, function ptrs
