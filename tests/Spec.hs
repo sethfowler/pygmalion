@@ -19,23 +19,25 @@ runTests = hspec $ around withPygd $
 
   describe "go-to-definition" $ do
 
-    it "finds variables" $ do
-      index "variables.cpp"
-      ("variables.cpp", 9, 10) `defShouldBe` "global_var [VarDecl]"
-      ("variables.cpp", 10, 10) `defShouldBe` "global_const_var [VarDecl]"
-      ("variables.cpp", 11, 10) `defShouldBe` "main(int, char **)::local_var [VarDecl]"
-      ("variables.cpp", 12, 10) `defShouldBe` "main(int, char **)::local_const_var [VarDecl]"
+    it "finds variables" $ let f = "variables.cpp" in do
+      index f
+      (f, 14, 10) `defShouldBe` "global_extern_var [VarDecl]"
+      (f, 15, 10) `defShouldBe` "global_extern_const_var [VarDecl]"
+      (f, 16, 10) `defShouldBe` "global_var [VarDecl]"
+      (f, 17, 10) `defShouldBe` "global_const_var [VarDecl]"
+      (f, 18, 10) `defShouldBe` "main(int, char **)::local_var [VarDecl]"
+      (f, 19, 10) `defShouldBe` "main(int, char **)::local_const_var [VarDecl]"
 
-    it "finds functions" $ do
-      index "functions.cpp"
-      ("functions.cpp", 6, 10) `defShouldBe` "var() [FunctionDecl]"
-      ("functions.cpp", 7, 10) `defShouldBe` "varargs(int, ...) [FunctionDecl]"
+    it "finds functions" $ let f = "functions.cpp" in do
+      index f
+      (f, 6, 10) `defShouldBe` "var() [FunctionDecl]"
+      (f, 7, 10) `defShouldBe` "varargs(int, ...) [FunctionDecl]"
 
-    it "finds macros" $ do
-      index "macros.cpp"
-      ("macros.cpp", 8, 10) `defShouldBe` "VAR [MacroDefinition]"
-      ("macros.cpp", 9, 10) `defShouldBe` "VARF [MacroDefinition]"
-      -- ("macros.cpp", 9, 15) `defShouldBe` "main(int, char **)::local_var [VarDecl]"
+    it "finds macros" $ let f = "macros.cpp" in do
+      index f
+      (f, 8, 10) `defShouldBe` "VAR [MacroDefinition]"
+      (f, 9, 10) `defShouldBe` "VARF [MacroDefinition]"
+      -- (f, 9, 15) `defShouldBe` "main(int, char **)::local_var [VarDecl]"
 
     it "finds typedefs" $ let f = "typedefs.cpp" in do
       index f
@@ -496,7 +498,7 @@ runTests = hspec $ around withPygd $
       ("virtual-no-override.cpp", 44, 18) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
     -- easy: type refs in cast expressions, namespaces,
-      -- extern, function pointers, pointer to method, bitfields
+      -- function pointers, pointer to method, bitfields
     -- medium: multiple inheritance, operator overloads
       -- inherited fields and static members
     -- worst case scenario: templates
