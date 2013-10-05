@@ -49,6 +49,35 @@ runTests = hspec $ around withPygd $
       (f, 14, 3) `defShouldBe` "func_typedef [TypedefDecl]"
       (f, 15, 10) `defShouldBe` "main(int, char **)::local_typedef [TypedefDecl]"
 
+    it "finds types in cast expressions" $ let f = "casts.cpp" in do
+      index f
+      (f, 10, 35) `defShouldBe` "int_typedef_type [TypedefDecl]"
+      (f, 10, 53) `defShouldBe` "main(int, char **)::int_value [VarDecl]"
+      (f, 11, 40) `defShouldBe` "int_typedef_type [TypedefDecl]"
+      (f, 11, 58) `defShouldBe` "main(int, char **)::int_value [VarDecl]"
+      (f, 12, 24) `defShouldBe` "int_typedef_type [TypedefDecl]"
+      (f, 12, 41) `defShouldBe` "main(int, char **)::int_value [VarDecl]"
+      (f, 13, 23) `defShouldBe` "int_typedef_type [TypedefDecl]"
+      (f, 13, 40) `defShouldBe` "main(int, char **)::int_value [VarDecl]"
+      (f, 18, 32) `defShouldBe` "class_type [StructDecl]"
+      (f, 18, 44) `defShouldBe` "main(int, char **)::subclass_instance [VarDecl]"
+      (f, 19, 21) `defShouldBe` "class_type [StructDecl]"
+      (f, 19, 32) `defShouldBe` "main(int, char **)::subclass_instance [VarDecl]"
+      (f, 20, 20) `defShouldBe` "class_type [StructDecl]"
+      (f, 20, 31) `defShouldBe` "main(int, char **)::subclass_instance [VarDecl]"
+      (f, 26, 27) `defShouldBe` "class_type [StructDecl]"
+      (f, 26, 40) `defShouldBe` "main(int, char **)::subclass_ptr [VarDecl]"
+      (f, 27, 28) `defShouldBe` "class_type [StructDecl]"
+      (f, 27, 41) `defShouldBe` "main(int, char **)::subclass_ptr [VarDecl]"
+      (f, 28, 32) `defShouldBe` "class_type [StructDecl]"
+      (f, 28, 45) `defShouldBe` "main(int, char **)::subclass_ptr [VarDecl]"
+      (f, 29, 26) `defShouldBe` "class_type [StructDecl]"
+      (f, 29, 39) `defShouldBe` "main(int, char **)::const_class_ptr [VarDecl]"
+      (f, 30, 16) `defShouldBe` "class_type [StructDecl]"
+      (f, 30, 28) `defShouldBe` "main(int, char **)::subclass_ptr [VarDecl]"
+      (f, 31, 16) `defShouldBe` "class_type [StructDecl]"
+      (f, 31, 29) `defShouldBe` "main(int, char **)::subclass_ptr [VarDecl]"
+
     it "finds enums" $ let f = "enums.cpp" in do
       index f
       (f, 11, 3) `defShouldBe` "global_enum [EnumDecl]"
@@ -497,10 +526,8 @@ runTests = hspec $ around withPygd $
       (f, 43, 17) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 44, 18) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
-    -- easy: type refs in cast expressions, namespaces,
-      -- function pointers, pointer to method, bitfields
-    -- medium: multiple inheritance, operator overloads
-      -- inherited fields and static members
+    -- easy: namespaces, function pointers, pointer to method, bitfields, pointers, references
+    -- medium: multiple inheritance, operator overloads, inherited fields and static members
     -- worst case scenario: templates
 
     -- need to add tests for 'find references', 'bases', 'overrides', etc.
