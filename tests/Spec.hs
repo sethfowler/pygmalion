@@ -37,6 +37,16 @@ runTests = hspec $ around withPygd $
       ("macros.cpp", 9, 10) `defShouldBe` "VARF [MacroDefinition]"
       -- ("macros.cpp", 9, 15) `defShouldBe` "main(int, char **)::local_var [VarDecl]"
 
+    it "finds typedefs" $ let f = "typedefs.cpp" in do
+      index f
+      (f, 6, 8) `defShouldBe` "clazz::clazz_typedef [TypedefDecl]"
+      (f, 6, 30) `defShouldBe` "ns::ns_typedef [TypedefDecl]"
+      (f, 6, 44) `defShouldBe` "global_typedef [TypedefDecl]"
+      (f, 12, 26) `defShouldBe` "clazz::clazz_typedef [TypedefDecl]"
+      --(f, 12, 42) `defShouldBe` "templat<clazz::clazz_typedef>::templat_typedef [TypedefDecl]"
+      (f, 14, 3) `defShouldBe` "func_typedef [TypedefDecl]"
+      (f, 15, 10) `defShouldBe` "main(int, char **)::local_typedef [TypedefDecl]"
+
     it "finds enums" $ do
       index "enums.cpp"
       ("enums.cpp", 11, 3) `defShouldBe` "global_enum [EnumDecl]"
@@ -485,7 +495,7 @@ runTests = hspec $ around withPygd $
       ("virtual-no-override.cpp", 43, 17) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       ("virtual-no-override.cpp", 44, 18) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
-    -- easy: typedefs, type refs in cast expressions, namespaces,
+    -- easy: type refs in cast expressions, namespaces,
       -- extern, function pointers, pointer to method, bitfields
     -- medium: multiple inheritance, operator overloads
       -- inherited fields and static members
