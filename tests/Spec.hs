@@ -262,15 +262,15 @@ runTests = hspec $ around withPygd $
       ("virtual-in-structs.cpp", 14, 28) `defShouldBe` "ABDE::A_pure_method() [CXXMethod]"
       ("virtual-in-structs.cpp", 15, 28) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
       ("virtual-in-structs.cpp", 16, 32) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      ("virtual-in-structs.cpp", 17, 33) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      ("virtual-in-structs.cpp", 17, 34) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
       ("virtual-in-structs.cpp", 20, 24) `defShouldBe` "ABDE::A_pure_method() [CXXMethod]"
       ("virtual-in-structs.cpp", 21, 24) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
       ("virtual-in-structs.cpp", 22, 28) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      ("virtual-in-structs.cpp", 23, 29) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      ("virtual-in-structs.cpp", 23, 30) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
       ("virtual-in-structs.cpp", 26, 23) `defShouldBe` "ABDE::A_pure_method() [CXXMethod]"
       ("virtual-in-structs.cpp", 27, 23) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
       ("virtual-in-structs.cpp", 28, 27) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      ("virtual-in-structs.cpp", 29, 28) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      ("virtual-in-structs.cpp", 29, 29) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
       -- Structs containing pointers to instances.
       ("virtual-in-structs.cpp", 33, 33) `defsShouldBe`
@@ -280,7 +280,7 @@ runTests = hspec $ around withPygd $
         ["ABDE::AB_method(int) [CXXMethod]",
          "ABDEF::AB_method(int) [CXXMethod]"]
       ("virtual-in-structs.cpp", 35, 37) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      ("virtual-in-structs.cpp", 36, 38) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      ("virtual-in-structs.cpp", 36, 39) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
       ("virtual-in-structs.cpp", 39, 29) `defsShouldBe`
         ["ABDE::A_pure_method() [CXXMethod]",
          "ABDEF::A_pure_method() [CXXMethod]"]
@@ -288,7 +288,7 @@ runTests = hspec $ around withPygd $
         ["ABDE::AB_method(int) [CXXMethod]",
          "ABDEF::AB_method(int) [CXXMethod]"]
       ("virtual-in-structs.cpp", 41, 33) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      ("virtual-in-structs.cpp", 42, 34) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      ("virtual-in-structs.cpp", 42, 35) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
       ("virtual-in-structs.cpp", 45, 28) `defsShouldBe`
         ["ABDE::A_pure_method() [CXXMethod]",
          "ABDEF::A_pure_method() [CXXMethod]"]
@@ -296,7 +296,7 @@ runTests = hspec $ around withPygd $
         ["ABDE::AB_method(int) [CXXMethod]",
          "ABDEF::AB_method(int) [CXXMethod]"]
       ("virtual-in-structs.cpp", 47, 32) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      ("virtual-in-structs.cpp", 48, 33) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      ("virtual-in-structs.cpp", 48, 34) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
       -- Structs containing references to instances.
       ("virtual-in-structs.cpp", 52, 32) `defsShouldBe`
@@ -306,7 +306,7 @@ runTests = hspec $ around withPygd $
         ["ABDE::AB_method(int) [CXXMethod]",
          "ABDEF::AB_method(int) [CXXMethod]"]
       ("virtual-in-structs.cpp", 54, 36) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      ("virtual-in-structs.cpp", 55, 37) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      ("virtual-in-structs.cpp", 55, 38) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
       ("virtual-in-structs.cpp", 58, 28) `defsShouldBe`
         ["ABDE::A_pure_method() [CXXMethod]",
          "ABDEF::A_pure_method() [CXXMethod]"]
@@ -314,7 +314,7 @@ runTests = hspec $ around withPygd $
         ["ABDE::AB_method(int) [CXXMethod]",
          "ABDEF::AB_method(int) [CXXMethod]"]
       ("virtual-in-structs.cpp", 60, 32) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      ("virtual-in-structs.cpp", 61, 33) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      ("virtual-in-structs.cpp", 61, 34) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
       ("virtual-in-structs.cpp", 64, 27) `defsShouldBe`
         ["ABDE::A_pure_method() [CXXMethod]",
          "ABDEF::A_pure_method() [CXXMethod]"]
@@ -322,39 +322,60 @@ runTests = hspec $ around withPygd $
         ["ABDE::AB_method(int) [CXXMethod]",
          "ABDEF::AB_method(int) [CXXMethod]"]
       ("virtual-in-structs.cpp", 66, 31) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      ("virtual-in-structs.cpp", 67, 32) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      ("virtual-in-structs.cpp", 67, 33) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
     it "finds virtual methods in return values" $ do
       index "virtual-in-return-value.cpp"
 
       -- Functions returning values or pointers.
-      ("virtual-in-return-value.cpp", 138, 28) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 139, 28) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 140, 41) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 141, 46) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 143, 28) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 144, 28) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 145, 41) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 146, 46) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 148, 29) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 149, 29) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 150, 42) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 151, 47) `defShouldBe` "XXX"
+      ("virtual-in-return-value.cpp", 24, 22) `defShouldBe` "ABDE::A_pure_method() [CXXMethod]"
+      ("virtual-in-return-value.cpp", 25, 22) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      ("virtual-in-return-value.cpp", 26, 26) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-in-return-value.cpp", 27, 28) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      --("virtual-in-return-value.cpp", 29, 23) `defShouldBe` "XXX" -- Doesn't return all possibilities.
+      --("virtual-in-return-value.cpp", 30, 23) `defShouldBe` "XXX"
+      ("virtual-in-return-value.cpp", 31, 27) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-in-return-value.cpp", 32, 29) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      --("virtual-in-return-value.cpp", 34, 22) `defShouldBe` "XXX"
+      --("virtual-in-return-value.cpp", 35, 22) `defShouldBe` "XXX"
+      ("virtual-in-return-value.cpp", 36, 26) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-in-return-value.cpp", 37, 28) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
       -- Function pointers to functions returning values or pointers.
-      ("virtual-in-return-value.cpp", 154, 54) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 155, 35) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 156, 35) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 157, 48) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 158, 53) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 161, 35) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 162, 35) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 163, 48) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 164, 53) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 167, 36) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 168, 36) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 169, 49) `defShouldBe` "XXX"
-      ("virtual-in-return-value.cpp", 170, 54) `defShouldBe` "XXX"
+      --("virtual-in-return-value.cpp", 41, 29) `defShouldBe` "XXX" -- Returning by value but we show multiple defs!
+      --("virtual-in-return-value.cpp", 42, 29) `defShouldBe` "XXX"
+      ("virtual-in-return-value.cpp", 43, 33) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-in-return-value.cpp", 44, 35) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      ("virtual-in-return-value.cpp", 47, 30) `defsShouldBe`
+        ["ABDE::A_pure_method() [CXXMethod]",
+         "ABDEF::A_pure_method() [CXXMethod]"]
+      ("virtual-in-return-value.cpp", 48, 30) `defsShouldBe`
+        ["ABDE::AB_method(int) [CXXMethod]",
+         "ABDEF::AB_method(int) [CXXMethod]"]
+      ("virtual-in-return-value.cpp", 49, 34) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-in-return-value.cpp", 50, 36) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      ("virtual-in-return-value.cpp", 53, 29) `defsShouldBe`
+        ["ABDE::A_pure_method() [CXXMethod]",
+         "ABDEF::A_pure_method() [CXXMethod]"]
+      ("virtual-in-return-value.cpp", 54, 29) `defsShouldBe`
+        ["ABDE::AB_method(int) [CXXMethod]",
+         "ABDEF::AB_method(int) [CXXMethod]"]
+      ("virtual-in-return-value.cpp", 55, 33) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-in-return-value.cpp", 56, 35) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+
+      -- Function references to functions returning values or pointers.
+      ("virtual-in-return-value.cpp", 60, 22) `defShouldBe` "ABDE::A_pure_method() [CXXMethod]"
+      ("virtual-in-return-value.cpp", 61, 22) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      ("virtual-in-return-value.cpp", 62, 26) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-in-return-value.cpp", 63, 28) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      --("virtual-in-return-value.cpp", 66, 23) `defShouldBe` "XXX" -- Should see multiple defs.
+      --("virtual-in-return-value.cpp", 67, 23) `defShouldBe` "XXX"
+      ("virtual-in-return-value.cpp", 68, 27) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-in-return-value.cpp", 69, 29) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      --("virtual-in-return-value.cpp", 72, 22) `defShouldBe` "XXX" -- --Should see multiple defs.
+      --("virtual-in-return-value.cpp", 73, 22) `defShouldBe` "XXX"
+      ("virtual-in-return-value.cpp", 74, 26) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      ("virtual-in-return-value.cpp", 75, 28) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
     it "finds virtual methods which some classes don't override" $ do
       index "virtual-no-override.cpp"

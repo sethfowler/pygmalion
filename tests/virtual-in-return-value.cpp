@@ -1,59 +1,78 @@
 #include "virtual.h"
 
-ABC func_ABC_by_val()
+ABDE func_ABDE_by_val()
 {
-  ABC ABC_instance;
-  return ABC_instance;
+  ABDE ABDE_instance;
+  return ABDE_instance;
 }
 
-ABC& func_ABC_by_ref()
+ABDE* func_ABDE_by_ptr()
 {
-  static ABC ABC_instance;
-  return ABC_instance;
+  static ABDE ABDE_instance;
+  return &ABDE_instance;
 }
 
-ABC* func_ABC_by_ptr()
+ABDE& func_ABDE_by_ref()
 {
-  static ABC ABC_instance;
-  return &ABC_instance;
+  static ABDE ABDE_instance;
+  return ABDE_instance;
 }
 
 int main(int argc, char** argv)
 {
   // Functions returning values or pointers.
-  func_ABC_by_val().A_pure_method();
-  func_ABC_by_val().AB_method(0);
-  func_ABC_by_val().AB::AB_method(0);
-  func_ABC_by_val().ABC::AB_method(0);
+  func_ABDE_by_val().A_pure_method();
+  func_ABDE_by_val().AB_method(0);
+  func_ABDE_by_val().AB::AB_method(0);
+  func_ABDE_by_val().ABDE::AB_method(0);
 
-  func_ABC_by_ref().A_pure_method();
-  func_ABC_by_ref().AB_method(0);
-  func_ABC_by_ref().AB::AB_method(0);
-  func_ABC_by_ref().ABC::AB_method(0);
+  func_ABDE_by_ptr()->A_pure_method();
+  func_ABDE_by_ptr()->AB_method(0);
+  func_ABDE_by_ptr()->AB::AB_method(0);
+  func_ABDE_by_ptr()->ABDE::AB_method(0);
 
-  func_ABC_by_ptr()->A_pure_method();
-  func_ABC_by_ptr()->AB_method(0);
-  func_ABC_by_ptr()->AB::AB_method(0);
-  func_ABC_by_ptr()->ABC::AB_method(0);
+  func_ABDE_by_ref().A_pure_method();
+  func_ABDE_by_ref().AB_method(0);
+  func_ABDE_by_ref().AB::AB_method(0);
+  func_ABDE_by_ref().ABDE::AB_method(0);
 
   // Function pointers to functions returning values or pointers.
-  ABC (*func_ptr_ABC_by_val)() = func_ABC_by_val;
-  (*func_ptr_ABC_by_val)().A_pure_method();
-  (*func_ptr_ABC_by_val)().AB_method(0);
-  (*func_ptr_ABC_by_val)().AB::AB_method(0);
-  (*func_ptr_ABC_by_val)().ABC::AB_method(0);
+  ABDE (*func_ptr_ABDE_by_val)() = func_ABDE_by_val;
+  (*func_ptr_ABDE_by_val)().A_pure_method();
+  (*func_ptr_ABDE_by_val)().AB_method(0);
+  (*func_ptr_ABDE_by_val)().AB::AB_method(0);
+  (*func_ptr_ABDE_by_val)().ABDE::AB_method(0);
 
-  ABC& (*func_ptr_ABC_by_ref)() = func_ABC_by_ref;
-  (*func_ptr_ABC_by_ref)().A_pure_method();
-  (*func_ptr_ABC_by_ref)().AB_method(0);
-  (*func_ptr_ABC_by_ref)().AB::AB_method(0);
-  (*func_ptr_ABC_by_ref)().ABC::AB_method(0);
+  ABDE* (*func_ptr_ABDE_by_ptr)() = func_ABDE_by_ptr;
+  (*func_ptr_ABDE_by_ptr)()->A_pure_method();
+  (*func_ptr_ABDE_by_ptr)()->AB_method(0);
+  (*func_ptr_ABDE_by_ptr)()->AB::AB_method(0);
+  (*func_ptr_ABDE_by_ptr)()->ABDE::AB_method(0);
 
-  ABC* (*func_ptr_ABC_by_ptr)() = func_ABC_by_ptr;
-  (*func_ptr_ABC_by_ptr)()->A_pure_method();
-  (*func_ptr_ABC_by_ptr)()->AB_method(0);
-  (*func_ptr_ABC_by_ptr)()->AB::AB_method(0);
-  (*func_ptr_ABC_by_ptr)()->ABC::AB_method(0);
+  ABDE& (*func_ptr_ABDE_by_ref)() = func_ABDE_by_ref;
+  (*func_ptr_ABDE_by_ref)().A_pure_method();
+  (*func_ptr_ABDE_by_ref)().AB_method(0);
+  (*func_ptr_ABDE_by_ref)().AB::AB_method(0);
+  (*func_ptr_ABDE_by_ref)().ABDE::AB_method(0);
+
+  // Function references to functions returning values or pointers.
+  ABDE (&func_ref_ABDE_by_val)() = func_ABDE_by_val;
+  func_ABDE_by_val().A_pure_method();
+  func_ABDE_by_val().AB_method(0);
+  func_ABDE_by_val().AB::AB_method(0);
+  func_ABDE_by_val().ABDE::AB_method(0);
+
+  ABDE* (&func_ref_ABDE_by_ptr)() = func_ABDE_by_ptr;
+  func_ABDE_by_ptr()->A_pure_method();
+  func_ABDE_by_ptr()->AB_method(0);
+  func_ABDE_by_ptr()->AB::AB_method(0);
+  func_ABDE_by_ptr()->ABDE::AB_method(0);
+
+  ABDE& (&func_ref_ABDE_by_ref)() = func_ABDE_by_ref;
+  func_ABDE_by_ref().A_pure_method();
+  func_ABDE_by_ref().AB_method(0);
+  func_ABDE_by_ref().AB::AB_method(0);
+  func_ABDE_by_ref().ABDE::AB_method(0);
 
   return 0;
 }
