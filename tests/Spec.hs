@@ -485,8 +485,11 @@ runTests = hspec $ around withPygd $
       ("virtual-no-override.cpp", 43, 17) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       ("virtual-no-override.cpp", 44, 18) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
-    -- typedefs, templates, bitfields, type refs in cast expressions,
-    -- namespaces, extern, lambdas, multiple inheritance, operator overloads, function ptrs
-    -- inherited fields and static members, pointer to method
+    -- easy: typedefs, type refs in cast expressions, namespaces,
+      -- extern, function pointers, pointer to method, bitfields
+    -- medium: multiple inheritance, operator overloads
+      -- inherited fields and static members
+    -- worst case scenario: templates
+
     -- need to add tests for 'find references', 'bases', 'overrides', etc.
     -- remember to ensure that find references works with macro expansions!
