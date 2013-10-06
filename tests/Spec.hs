@@ -78,6 +78,44 @@ runTests = hspec $ around withPygd $
       (f, 31, 16) `defShouldBe` "class_type [StructDecl]"
       (f, 31, 29) `defShouldBe` "main(int, char **)::subclass_ptr [VarDecl]"
 
+    it "finds namespaces" $ let f = "namespaces.cpp" in do
+      index f
+      (f, 9, 9) `defShouldBe` "ns_b::ns_c [Namespace]"
+      --(f, 9, 15) `defShouldBe` "XXX" -- wrong def
+      (f, 12, 7) `defShouldBe` "ns_b [Namespace]"
+      --(f, 12, 13) `defShouldBe` "XXX" -- no def
+      (f, 20, 18) `defShouldBe` "ns_b [Namespace]"
+      (f, 24, 17) `defShouldBe` "ns_f [Namespace]"
+      (f, 29, 9) `defShouldBe` "ns_b [Namespace]"
+      (f, 29, 15) `defShouldBe` "ns_b::ns_c [Namespace]"
+      --(f, 29, 21) `defShouldBe` "XXX" -- wrong def
+      (f, 32, 10) `defShouldBe` "ns_a [Namespace]"
+      (f, 32, 16) `defShouldBe` "ns_a::var_a [VarDecl]"
+      (f, 33, 10) `defShouldBe` "ns_b [Namespace]"
+      (f, 33, 16) `defShouldBe` "ns_b::var_b [VarDecl]"
+      (f, 34, 10) `defShouldBe` "ns_b [Namespace]"
+      (f, 34, 16) `defShouldBe` "ns_b::ns_c [Namespace]"
+      (f, 34, 22) `defShouldBe` "ns_b::ns_c::var_c [VarDecl]"
+      (f, 35, 10) `defShouldBe` "ns_b [Namespace]"
+      (f, 35, 16) `defShouldBe` "ns_b::ns_c::var_c [VarDecl]"
+      (f, 36, 10) `defShouldBe` "ns_b::var_b [VarDecl]"
+      (f, 37, 10) `defShouldBe` "<anonymous>::var_anon [VarDecl]"
+      (f, 38, 10) `defShouldBe` "<anonymous>::ns_d [Namespace]"
+      (f, 38, 16) `defShouldBe` "<anonymous>::ns_d::var_d [VarDecl]"
+      (f, 39, 10) `defShouldBe` "ns_b [Namespace]"
+      (f, 39, 16) `defShouldBe` "ns_b::var_b [VarDecl]"
+      (f, 40, 10) `defShouldBe` "ns_b [Namespace]"
+      (f, 40, 16) `defShouldBe` "ns_b::ns_c [Namespace]"
+      (f, 40, 22) `defShouldBe` "ns_b::ns_c::var_c [VarDecl]"
+      (f, 41, 10) `defShouldBe` "ns_b [Namespace]"
+      (f, 41, 16) `defShouldBe` "ns_b::ns_c::var_c [VarDecl]"
+      (f, 42, 10) `defShouldBe` "ns_f [Namespace]"
+      (f, 42, 16) `defShouldBe` "ns_f::var_f [VarDecl]"
+      (f, 43, 10) `defShouldBe` "ns_f::var_f [VarDecl]"
+      (f, 44, 10) `defShouldBe` "ns_a::var_a [VarDecl]"
+      (f, 45, 10) `defShouldBe` "ns_b::ns_c::var_c [VarDecl]"
+      (f, 46, 10) `defShouldBe` "<anonymous>::ns_d::var_d [VarDecl]"
+
     it "finds enums" $ let f = "enums.cpp" in do
       index f
       (f, 11, 3) `defShouldBe` "global_enum [EnumDecl]"
@@ -526,7 +564,7 @@ runTests = hspec $ around withPygd $
       (f, 43, 17) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 44, 18) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
-    -- easy: namespaces, function pointers, pointer to method, bitfields, pointers, references
+    -- easy: function pointers, pointer to method, bitfields, pointers, references
     -- medium: multiple inheritance, operator overloads, inherited fields and static members
     -- worst case scenario: templates
 
