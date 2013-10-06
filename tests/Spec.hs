@@ -21,12 +21,42 @@ runTests = hspec $ around withPygd $
 
     it "finds variables" $ let f = "variables.cpp" in do
       index f
-      (f, 14, 10) `defShouldBe` "global_extern_var [VarDecl]"
-      (f, 15, 10) `defShouldBe` "global_extern_const_var [VarDecl]"
-      (f, 16, 10) `defShouldBe` "global_var [VarDecl]"
-      (f, 17, 10) `defShouldBe` "global_const_var [VarDecl]"
-      (f, 18, 10) `defShouldBe` "main(int, char **)::local_var [VarDecl]"
-      (f, 19, 10) `defShouldBe` "main(int, char **)::local_const_var [VarDecl]"
+      (f, 12, 27) `defShouldBe` "global_extern_var [VarDecl]"
+      (f, 13, 39) `defShouldBe` "global_extern_const_var [VarDecl]"
+      (f, 16, 27) `defShouldBe` "global_extern_ptr [VarDecl]"
+      (f, 17, 39) `defShouldBe` "global_extern_const_ptr [VarDecl]"
+      (f, 21, 27) `defShouldBe` "global_var [VarDecl]"
+      (f, 22, 39) `defShouldBe` "global_const_var [VarDecl]"
+      (f, 25, 27) `defShouldBe` "global_ptr [VarDecl]"
+      (f, 26, 39) `defShouldBe` "global_const_ptr [VarDecl]"
+      (f, 32, 21) `defShouldBe` "main(int, char **)::local_var [VarDecl]"
+      (f, 33, 33) `defShouldBe` "main(int, char **)::local_const_var [VarDecl]"
+      (f, 36, 21) `defShouldBe` "main(int, char **)::local_ptr [VarDecl]"
+      (f, 37, 33) `defShouldBe` "main(int, char **)::local_const_ptr [VarDecl]"
+      (f, 39, 10) `defShouldBe` "global_extern_var [VarDecl]"
+      (f, 40, 10) `defShouldBe` "global_extern_const_var [VarDecl]"
+      (f, 41, 11) `defShouldBe` "global_extern_ptr [VarDecl]"
+      (f, 42, 11) `defShouldBe` "global_extern_const_ptr [VarDecl]"
+      (f, 43, 11) `defShouldBe` "global_extern_ptr_const [VarDecl]"
+      (f, 44, 11) `defShouldBe` "global_extern_const_ptr_const [VarDecl]"
+      (f, 45, 10) `defShouldBe` "global_extern_ref [VarDecl]"
+      (f, 46, 10) `defShouldBe` "global_extern_const_ref [VarDecl]"
+      (f, 47, 10) `defShouldBe` "global_var [VarDecl]"
+      (f, 48, 10) `defShouldBe` "global_const_var [VarDecl]"
+      (f, 49, 11) `defShouldBe` "global_ptr [VarDecl]"
+      (f, 50, 11) `defShouldBe` "global_const_ptr [VarDecl]"
+      (f, 51, 11) `defShouldBe` "global_ptr_const [VarDecl]"
+      (f, 52, 11) `defShouldBe` "global_const_ptr_const [VarDecl]"
+      (f, 53, 10) `defShouldBe` "global_ref [VarDecl]"
+      (f, 54, 10) `defShouldBe` "global_const_ref [VarDecl]"
+      (f, 55, 10) `defShouldBe` "main(int, char **)::local_var [VarDecl]"
+      (f, 56, 10) `defShouldBe` "main(int, char **)::local_const_var [VarDecl]"
+      (f, 57, 11) `defShouldBe` "main(int, char **)::local_ptr [VarDecl]"
+      (f, 58, 11) `defShouldBe` "main(int, char **)::local_const_ptr [VarDecl]"
+      (f, 59, 11) `defShouldBe` "main(int, char **)::local_ptr_const [VarDecl]"
+      (f, 60, 11) `defShouldBe` "main(int, char **)::local_const_ptr_const [VarDecl]"
+      (f, 61, 10) `defShouldBe` "main(int, char **)::local_ref [VarDecl]"
+      (f, 62, 10) `defShouldBe` "main(int, char **)::local_const_ref [VarDecl]"
 
     it "finds functions" $ let f = "functions.cpp" in do
       index f
@@ -564,7 +594,7 @@ runTests = hspec $ around withPygd $
       (f, 43, 17) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 44, 18) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
-    -- easy: function pointers, pointer to method, bitfields, pointers, references
+    -- easy: function pointers, pointer to method, bitfields
     -- medium: multiple inheritance, operator overloads, inherited fields and static members
     -- worst case scenario: templates
 
