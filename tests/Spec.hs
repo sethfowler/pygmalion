@@ -178,6 +178,15 @@ runTests = hspec $ around withPygd $
       (f, 15, 10) `defShouldBe` "main(int, char **)::local_anonymous_struct_var [VarDecl]"
       (f, 15, 37) `defShouldBe` "main(int, char **)::<anonymous>::local_anonymous_struct_val [FieldDecl]"
 
+    it "finds bitfields" $ let f = "bitfields.cpp" in do
+      index f
+      (f, 18, 28) `defShouldBe` "bitfield_struct::bitfield_bool [FieldDecl]"
+      (f, 19, 28) `defShouldBe` "bitfield_struct::bitfield_int [FieldDecl]"
+      (f, 20, 28) `defShouldBe` "bitfield_struct::bitfield_unsigned_char [FieldDecl]"
+      (f, 21, 28) `defShouldBe` "bitfield_struct::nonbitfield [FieldDecl]"
+      (f, 22, 28) `defShouldBe` "bitfield_struct::bitfield_enum [FieldDecl]"
+      (f, 23, 28) `defShouldBe` "bitfield_struct::bitfield_anonymous_enum [FieldDecl]"
+      
     it "finds unions" $ let f = "unions.cpp" in do
       index f
       (f, 27, 3) `defShouldBe` "global_union [UnionDecl]"
@@ -594,7 +603,7 @@ runTests = hspec $ around withPygd $
       (f, 43, 17) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 44, 18) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
-    -- easy: function pointers, pointer to method, bitfields
+    -- easy: function pointers, pointer to method
     -- medium: multiple inheritance, operator overloads, inherited fields and static members
     -- worst case scenario: templates
 
