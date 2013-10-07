@@ -60,8 +60,14 @@ runTests = hspec $ around withPygd $
 
     it "finds functions" $ let f = "functions.cpp" in do
       index f
-      (f, 6, 10) `defShouldBe` "var() [FunctionDecl]"
-      (f, 7, 10) `defShouldBe` "varargs(int, ...) [FunctionDecl]"
+      (f, 7, 40) `defShouldBe` "func_varargs(int, ...) [FunctionDecl]"
+      (f, 9, 40) `defShouldBe` "func_varargs(int, ...) [FunctionDecl]"
+      (f, 11, 10) `defShouldBe` "func() [FunctionDecl]"
+      (f, 12, 10) `defShouldBe` "func_varargs(int, ...) [FunctionDecl]"
+      (f, 13, 10) `defShouldBe` "main(int, char **)::func_ptr [VarDecl]"
+      (f, 14, 12) `defShouldBe` "main(int, char **)::func_ptr_varargs [VarDecl]"
+      (f, 15, 10) `defShouldBe` "main(int, char **)::func_ref [VarDecl]"
+      (f, 16, 10) `defShouldBe` "main(int, char **)::func_ref_varargs [VarDecl]"
 
     it "finds macros" $ let f = "macros.cpp" in do
       index f
@@ -603,7 +609,7 @@ runTests = hspec $ around withPygd $
       (f, 43, 17) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 44, 18) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
-    -- easy: function pointers, pointer to method
+    -- easy: pointer to method
     -- medium: multiple inheritance, operator overloads, inherited fields and static members
     -- worst case scenario: templates
 
