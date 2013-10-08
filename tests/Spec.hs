@@ -609,7 +609,43 @@ runTests = hspec $ around withPygd $
       (f, 43, 17) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 44, 18) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
-    -- easy: pointer to method
+    it "finds method pointers" $ let f = "method-pointers.cpp" in do
+      index f
+
+      -- Top-level base class.
+      (f, 23, 35) `defShouldBe` "clazz [ClassDecl]"
+      (f, 23, 42) `defShouldBe` "clazz::static_method(int) [CXXMethod]"
+      (f, 24, 3) `defShouldBe` "main(int, char **)::static_method_ptr [VarDecl]"
+      --(f, 26, 8) `defShouldBe` "clazz [ClassDecl]" -- no def
+      (f, 26, 36) `defShouldBe` "clazz [ClassDecl]"
+      (f, 26, 43) `defShouldBe` "clazz::method(int) [CXXMethod]"
+      (f, 27, 4) `defShouldBe` "main(int, char **)::clazz_instance [VarDecl]"
+      (f, 27, 20) `defShouldBe` "main(int, char **)::method_ptr [VarDecl]"
+      (f, 28, 4) `defShouldBe` "main(int, char **)::clazz_ptr [VarDecl]"
+      (f, 28, 16) `defShouldBe` "main(int, char **)::method_ptr [VarDecl]"
+      (f, 29, 4) `defShouldBe` "main(int, char **)::clazz_ref [VarDecl]"
+      (f, 29, 15) `defShouldBe` "main(int, char **)::method_ptr [VarDecl]"
+      -- (f, 31, 8) `defShouldBe` "clazz [ClassDecl]" -- no def
+      (f, 31, 44) `defShouldBe` "clazz [ClassDecl]"
+      (f, 31, 51) `defShouldBe` "clazz::virtual_method(int) [CXXMethod]"
+      (f, 32, 20) `defShouldBe` "main(int, char **)::virtual_method_ptr [VarDecl]"
+      (f, 33, 16) `defShouldBe` "main(int, char **)::virtual_method_ptr [VarDecl]"
+      (f, 34, 15) `defShouldBe` "main(int, char **)::virtual_method_ptr [VarDecl]"
+      (f, 41, 42) `defShouldBe` "clazz [ClassDecl]"
+      (f, 41, 49) `defShouldBe` "clazz::nested_clazz [ClassDecl]"
+      (f, 41, 63) `defShouldBe` "clazz::nested_clazz::static_nested_method(int) [CXXMethod]"
+      (f, 42, 3) `defShouldBe` "main(int, char **)::static_nested_method_ptr [VarDecl]"
+      -- (f, 44, 8) `defShouldBe` "clazz [ClassDecl]" -- no def
+      -- (f, 44, 15) `defShouldBe` "clazz::nested_clazz [ClassDecl]" -- no def
+      (f, 44, 57) `defShouldBe` "clazz [ClassDecl]"
+      (f, 44, 67) `defShouldBe` "clazz::nested_clazz [ClassDecl]"
+      (f, 44, 78) `defShouldBe` "clazz::nested_clazz::nested_method(int) [CXXMethod]"
+      (f, 45, 27) `defShouldBe` "main(int, char **)::nested_method_ptr [VarDecl]"
+      (f, 46, 23) `defShouldBe` "main(int, char **)::nested_method_ptr [VarDecl]"
+      (f, 47, 22) `defShouldBe` "main(int, char **)::nested_method_ptr [VarDecl]"
+      
+
+        
     -- medium: multiple inheritance, operator overloads, inherited fields and static members
     -- worst case scenario: templates
 
