@@ -52,8 +52,8 @@ runIndexManager port iChan dbChan dbQueryChan lox = go
     ctx = IndexContext port iChan dbChan dbQueryChan
     go = {-# SCC "indexThread" #-} do
          (!newCount, !req) <- readLenChan iChan
-         logDebug $ "Index request: " ++ (show req)
-         logDebug $ "Index channel now has " ++ (show newCount) ++ " items waiting"
+         logDebug $ "Index request: " ++ show req
+         logDebug $ "Index channel now has " ++ show newCount ++ " items waiting"
          case req of
              Index src       -> runReaderT (checkLock lox src) ctx >> go
              ShutdownIndexer -> logInfo "Shutting down analysis thread"
@@ -64,7 +64,7 @@ checkLock !lox !src = do
   lockedFiles <- lift $ takeMVar lox
   if sf `Set.member` lockedFiles
     then do logInfo $ "Contention detected on source file "
-                   ++ (unSourceFile sf) ++ "; sleeping..."
+                   ++ unSourceFile sf ++ "; sleeping..."
             lift $ putMVar lox lockedFiles
             lift $ threadDelay 10000  -- Keep churn under control.
             ctx <- ask
@@ -79,8 +79,8 @@ getMTime sf = lift $ do
   case result of
     Right clockTime -> return . Just . floor . utcTimeToPOSIXSeconds $ clockTime
     Left e          -> do logInfo $ "Couldn't read mtime for file "
-                                 ++ (unSourceFile sf) ++ ": "
-                                 ++ (show (e :: IOException))
+                                 ++ unSourceFile sf ++ ": "
+                                 ++ show (e :: IOException)
                           return Nothing  -- Most likely the file has been deleted.
 
 getSHA :: SourceFile -> Indexer B.ByteString
@@ -89,8 +89,8 @@ getSHA sf = lift $ do
   case result of
     Right file -> return $ hash file
     Left e     -> do logInfo $ "Couldn't read and hash file "
-                            ++ (unSourceFile sf) ++ ": "
-                            ++ (show (e :: IOException))
+                            ++ unSourceFile sf ++ ": "
+                            ++ show (e :: IOException)
                      return B.empty -- Most likely the file has been deleted.
 
 analyzeIfDirty :: IndexSource -> Indexer ()
@@ -104,19 +104,19 @@ analyzeIfDirty src = do
     (_, _, Nothing)                   -> ignoreUnreadable src
     (FromBuild ci, Just oldCI, Just mtime)
       | commandInfoChanged ci oldCI   -> analyze ci
-      | (ciLastIndexed oldCI) < mtime -> analyzeIfSHADirty ci oldCI
+      | ciLastIndexed oldCI < mtime   -> analyzeIfSHADirty ci oldCI
       | otherwise                     -> ignoreUnchanged src mtime
     (FromBuild ci, Nothing, _)        -> analyze ci
     (FromNotify _, Just oldCI, Just mtime)
-      | (ciLastIndexed oldCI) < mtime -> analyzeIfSHADirty oldCI oldCI
+      | ciLastIndexed oldCI < mtime   -> analyzeIfSHADirty oldCI oldCI
       | otherwise                     -> ignoreUnchanged src mtime
     (FromNotify _, Nothing, _)        -> ignoreUnknown src
 
 commandInfoChanged :: CommandInfo -> CommandInfo -> Bool
-commandInfoChanged a b | (ciWorkingPath a) /= (ciWorkingPath b) = True
-                       | (ciCommand a)     /= (ciCommand b)     = True
-                       | (ciArgs a)        /= (ciArgs b)        = True
-                       | (ciLanguage a)    /= (ciLanguage b)    = True
+commandInfoChanged a b | ciWorkingPath a /= ciWorkingPath b = True
+                       | ciCommand a     /= ciCommand b     = True
+                       | ciArgs a        /= ciArgs b        = True
+                       | ciLanguage a    /= ciLanguage b    = True
                        | otherwise                              = False
 
 analyzeIfSHADirty :: CommandInfo -> CommandInfo -> Indexer ()
@@ -124,8 +124,8 @@ analyzeIfSHADirty ci oldCI = do
   -- Note that it's ok if ci and oldCI are the same. We just want to be able to
   -- pass on the new version to |analyze| if they're different.
   sha <- getSHA (ciSourceFile ci)
-  if sha /= (ciSHA oldCI) then analyze $ ci { ciSHA = sha }
-                          else shaUnchanged ci
+  if sha /= ciSHA oldCI then analyze $ ci { ciSHA = sha }
+                        else shaUnchanged ci
 
 shaUnchanged :: CommandInfo -> Indexer ()
 shaUnchanged ci = do
@@ -147,7 +147,7 @@ analyze ci = do
 ignoreUnchanged :: IndexSource -> Time -> Indexer ()
 ignoreUnchanged src mtime = logInfo $ "Index is up-to-date for file "
                                    ++ (show . sfFromSource $ src)
-                                   ++ " (file mtime: " ++ (show mtime) ++ ")"
+                                   ++ " (file mtime: " ++ show mtime ++ ")"
 
 ignoreUnknown :: IndexSource -> Indexer ()
 ignoreUnknown src = logInfo $ "Not indexing unknown file "
@@ -181,7 +181,7 @@ analyzeCode :: CommandInfo -> Indexer ()
 analyzeCode ci = do
     ctx <- ask
     let sf = ciSourceFile ci
-    logInfo $ "Indexing " ++ (show sf)
+    logInfo $ "Indexing " ++ show sf
     time <- lift getPOSIXTime
     writeLenChan (acDBChan ctx) (DBResetMetadata sf)
     (_, _, _, h) <- lift $ createProcess
@@ -189,5 +189,5 @@ analyzeCode ci = do
     code <- lift $ waitForProcess h
     case code of
       ExitSuccess -> updateCommand $ ci { ciLastIndexed = floor time }
-      _           -> do logInfo $ "Indexing process failed"
+      _           -> do logInfo "Indexing process failed"
                         updateCommand (invalidateCommand ci)
