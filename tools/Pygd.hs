@@ -26,7 +26,6 @@ main :: IO ()
 main = do
   -- Initialize.
   cf <- getConfiguration
-  putStrLn $ "Log level is " ++ (show $ logLevel cf)
   initLogger (logLevel cf)
   ensureDB
   stopWatching <- newEmptyMVar
@@ -38,11 +37,11 @@ main = do
   -- Launch threads.
   logDebug "Launching database thread"
   dbThread <- asyncBound (runDatabaseManager dbChan dbQueryChan)
-  let maxThreads = case (idxThreads cf) of
+  let maxThreads = case idxThreads cf of
                      0 -> numCapabilities
                      n -> n
   indexThreads <- forM [1..maxThreads] $ \i -> do
-    logDebug $ "Launching indexing thread #" ++ (show i)
+    logDebug $ "Launching indexing thread #" ++ show i
     asyncBound (runIndexManager (ifPort cf) aChan dbChan dbQueryChan fileLox)
   rpcThread <- async (runRPCServer cf aChan dbChan dbQueryChan)
   watchThread <- async (doWatch aChan stopWatching)
@@ -64,10 +63,10 @@ main = do
   forM_ indexThreads $ \_ -> writeLenChan aChan ShutdownIndexer  -- Signifies end of data.
   forM_ (zip indexThreads [1..numCapabilities]) $ \(thread, i) -> do
     ensureNoException =<< waitCatch thread
-    logDebug $ "Termination of thread #" ++ (show i)
+    logDebug $ "Termination of thread #" ++ show i
   writeLenChan dbChan DBShutdown  -- Terminate the database thread.
   ensureNoException =<< waitCatch dbThread
-  logDebug $ "Termination of database thread"
+  logDebug "Termination of database thread"
 
 doWatch :: IndexChan -> MVar () -> IO ()
 doWatch aChan stopWatching = do
@@ -81,8 +80,8 @@ doWatch aChan stopWatching = do
 watch :: IndexChan -> MVar () -> WatchManager -> IO ()
 watch aChan stopWatching m = do
     curDir <- getCurrentDirectory
-    logDebug $ "Started watching " ++ (show curDir) ++ "."
-    watchTree m (FP.decodeString curDir) (checkEvent) (handleEvent aChan)
+    logDebug $ "Started watching " ++ show curDir ++ "."
+    watchTree m (FP.decodeString curDir) checkEvent (handleEvent aChan)
     readMVar stopWatching
 
 checkEvent :: Event -> Bool
@@ -99,20 +98,20 @@ handleSource :: IndexChan -> FP.FilePath -> IO ()
 handleSource aChan f = do
   let file = FP.encodeString f
   fileExists <- doesFileExist file
-  when (isSource file && fileExists) $ do
+  when (isSource file && fileExists) $
     writeLenChan aChan $ Index . FromNotify . mkSourceFile $ file
 
 isSource :: FilePath -> Bool
 isSource f = (hasSourceExtension f || hasHeaderExtension f) &&
              null (slice_path f `intersect` illegalPaths) &&
-             not ("." `isPrefixOf` (takeFileName f))
+             not ("." `isPrefixOf` takeFileName f)
 
 illegalPaths :: [FilePath]
 illegalPaths = [".git", ".hg", ".svn", "_darcs"]
 
 ensureNoException :: Exception a => Either a b -> IO ()
 ensureNoException (Right _) = return ()
-ensureNoException (Left e)  = logError $ "Thread threw an exception: " ++ (show e)
+ensureNoException (Left e)  = logError $ "Thread threw an exception: " ++ show e
 
 ensureCleanExit :: Exception a => Either a b -> IO ()
 ensureCleanExit (Right _) = return ()
@@ -120,4 +119,4 @@ ensureCleanExit (Left e) = do
   let mayRPCServerExit = (fromException . toException $ e) :: Maybe RPCServerExit
   case mayRPCServerExit of
     Just _  -> return ()
-    Nothing -> logError $ "RPC server threw an exception: " ++ (show e)
+    Nothing -> logError $ "RPC server threw an exception: " ++ show e
