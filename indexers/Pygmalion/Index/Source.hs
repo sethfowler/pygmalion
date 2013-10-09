@@ -7,7 +7,7 @@ module Pygmalion.Index.Source
 
 import qualified Clang.CrossReference as XRef
 import qualified Clang.Cursor as C
---import qualified Clang.Diagnostic as Diag
+import qualified Clang.Diagnostic as Diag
 import qualified Clang.File as File
 import Clang.Monad
 import qualified Clang.Source as Source
@@ -24,7 +24,7 @@ import qualified Data.ByteString.UTF8 as BU
 import Data.Int
 import Data.Typeable
 
---import Data.Bool.Predicate
+import Data.Bool.Predicate
 import Pygmalion.Core
 import Pygmalion.Hash
 import Pygmalion.Log
@@ -33,6 +33,7 @@ import Pygmalion.RPC.Client
 runSourceAnalyses :: CommandInfo -> RPCConnection -> IO ()
 runSourceAnalyses ci conn = do
   result <- try $ withTranslationUnit ci $ \tu -> do
+                    logDiagnostics tu
                     inclusionsAnalysis conn ci tu
                     defsAnalysis conn ci tu
   case result of
@@ -264,11 +265,8 @@ cursorName c = C.getDisplayName c >>= CS.unpackByteString >>= anonymize
   where anonymize s | B.null s  = return "<anonymous>"
                     | otherwise = return s
 
-{-
--- We need to decide on a policy, but it'd be good to figure out a way to let
--- the user display these, and maybe always display errors.
-dumpDiagnostics :: TranslationUnit -> ClangApp s ()
-dumpDiagnostics tu = do
+logDiagnostics :: TranslationUnit -> ClangApp s ()
+logDiagnostics tu = do
     opts <- Diag.defaultDisplayOptions
     dias <- Diag.getDiagnostics tu
     forM_ dias $ \dia -> do
@@ -278,7 +276,6 @@ dumpDiagnostics tu = do
         liftIO $ logInfo $ "Diagnostic: " ++ diaStr
   where
     isError = (== Diag.Diagnostic_Error) .||. (== Diag.Diagnostic_Fatal)
--}
 
 doDisplayAST :: TranslationUnit -> ClangApp s ()
 doDisplayAST tu = getCursor tu >>= dumpSubtree
