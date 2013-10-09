@@ -20,6 +20,7 @@ import System.Exit
 import System.Process
 
 import Control.Concurrent.Chan.Len
+import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.Database.Manager
 import Pygmalion.Log
@@ -40,16 +41,17 @@ type IndexChan = LenChan IndexRequest
 
 data IndexContext = IndexContext
   { acPort         :: !Port
+  , acIndexer      :: !String
   , acIndexChan    :: !IndexChan
   , acDBChan       :: !DBChan
   , acDBQueryChan  :: !DBChan
   }
 type Indexer a = ReaderT IndexContext IO a
 
-runIndexManager :: Port -> IndexChan -> DBChan -> DBChan -> MVar (Set.Set SourceFile) -> IO ()
-runIndexManager port iChan dbChan dbQueryChan lox = go
+runIndexManager :: Config -> IndexChan -> DBChan -> DBChan -> MVar (Set.Set SourceFile) -> IO ()
+runIndexManager cf iChan dbChan dbQueryChan lox = go
   where
-    ctx = IndexContext port iChan dbChan dbQueryChan
+    ctx = IndexContext (ifPort cf) (idxCmd cf) iChan dbChan dbQueryChan
     go = {-# SCC "indexThread" #-} do
          (!newCount, !req) <- readLenChan iChan
          logDebug $ "Index request: " ++ show req
@@ -185,7 +187,7 @@ analyzeCode ci = do
     time <- lift getPOSIXTime
     writeLenChan (acDBChan ctx) (DBResetMetadata sf)
     (_, _, _, h) <- lift $ createProcess
-                         (proc indexExecutable [show (acPort ctx), show ci])
+                         (proc (acIndexer ctx) [show (acPort ctx), show ci])
     code <- lift $ waitForProcess h
     case code of
       ExitSuccess -> updateCommand $ ci { ciLastIndexed = floor time }

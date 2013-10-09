@@ -44,6 +44,7 @@ data Config = Config
   , ccArgs     :: String   -- Extra C compiler args, if any.
   , cppCmd     :: String   -- C++ compiler executable to use.
   , cppArgs    :: String   -- Extra C++ compiler args, if any.
+  , idxCmd     :: String   -- Indexer command to use. INTERNAL USE ONLY. (For now.)
   , idxThreads :: Int      -- Number of indexing threads to run.
   , genCDB     :: Bool     -- If true, pygmake generates a CDB automatically.
   , genTAGS    :: Bool     -- If true, pygmake generates a TAGS file automatically.
@@ -61,6 +62,7 @@ defaultConfig = Config
   , ccArgs     = ""
   , cppCmd     = "clang++"
   , cppArgs    = ""
+  , idxCmd     = "pygindex-clang"
   , idxThreads = 4
   , genCDB     = False
   , genTAGS    = False
@@ -81,18 +83,19 @@ instance FromJSON Priority where
 
 instance FromJSON Config where
   parseJSON (Object o) =
-    Config <$> o .:? "address"             .!= (ifAddr defaultConfig)
-           <*> o .:? "port"                .!= (ifPort defaultConfig)
-           <*> o .:? "make"                .!= (makeCmd defaultConfig)
-           <*> o .:? "makeArgs"            .!= (makeArgs defaultConfig)
-           <*> o .:? "cc"                  .!= (ccCmd defaultConfig)
-           <*> o .:? "ccArgs"              .!= (ccArgs defaultConfig)
-           <*> o .:? "cpp"                 .!= (cppCmd defaultConfig)
-           <*> o .:? "cppArgs"             .!= (cppArgs defaultConfig)
-           <*> o .:? "indexingThreads"     .!= (idxThreads defaultConfig)
-           <*> o .:? "compilationDatabase" .!= (genCDB defaultConfig)
-           <*> o .:? "tags"                .!= (genTAGS defaultConfig)
-           <*> o .:? "logLevel"            .!= (logLevel defaultConfig)
+    Config <$> o .:? "address"             .!= ifAddr defaultConfig
+           <*> o .:? "port"                .!= ifPort defaultConfig
+           <*> o .:? "make"                .!= makeCmd defaultConfig
+           <*> o .:? "makeArgs"            .!= makeArgs defaultConfig
+           <*> o .:? "cc"                  .!= ccCmd defaultConfig
+           <*> o .:? "ccArgs"              .!= ccArgs defaultConfig
+           <*> o .:? "cpp"                 .!= cppCmd defaultConfig
+           <*> o .:? "cppArgs"             .!= cppArgs defaultConfig
+           <*> o .:? "indexer"             .!= idxCmd defaultConfig
+           <*> o .:? "indexingThreads"     .!= idxThreads defaultConfig
+           <*> o .:? "compilationDatabase" .!= genCDB defaultConfig
+           <*> o .:? "tags"                .!= genTAGS defaultConfig
+           <*> o .:? "logLevel"            .!= logLevel defaultConfig
   parseJSON _ = mzero
 
 readConfigFile :: IO B.ByteString
@@ -104,8 +107,8 @@ readConfigFile = B.readFile =<< findConfigFile =<< getCurrentDirectory
 
       case (exists, dir) of
         (True, _)    -> return dirConfigFile
-        (False, "")  -> error $ "Couldn't locate pygmalion configuration file"
-        (False, "/") -> error $ "Couldn't locate pygmalion configuration file"
+        (False, "")  -> error "Couldn't locate pygmalion configuration file"
+        (False, "/") -> error "Couldn't locate pygmalion configuration file"
         _            -> findConfigFile $ takeDirectory dir
 
 checkError :: ParseException -> IO Config
@@ -125,5 +128,5 @@ checkConfig conf@Config { ifPort = port }
 
 getConfiguration :: IO Config
 getConfiguration = do
-  result <- (decodeEither' <$> readConfigFile)
+  result <- decodeEither' <$> readConfigFile
   either checkError checkConfig result

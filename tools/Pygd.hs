@@ -42,7 +42,7 @@ main = do
                      n -> n
   indexThreads <- forM [1..maxThreads] $ \i -> do
     logDebug $ "Launching indexing thread #" ++ show i
-    asyncBound (runIndexManager (ifPort cf) aChan dbChan dbQueryChan fileLox)
+    asyncBound (runIndexManager cf aChan dbChan dbQueryChan fileLox)
   rpcThread <- async (runRPCServer cf aChan dbChan dbQueryChan)
   watchThread <- async (doWatch aChan stopWatching)
 
