@@ -1,15 +1,9 @@
 import Control.Concurrent
-import Control.Exception
-import Control.Monad
-import Data.List
-import Data.Tuple.Curry
 import System.Directory
-import System.IO
-import System.Process
 import Test.Hspec
-import Test.HUnit (assertBool)
 
-import Pygmalion.Test (defShouldBe, defsShouldBe, index, withPygd)
+import Pygmalion.Test (defShouldBe, defsShouldBe, index, line,
+                       runPygmalionTest, Test(..), test, withPygd)
 
 main :: IO ()
 main = setCurrentDirectory "tests" >> runTests
@@ -69,11 +63,17 @@ runTests = hspec $ around withPygd $
       (f, 15, 10) `defShouldBe` "main(int, char **)::func_ref [VarDecl]"
       (f, 16, 10) `defShouldBe` "main(int, char **)::func_ref_varargs [VarDecl]"
 
-    it "finds macros" $ let f = "macros.cpp" in do
-      index f
-      (f, 8, 10) `defShouldBe` "VAR [MacroDefinition]"
-      (f, 9, 10) `defShouldBe` "VARF [MacroDefinition]"
-      -- (f, 9, 15) `defShouldBe` "main(int, char **)::local_var [VarDecl]"
+    it "finds macros" $ runPygmalionTest "macros.cpp" $ do
+      line "#define VAR 0"
+      line "#define VARF(x) (int) x"
+      line ""
+      line "int main(int argc, char** argv)"
+      line "{"
+      line "  char local_var = 0;"
+      line ""
+      test "  return @VAR"               [Def "VAR [MacroDefinition]"]
+      test "       + @VARF(@local_var);" [Def "VARF [MacroDefinition]", Fails "#105"]
+      line "}"
 
     it "finds typedefs" $ let f = "typedefs.cpp" in do
       index f

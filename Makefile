@@ -4,7 +4,7 @@ default:
 test:
 	cabal configure --enable-tests -fbuild-pygindex-clang
 	cabal build
-	cabal test
+	cabal test --show-details=always
 
 clean:
 	cabal clean

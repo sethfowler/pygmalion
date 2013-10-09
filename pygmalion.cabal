@@ -136,6 +136,7 @@ test-suite pygmalion-hspec
   build-depends:  base >= 4,
                   directory,
                   hspec >= 1.7.2,
+                  mtl,
                   process,
                   pygmalion,
                   tuple,
