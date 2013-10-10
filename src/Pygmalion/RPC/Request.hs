@@ -25,6 +25,7 @@ data RPCRequest = RPCIndexCommand CommandInfo
                 | RPCFoundOverride Override
                 | RPCFoundRef ReferenceUpdate
                 | RPCFoundInclusion Inclusion
+                | RPCWait
                 | RPCPing
                 | RPCLog String
                 | RPCDone

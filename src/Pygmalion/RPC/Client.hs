@@ -10,6 +10,7 @@ module Pygmalion.RPC.Client
 , withRPCRaw
 , runRPC
 , rpcStop
+, rpcWait
 , rpcPing
 , rpcLog
 , rpcIndexCommand
@@ -74,6 +75,9 @@ rpcDone = callRPC_ RPCDone =<< Reader.ask
 
 rpcStop :: RPC ()
 rpcStop = callRPC_ RPCStop =<< Reader.ask
+
+rpcWait :: RPC ()
+rpcWait = callRPCWaitForever RPCWait =<< Reader.ask
 
 rpcPing :: RPC ()
 rpcPing = callRPC RPCPing =<< Reader.ask
@@ -146,6 +150,24 @@ callRPC_ req conn = liftIO $ ensureCompleted =<< timeout 100000000 conduit
   where
     conduit = process $$ sinkSocket conn
     process = yield (encode req)
+
+callRPCWaitForever :: Serialize a => RPCRequest -> RPCConnection -> RPC a
+callRPCWaitForever req conn = liftIO $ do
+    mResp <- newEmptyMVar
+    conduit mResp
+    takeMVar mResp
+  where
+    conduit mResp = sourceSocket conn
+                 $= conduitGet get
+                =$= process mResp
+                 $$ sinkSocket conn
+    process mResp = do
+      yield (encode req)
+      result <- await
+      case result of
+        Just (RPCOK result') -> liftIO $ putMVar mResp $! result'
+        Just RPCError        -> throw $ RPCException "Server reported an error"
+        _                    -> throw $ RPCException "Unexpected result from server"
 
 ensureCompleted :: Maybe a -> IO a
 ensureCompleted (Just a) = return a

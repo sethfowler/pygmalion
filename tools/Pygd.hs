@@ -32,12 +32,12 @@ main = do
   aChan <- newLenChan
   dbChan <- newLenChan
   dbQueryChan <- newLenChan
+  idleChan <- newLenChan
   fileLox <- mkIndexLockSet
 
   -- Launch threads.
   logDebug "Launching idle thread"
-  idleThread <- asyncBound (runIdleManager cf
-                                           onIdle
+  idleThread <- asyncBound (runIdleManager cf idleChan
                                            [lenChanCounter aChan,
                                             lenChanCounter dbChan,
                                             lenChanCounter dbQueryChan,
@@ -50,7 +50,7 @@ main = do
   indexThreads <- forM [1..maxThreads] $ \i -> do
     logDebug $ "Launching indexing thread #" ++ show i
     asyncBound (runIndexManager cf aChan dbChan dbQueryChan fileLox)
-  rpcThread <- async (runRPCServer cf aChan dbChan dbQueryChan)
+  rpcThread <- async (runRPCServer cf aChan dbChan dbQueryChan idleChan)
   watchThread <- async (doWatch aChan stopWatching)
 
   -- Wait for something to terminate.
@@ -81,10 +81,6 @@ main = do
   writeLenChan dbChan DBShutdown  -- Terminate the database thread.
   ensureNoException =<< waitCatch dbThread
   logDebug "Termination of database thread"
-
-onIdle :: IO ()
-onIdle = do
-  logInfo "Returned to idle."
 
 doWatch :: IndexChan -> MVar () -> IO ()
 doWatch aChan stopWatching = do

@@ -68,7 +68,7 @@ defaultConfig = Config
   , idxThreads = 4
   , genCDB     = False
   , genTAGS    = False
-  , idleDelay  = 3
+  , idleDelay  = 1
   , logLevel   = INFO
   }
 

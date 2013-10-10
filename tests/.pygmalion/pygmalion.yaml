@@ -1,3 +1,4 @@
 port: 7999
 logLevel: warning
 indexer: ../dist/build/pygindex-clang/pygindex-clang
+idleDelay: 0

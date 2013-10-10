@@ -135,7 +135,7 @@ pygmalion args = do
 index :: FilePath -> IO ()
 index file = do
   void $ pygmalion ["index", "clang++", "--std=c++11", file]
-  threadDelay 1000000
+  void $ pygmalion ["wait"]
 
 defsAt :: FilePath -> Line -> Col -> IO [String]
 defsAt file l c = pygmalion ["definition", file, show l, show c]

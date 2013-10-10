@@ -50,6 +50,8 @@ usage = do
   putStrLn   "                           flags to use will be extracted appropriately."
   putStrLn   " make [command]            Both requests indexing and executes the"
   putStrLn   "                           provided command."
+  putStrLn   " wait                      Blocks until all previous requests have been"
+  putStrLn   "                           handled by the pygmalion daemon."
   putStrLn   " generate-compile-commands Prints a clang compilation database."
   putStrLn   " compile-flags [file]      Prints the compilation flags for the"
   putStrLn   "                           given file, or nothing on failure. If"
@@ -77,6 +79,7 @@ parseArgs c _  ["stop"] = stop c
 parseArgs c wd ("index" : file : []) = indexFile c (asSourceFile wd file)
 parseArgs c _  ("index" : cmd : args) = indexCommand c cmd args
 parseArgs c _  ("make" : cmd : args) = makeCommand c cmd args
+parseArgs c _  ("wait" : []) = waitForServer c
 parseArgs c _  ["generate-compile-commands"] = printCDB c
 parseArgs c wd ["compile-flags", f] = printFlags c (asSourceFile wd f)
 parseArgs c wd ["working-directory", f] = printDir c (asSourceFile wd f)
@@ -132,6 +135,9 @@ makeCommand cf cmd args = do
 
 ignoreRPCFailure :: SomeException -> IO ()
 ignoreRPCFailure _ = return ()  -- Silently ignore failure.
+
+waitForServer :: Config -> IO ()
+waitForServer cf = withRPC cf $ runRPC (rpcWait)
 
 -- FIXME: Reimplement with RPC.
 printCDB :: Config -> IO ()

@@ -23,15 +23,21 @@ import Control.Concurrent.Chan.Len
 import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.Database.Manager
+import Pygmalion.Idle
 import Pygmalion.Index.Manager
 import Pygmalion.Log
 import Pygmalion.RPC.Request
 
-runRPCServer :: Config -> IndexChan -> DBChan -> DBChan -> IO ()
-runRPCServer cf iChan dbChan dbQueryChan = do
+runRPCServer :: Config -> IndexChan -> DBChan -> DBChan -> IdleChan -> IO ()
+runRPCServer cf iChan dbChan dbQueryChan idleChan = do
     conns <- newMVar 0
     threadId <- myThreadId
-    runTCPServer settings (serverApp $ RPCServerContext threadId iChan dbChan dbQueryChan conns)
+    runTCPServer settings (serverApp $ RPCServerContext threadId
+                                                        iChan
+                                                        dbChan
+                                                        dbQueryChan
+                                                        idleChan
+                                                        conns)
   where
     settings = (serverSettings port addr) :: ServerSettings IO
     port = ifPort cf
@@ -78,6 +84,7 @@ data RPCServerContext = RPCServerContext
   , rsIndexChan   :: !IndexChan
   , rsDBChan      :: !DBChan
   , rsDBQueryChan :: !DBChan
+  , rsIdleChan    :: !IdleChan
   , rsConnections :: !(MVar Int)
   }
 type RPCServer a = ReaderT RPCServerContext IO a
@@ -98,6 +105,7 @@ route (RPCFoundDef df)              = sendUpdate_ $ DBUpdateDef df
 route (RPCFoundOverride ov)         = sendUpdate_ $ DBUpdateOverride ov
 route (RPCFoundRef ru)              = sendUpdate_ $ DBUpdateRef ru
 route (RPCFoundInclusion ic)        = sendInclusionUpdate_ ic
+route (RPCWait)                     = sendWait_
 route (RPCLog s)                    = logInfo s >> return Nothing
 route (RPCPing)                     = return . Just $! encode (RPCOK ())
 route (RPCDone)                     = error "Should not route RPCDone"
@@ -130,6 +138,13 @@ sendInclusionUpdate_ ic = do
   when (not existing) $
     writeLenChan (rsIndexChan ctx) (Index . FromBuild . icCommandInfo $ ic)
   return Nothing
+
+sendWait_ :: RPCServer (Maybe ByteString)
+sendWait_ = do
+  logInfo "Sending info"
+  ctx <- ask
+  result <- callLenChan (rsIdleChan ctx) IdleBarrier
+  return . Just $! encode (RPCOK result)
 
 data RPCServerExit = RPCServerExit deriving (Show, Typeable)
 instance Exception RPCServerExit
