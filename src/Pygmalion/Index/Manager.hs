@@ -5,9 +5,13 @@ module Pygmalion.Index.Manager
 , IndexRequest (..)
 , IndexSource (..)
 , IndexChan
+, IndexLockSet
+, mkIndexLockSet
+, indexLockSetCounter
 ) where
 
 import Control.Concurrent
+import Control.Concurrent.STM
 import Control.Exception
 import Control.Monad
 import Control.Monad.Reader
@@ -48,8 +52,37 @@ data IndexContext = IndexContext
   }
 type Indexer a = ReaderT IndexContext IO a
 
-runIndexManager :: Config -> IndexChan -> DBChan -> DBChan -> MVar (Set.Set SourceFile) -> IO ()
-runIndexManager cf iChan dbChan dbQueryChan lox = go
+data IndexLockSet = IndexLockSet
+  { lsSet     :: MVar (Set.Set SourceFile)
+  , lsCounter :: TVar Int
+  }
+
+mkIndexLockSet :: IO IndexLockSet
+mkIndexLockSet = do
+  set     <- newMVar Set.empty
+  counter <- newTVarIO 0
+  return $! IndexLockSet set counter
+
+takeIndexLockSet :: IndexLockSet -> Indexer (Set.Set SourceFile)
+takeIndexLockSet ils = lift $ takeMVar (lsSet ils)
+
+putIndexLockSet :: IndexLockSet -> Set.Set SourceFile -> Indexer ()
+putIndexLockSet ils !set = do
+  lift $ atomically $ writeTVar (lsCounter ils) (Set.size set)
+  lift $ putMVar (lsSet ils) set
+
+modifyIndexLockSet :: IndexLockSet -> (Set.Set SourceFile -> Indexer (Set.Set SourceFile))
+                                   -> Indexer ()
+modifyIndexLockSet ils f = do
+  set <- takeIndexLockSet ils
+  updatedSet <- f set
+  putIndexLockSet ils updatedSet
+
+indexLockSetCounter :: IndexLockSet -> TVar Int
+indexLockSetCounter = lsCounter
+
+runIndexManager :: Config -> IndexChan -> DBChan -> DBChan -> IndexLockSet -> IO ()
+runIndexManager cf iChan dbChan dbQueryChan ils = go
   where
     ctx = IndexContext (ifPort cf) (idxCmd cf) iChan dbChan dbQueryChan
     go = {-# SCC "indexThread" #-} do
@@ -57,23 +90,23 @@ runIndexManager cf iChan dbChan dbQueryChan lox = go
          logDebug $ "Index request: " ++ show req
          logDebug $ "Index channel now has " ++ show newCount ++ " items waiting"
          case req of
-             Index src       -> runReaderT (checkLock lox src) ctx >> go
+             Index src       -> runReaderT (checkLock ils src) ctx >> go
              ShutdownIndexer -> logInfo "Shutting down analysis thread"
 
-checkLock :: MVar (Set.Set SourceFile) -> IndexSource -> Indexer ()
-checkLock !lox !src = do
+checkLock :: IndexLockSet -> IndexSource -> Indexer ()
+checkLock !ils !src = do
   let sf = sfFromSource src
-  lockedFiles <- lift $ takeMVar lox
+  lockedFiles <- takeIndexLockSet ils
   if sf `Set.member` lockedFiles
     then do logInfo $ "Contention detected on source file "
                    ++ unSourceFile sf ++ "; sleeping..."
-            lift $ putMVar lox lockedFiles
+            putIndexLockSet ils lockedFiles
             lift $ threadDelay 10000  -- Keep churn under control.
             ctx <- ask
             writeLenChan (acIndexChan ctx) (Index src)
-    else do lift $ putMVar lox $! (sf `Set.insert` lockedFiles)
+    else do putIndexLockSet ils (sf `Set.insert` lockedFiles)
             analyzeIfDirty src
-            lift $ modifyMVar_ lox (\s -> return $! sf `Set.delete` s)
+            modifyIndexLockSet ils (\s -> return $! sf `Set.delete` s)
   
 getMTime :: SourceFile -> Indexer (Maybe Time)
 getMTime sf = lift $ do

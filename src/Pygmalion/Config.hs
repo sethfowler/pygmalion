@@ -8,6 +8,7 @@ module Pygmalion.Config
 
 import Control.Applicative
 import Control.Monad
+import Data.Int
 import Data.Yaml
 import qualified Data.ByteString as B
 import System.Directory (doesFileExist, getCurrentDirectory)
@@ -48,6 +49,7 @@ data Config = Config
   , idxThreads :: Int      -- Number of indexing threads to run.
   , genCDB     :: Bool     -- If true, pygmake generates a CDB automatically.
   , genTAGS    :: Bool     -- If true, pygmake generates a TAGS file automatically.
+  , idleDelay  :: Int64    -- Numbers of seconds with no activity before we're idle.
   , logLevel   :: Priority -- The level of logging to enable.
   } deriving (Eq, Show)
 
@@ -66,6 +68,7 @@ defaultConfig = Config
   , idxThreads = 4
   , genCDB     = False
   , genTAGS    = False
+  , idleDelay  = 3
   , logLevel   = INFO
   }
 
@@ -95,6 +98,7 @@ instance FromJSON Config where
            <*> o .:? "indexingThreads"     .!= idxThreads defaultConfig
            <*> o .:? "compilationDatabase" .!= genCDB defaultConfig
            <*> o .:? "tags"                .!= genTAGS defaultConfig
+           <*> o .:? "idleDelay"           .!= idleDelay defaultConfig
            <*> o .:? "logLevel"            .!= logLevel defaultConfig
   parseJSON _ = mzero
 

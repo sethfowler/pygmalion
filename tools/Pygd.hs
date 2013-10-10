@@ -5,7 +5,6 @@ import Control.Concurrent.Async
 import Control.Exception (Exception, fromException, toException)
 import Control.Monad
 import Data.List
-import qualified Data.Set as Set
 import qualified Filesystem.Path.CurrentOS as FP
 import GHC.Conc
 import System.Directory
@@ -20,6 +19,7 @@ import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.Database.Manager
 import Pygmalion.Log
+import Pygmalion.Idle
 import Pygmalion.RPC.Server
 
 main :: IO ()
@@ -32,9 +32,16 @@ main = do
   aChan <- newLenChan
   dbChan <- newLenChan
   dbQueryChan <- newLenChan
-  fileLox <- newMVar Set.empty
+  fileLox <- mkIndexLockSet
 
   -- Launch threads.
+  logDebug "Launching idle thread"
+  idleThread <- asyncBound (runIdleManager cf
+                                           onIdle
+                                           [lenChanCounter aChan,
+                                            lenChanCounter dbChan,
+                                            lenChanCounter dbQueryChan,
+                                            indexLockSetCounter fileLox])
   logDebug "Launching database thread"
   dbThread <- asyncBound (runDatabaseManager dbChan dbQueryChan)
   let maxThreads = case idxThreads cf of
@@ -56,6 +63,13 @@ main = do
     Nothing -> cancel rpcThread
   logDebug "Termination of RPC Server thread."
 
+  -- Shut down idle thread.
+  idleResult <- poll idleThread
+  case idleResult of
+    Just r  -> ensureCleanExit r
+    Nothing -> cancel idleThread
+  logDebug "Termination of idle thread."
+
   -- Shut down the other threads.
   putMVar stopWatching ()
   ensureNoException =<< waitCatch watchThread
@@ -67,6 +81,10 @@ main = do
   writeLenChan dbChan DBShutdown  -- Terminate the database thread.
   ensureNoException =<< waitCatch dbThread
   logDebug "Termination of database thread"
+
+onIdle :: IO ()
+onIdle = do
+  logInfo "Returned to idle."
 
 doWatch :: IndexChan -> MVar () -> IO ()
 doWatch aChan stopWatching = do

@@ -4,6 +4,7 @@ module Control.Concurrent.Chan.Len
 , writeLenChan
 , readLenChan
 , readLenChanPreferFirst
+, lenChanCounter
 , callLenChan
 , getLenChanCount
 , Response
@@ -53,6 +54,9 @@ readLenChanPreferFirst c1 c2 = liftIO $ atomically $ do
                      let newCount = curCount - 1
                      writeTVar (counter c2) $! newCount
                      return $! (False, newCount, v2)
+
+lenChanCounter :: LenChan a -> TVar Int
+lenChanCounter = counter
 
 callLenChan :: MonadIO m => LenChan a -> (Response b -> a) -> m b
 callLenChan c cmd = do
