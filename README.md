@@ -96,7 +96,7 @@ system other than `make`, such as `cmake`, or compilers other than
 `clang` and `clang++`.
 
 The best source of information on the options is currently
-`examples/example.pygmalion.yaml` in the Pygmalion source tree, but
+`examples/pygmalion.yaml.default` in the Pygmalion source tree, but
 these docs will be improved soon.
 
 Frequently Asked Questions
