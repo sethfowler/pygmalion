@@ -646,6 +646,7 @@ runTests = hspec $ around withPygd $
       
 
         
+    -- easy: labels
     -- medium: multiple inheritance, operator overloads, inherited fields and static members
     -- worst case scenario: templates
 
