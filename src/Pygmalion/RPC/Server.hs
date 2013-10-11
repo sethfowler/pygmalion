@@ -44,37 +44,39 @@ runRPCServer cf iChan dbChan dbQueryChan idleChan = do
     addr = fromString $ ifAddr cf
 
 serverApp :: RPCServerContext -> Application IO
-serverApp ctx ad =
-    (appSource ad) $= conduitGet getCI =$= process $$ (appSink ad)
+serverApp ctx ad = do
+    open
+    conduit `onException` closeIO
   where
     getCI = {-# SCC "serverget" #-} get :: Get RPCRequest
 
-    process = do
-      liftIO $ modifyMVar_ (rsConnections ctx) (\c -> return (c + 1))
-      process'
+    conduit = (appSource ad) $= conduitGet getCI =$= process $$ (appSink ad)
 
-    close = terminate' 1
-    terminate = terminate' 2
+    open = liftIO $ modifyMVar_ (rsConnections ctx) (\c -> return (c + 1))
+    close = liftIO $ terminate' 1
+    closeIO = terminate' 1
+    terminate = liftIO $ terminate' 2
 
     terminate' v = do
-      -- If v == 1, this balances the increment we got when starting
-      -- this connecting. If v > 1, this ensures that rsConnections
-      -- will eventually drop below 0, terminating the server.
-      conns <- liftIO $ takeMVar (rsConnections ctx)
+      -- If v == 1, this balances the increment to rsConnections that
+      -- happened when we opened this connection. If v > 1, this
+      -- ensures that rsConnections will eventually drop below 0,
+      -- terminating the server.
+      conns <- takeMVar (rsConnections ctx)
       let newConns = conns - v
-      liftIO $ putMVar (rsConnections ctx) newConns
+      putMVar (rsConnections ctx) newConns
       when (newConns < 0) $ do
-        liftIO $ throwTo (rsThread ctx) RPCServerExit -- Terminate the server.
+        throwTo (rsThread ctx) RPCServerExit -- Terminate the server.
 
-    process' = do
+    process = do
       result <- await
       case result of
         Just RPCDone -> close
         Just RPCStop -> terminate
         Just req     -> do res <- liftIO $ runReaderT (route req) ctx
                            case res of
-                              Just res' -> yield res' >> process'
-                              Nothing   -> process'
+                              Just res' -> yield res' >> process
+                              Nothing   -> process
         _            -> do logError "RPC server got bad request"
                            yield . encode $ (RPCError :: RPCResponse ())
                            close
