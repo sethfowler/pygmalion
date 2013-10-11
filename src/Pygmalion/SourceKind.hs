@@ -72,7 +72,7 @@ data SourceKind = UnexposedDecl
                 | DeclRefExpr
                 | MemberRefExpr
                 | CallExpr
-                | DynamicCallExpr
+                | DynamicCallExpr  -- Pygmalion custom kind.
                 | ObjCMessageExpr
                 | BlockExpr
                 | IntegerLiteral
@@ -162,6 +162,7 @@ data SourceKind = UnexposedDecl
                 | MacroExpansion
                 | MacroInstantiation
                 | InclusionDirective
+                | SourceFile  -- Pygmalion custom kind.
                 | FirstPreprocessing
                 | LastPreprocessing
                 deriving (Enum, Eq, Ord, Read, Show)

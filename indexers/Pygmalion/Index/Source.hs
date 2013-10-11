@@ -35,6 +35,7 @@ runSourceAnalyses ci conn = do
   result <- try $ withTranslationUnit ci $ \tu -> do
                     logDiagnostics tu
                     inclusionsAnalysis conn ci tu
+                    addFileDef conn ci
                     defsAnalysis conn ci tu
   case result of
     Right _ -> return ()
@@ -70,6 +71,19 @@ inclusionsVisitor conn ci file iStack = do
     incArgs CPPLanguage     = ["-x", "c++"]
     incArgs UnknownLanguage = []
 
+addFileDef :: RPCConnection -> CommandInfo -> ClangApp s ()
+addFileDef conn ci = do
+  -- Add a special definition for the beginning of the file. This is
+  -- referenced by inclusion directives.
+  let thisFile = ciSourceFile ci
+  def <- return $! DefUpdate thisFile
+                             thisFile
+                             (hash thisFile)
+                             1
+                             1
+                             SourceFile
+  liftIO $ runRPC (rpcFoundDef def) conn
+  
 defsAnalysis :: RPCConnection -> CommandInfo -> TranslationUnit -> ClangApp s ()
 defsAnalysis conn ci tu = do
     cursor <- getCursor tu
@@ -93,6 +107,31 @@ defsVisitor conn ci tu cursor _ = do
     cursorIsPV <- if cKind == C.Cursor_CXXMethod then C.isPureVirtualCppMethod cursor
                                                  else return False
 
+    -- Record inclusion directives.
+    when (cKind == C.Cursor_InclusionDirective) $ do
+        includedFile <- C.getIncludedFile cursor >>= File.getName >>= CS.unpackByteString
+
+        -- Determine the end of the extent of this cursor.
+        extent <- C.getExtent cursor
+        endLoc <- Source.getEnd extent
+        (_, endLn, endCol, _) <- Source.getSpellingLocation endLoc
+
+        -- Determine the context.
+        ctxC <- getContext tu cursor
+        ctxUSR <- XRef.getUSR ctxC >>= CS.unpackByteString
+
+        -- Record.
+        reference <- return $! ReferenceUpdate (hash . slFile $ loc)
+                                               (slLine loc)
+                                               (slCol loc)
+                                               endLn
+                                               endCol
+                                               (toSourceKind cKind)
+                                               0
+                                               (hash ctxUSR)
+                                               (hash includedFile)
+        liftIO $ runRPC (rpcFoundRef reference) conn
+      
     -- Record references.
     -- TODO: Ignore CallExpr children that start at the same
     -- position as the CallExpr. This always refers to the same
