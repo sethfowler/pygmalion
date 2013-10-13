@@ -54,112 +54,47 @@ runDatabaseManager chan queryChan = do
               logDebug $ if tookFirst then "Query channel now has " ++ (show newCount) ++ " queries waiting"
                                       else "Database channel now has " ++ (show newCount) ++ " requests waiting"
               case req of
-                DBUpdateCommandInfo !ci       -> doUpdateCommandInfo h ci >> go (n+1) s h
-                DBUpdateDef !di               -> doUpdateDef h di >> go (n+1) s h
-                DBUpdateOverride !ov          -> doUpdateOverride h ov >> go (n+1) s h
-                DBUpdateRef !rf               -> doUpdateRef h rf >> go (n+1) s h
-                DBInsertFileAndCheck !sf !v   -> doInsertFileAndCheck h sf v >> go (n+1) s h
-                DBUpdateInclusion !ic         -> doUpdateInclusion h ic >> go (n+1) s h
-                DBResetMetadata !sf           -> doResetMetadata h sf >> go (n+1) s h
-                DBGetCommandInfo !f !v        -> doGetCommandInfo h f v >> go (n+1) s h
-                DBGetSimilarCommandInfo !f !v -> doGetSimilarCommandInfo h f v >> go (n+1) s h
-                DBGetDefinition !sl !v        -> doGetDefinition h sl v >> go (n+1) s h
-                DBGetIncluders !sf !v         -> doGetIncluders h sf v >> go (n+1) s h
-                DBGetCallers !sl !v           -> doGetCallers h sl v >> go (n+1) s h
-                DBGetCallees !usr !v          -> doGetCallees h usr v >> go (n+1) s h
-                DBGetBases !usr !v            -> doGetBases h usr v >> go (n+1) s h
-                DBGetOverrides !usr !v        -> doGetOverrides h usr v >> go (n+1) s h
-                DBGetRefs !usr !v             -> doGetRefs h usr v >> go (n+1) s h
-                DBGetReferenced !sl !v        -> doGetReferenced h sl v >> go (n+1) s h
-                DBShutdown                    -> logInfo "Shutting down DB thread"
+                DBShutdown -> logInfo "Shutting down DB thread"
+                _          -> route h req >> go (n+1) s h
+                
+route :: DBHandle -> DBRequest -> IO ()
+route h (DBUpdateCommandInfo !ci)       = update "command info" updateSourceFile h ci
+route h (DBUpdateDef !di)               = update "definition" updateDef h di
+route h (DBUpdateOverride !ov)          = update "override" updateOverride h ov
+route h (DBUpdateRef !rf)               = update "reference" updateReference h rf
+route h (DBInsertFileAndCheck !sf !v)   = query "file and inserting" insertFileAndCheck h sf v
+route h (DBUpdateInclusion !ic)         = update "inclusion" updateInclusion h ic
+route h (DBResetMetadata !sf)           = update "resetted metadata" resetMetadata h sf
+route h (DBGetCommandInfo !f !v)        = query "command info" getCommandInfo h f v
+route h (DBGetSimilarCommandInfo !f !v) = getSimilarCommandInfoQuery h f v
+route h (DBGetDefinition !sl !v)        = query "definition" getDef h sl v
+route h (DBGetIncluders !sf !v)         = query "includers" getIncluders h sf v
+route h (DBGetCallers !sl !v)           = query "callers" getCallers h sl v
+route h (DBGetCallees !usr !v)          = query "callees" getCallees h usr v
+route h (DBGetBases !usr !v)            = query "bases" getOverrided h usr v
+route h (DBGetOverrides !usr !v)        = query "overrides" getOverriders h usr v
+route h (DBGetRefs !usr !v)             = query "references" getReferences h usr v
+route h (DBGetReferenced !sl !v)        = query "referenced" getReferenced h sl v
+route _ (DBShutdown)                    = error "Should not route DBShutdown"
 
 readEitherChan :: Int -> DBChan -> DBChan -> IO (Bool, Int, DBRequest)
 readEitherChan n queryChan chan
   | n `rem` 10 == 0 = readLenChanPreferFirst queryChan chan
   | otherwise       = readLenChanPreferFirst chan queryChan
 
-doUpdateCommandInfo :: DBHandle -> CommandInfo -> IO ()
-doUpdateCommandInfo h ci = withTransaction h $ do
-  logDebug $ "Updating database with command: " ++ (show . ciSourceFile $ ci)
-  updateSourceFile h ci
+update :: Show a => String -> (DBHandle -> a -> IO ()) -> DBHandle -> a -> IO ()
+update item f h x = do
+  logDebug $ "Updating index with " ++ item ++ ": " ++ (show x)
+  f h x
 
-doUpdateDef :: DBHandle -> DefUpdate -> IO ()
-doUpdateDef h du = withTransaction h $ do
-  logDebug $ "Updating database with def: " ++ (show . diuUSR $ du)
-  updateDef h du
+query :: Show a => String -> (DBHandle -> a -> IO b) -> DBHandle -> a -> Response b -> IO ()
+query item f h x r = do
+  logDebug $ "Getting " ++ item ++ " for " ++ (show x)
+  sendResponse r =<< f h x
 
-doUpdateOverride :: DBHandle -> Override -> IO ()
-doUpdateOverride h ov = withTransaction h $ do
-  logDebug $ "Updating database with override: " ++ (show ov)
-  updateOverride h ov
-
-doUpdateRef :: DBHandle -> ReferenceUpdate -> IO ()
-doUpdateRef h ru = withTransaction h $ do
-  logDebug $ "Updating database with reference: " ++ (show ru)
-  updateReference h ru
-
-doUpdateInclusion :: DBHandle -> Inclusion -> IO ()
-doUpdateInclusion h ic = withTransaction h $ do
-    logDebug $ "Updating database with inclusion: " ++ (show ic)
-    updateInclusion h ic
-
-doInsertFileAndCheck :: DBHandle -> SourceFile -> Response Bool -> IO ()
-doInsertFileAndCheck h f v = do
-  logDebug $ "Inserting file and checking for " ++ (show f)
-  sendResponse v =<< insertFileAndCheck h f
-
-doResetMetadata :: DBHandle -> SourceFile -> IO ()
-doResetMetadata h sf = withTransaction h $ do
-  logDebug $ "Resetting metadata for file: " ++ (show sf)
-  resetMetadata h sf
-
-doGetCommandInfo :: DBHandle -> SourceFile -> Response (Maybe CommandInfo) -> IO ()
-doGetCommandInfo h f v = do
-  logDebug $ "Getting CommandInfo for " ++ (show f)
-  sendResponse v =<< getCommandInfo h f
-
-doGetSimilarCommandInfo :: DBHandle -> SourceFile -> Response (Maybe CommandInfo) -> IO ()
-doGetSimilarCommandInfo h f v = do
+-- TODO: Remove this special case.
+getSimilarCommandInfoQuery :: DBHandle -> SourceFile -> Response (Maybe CommandInfo) -> IO ()
+getSimilarCommandInfoQuery h f v = do
   logDebug $ "Getting similar CommandInfo for " ++ (show f)
   ci <- liftM2 (<|>) (getCommandInfo h f) (getSimilarCommandInfo h f)
   sendResponse v ci
-
-doGetDefinition :: DBHandle -> SourceLocation -> Response [DefInfo] -> IO ()
-doGetDefinition h sl v = do
-  logDebug $ "Getting definition for " ++ (show sl)
-  sendResponse v =<< getDef h sl
-
-doGetIncluders :: DBHandle -> SourceFile -> Response [CommandInfo] -> IO ()
-doGetIncluders h sf v = do
-  logDebug $ "Getting includers for " ++ (show sf)
-  sendResponse v =<< getIncluders h sf
-
-doGetCallers :: DBHandle -> SourceLocation -> Response [Invocation] -> IO ()
-doGetCallers h sl v = do
-  logDebug $ "Getting callers for " ++ (show sl)
-  sendResponse v =<< getCallers h sl
-
-doGetCallees :: DBHandle -> SourceLocation -> Response [DefInfo] -> IO ()
-doGetCallees h sl v = do
-  logDebug $ "Getting callees for " ++ (show sl)
-  sendResponse v =<< getCallees h sl
-
-doGetBases :: DBHandle -> SourceLocation -> Response [DefInfo] -> IO ()
-doGetBases h sl v = do
-  logDebug $ "Getting bases for " ++ (show sl)
-  sendResponse v =<< getOverrided h sl
-
-doGetOverrides :: DBHandle -> SourceLocation -> Response [DefInfo] -> IO ()
-doGetOverrides h sl v = do
-  logDebug $ "Getting overrides for " ++ (show sl)
-  sendResponse v =<< getOverriders h sl
-
-doGetRefs :: DBHandle -> SourceLocation -> Response [SourceReference] -> IO ()
-doGetRefs h sl v = do
-  logDebug $ "Getting refs for " ++ (show sl)
-  sendResponse v =<< getReferences h sl
-
-doGetReferenced :: DBHandle -> SourceLocation -> Response (Maybe SourceReferenced) -> IO ()
-doGetReferenced h sl v = do
-  logDebug $ "Getting referenced for " ++ (show sl)
-  sendResponse v =<< getReferenced h sl
