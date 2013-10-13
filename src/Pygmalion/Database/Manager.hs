@@ -27,11 +27,11 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBGetSimilarCommandInfo SourceFile (Response (Maybe CommandInfo))
                | DBGetDefinition SourceLocation (Response [DefInfo])
                | DBGetIncluders SourceFile (Response [CommandInfo])
-               | DBGetCallers USR (Response [Invocation])
-               | DBGetCallees USR (Response [DefInfo])
-               | DBGetBases USR (Response [DefInfo])
-               | DBGetOverrides USR (Response [DefInfo])
-               | DBGetRefs USR (Response [SourceReference])
+               | DBGetCallers SourceLocation (Response [Invocation])
+               | DBGetCallees SourceLocation (Response [DefInfo])
+               | DBGetBases SourceLocation (Response [DefInfo])
+               | DBGetOverrides SourceLocation (Response [DefInfo])
+               | DBGetRefs SourceLocation (Response [SourceReference])
                | DBGetReferenced SourceLocation (Response (Maybe SourceReferenced))
                | DBShutdown
                deriving (Show)
@@ -65,7 +65,7 @@ runDatabaseManager chan queryChan = do
                 DBGetSimilarCommandInfo !f !v -> doGetSimilarCommandInfo h f v >> go (n+1) s h
                 DBGetDefinition !sl !v        -> doGetDefinition h sl v >> go (n+1) s h
                 DBGetIncluders !sf !v         -> doGetIncluders h sf v >> go (n+1) s h
-                DBGetCallers !usr !v          -> doGetCallers h usr v >> go (n+1) s h
+                DBGetCallers !sl !v           -> doGetCallers h sl v >> go (n+1) s h
                 DBGetCallees !usr !v          -> doGetCallees h usr v >> go (n+1) s h
                 DBGetBases !usr !v            -> doGetBases h usr v >> go (n+1) s h
                 DBGetOverrides !usr !v        -> doGetOverrides h usr v >> go (n+1) s h
@@ -134,30 +134,30 @@ doGetIncluders h sf v = do
   logDebug $ "Getting includers for " ++ (show sf)
   sendResponse v =<< getIncluders h sf
 
-doGetCallers :: DBHandle -> USR -> Response [Invocation] -> IO ()
-doGetCallers h usr v = do
-  logDebug $ "Getting callers for " ++ (show usr)
-  sendResponse v =<< getCallers h usr
+doGetCallers :: DBHandle -> SourceLocation -> Response [Invocation] -> IO ()
+doGetCallers h sl v = do
+  logDebug $ "Getting callers for " ++ (show sl)
+  sendResponse v =<< getCallers h sl
 
-doGetCallees :: DBHandle -> USR -> Response [DefInfo] -> IO ()
-doGetCallees h usr v = do
-  logDebug $ "Getting callees for " ++ (show usr)
-  sendResponse v =<< getCallees h usr
+doGetCallees :: DBHandle -> SourceLocation -> Response [DefInfo] -> IO ()
+doGetCallees h sl v = do
+  logDebug $ "Getting callees for " ++ (show sl)
+  sendResponse v =<< getCallees h sl
 
-doGetBases :: DBHandle -> USR -> Response [DefInfo] -> IO ()
-doGetBases h usr v = do
-  logDebug $ "Getting bases for " ++ (show usr)
-  sendResponse v =<< getOverrided h usr
+doGetBases :: DBHandle -> SourceLocation -> Response [DefInfo] -> IO ()
+doGetBases h sl v = do
+  logDebug $ "Getting bases for " ++ (show sl)
+  sendResponse v =<< getOverrided h sl
 
-doGetOverrides :: DBHandle -> USR -> Response [DefInfo] -> IO ()
-doGetOverrides h usr v = do
-  logDebug $ "Getting overrides for " ++ (show usr)
-  sendResponse v =<< getOverriders h usr
+doGetOverrides :: DBHandle -> SourceLocation -> Response [DefInfo] -> IO ()
+doGetOverrides h sl v = do
+  logDebug $ "Getting overrides for " ++ (show sl)
+  sendResponse v =<< getOverriders h sl
 
-doGetRefs :: DBHandle -> USR -> Response [SourceReference] -> IO ()
-doGetRefs h usr v = do
-  logDebug $ "Getting refs for " ++ (show usr)
-  sendResponse v =<< getReferences h usr
+doGetRefs :: DBHandle -> SourceLocation -> Response [SourceReference] -> IO ()
+doGetRefs h sl v = do
+  logDebug $ "Getting refs for " ++ (show sl)
+  sendResponse v =<< getReferences h sl
 
 doGetReferenced :: DBHandle -> SourceLocation -> Response (Maybe SourceReferenced) -> IO ()
 doGetReferenced h sl v = do

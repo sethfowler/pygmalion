@@ -15,11 +15,11 @@ data RPCRequest = RPCIndexCommand CommandInfo
                 | RPCGetCommandInfo SourceFile
                 | RPCGetSimilarCommandInfo SourceFile
                 | RPCGetDefinition SourceLocation
-                | RPCGetCallers USR
-                | RPCGetCallees USR
-                | RPCGetBases USR
-                | RPCGetOverrides USR
-                | RPCGetRefs USR
+                | RPCGetCallers SourceLocation
+                | RPCGetCallees SourceLocation
+                | RPCGetBases SourceLocation
+                | RPCGetOverrides SourceLocation
+                | RPCGetRefs SourceLocation
                 | RPCGetReferenced SourceLocation
                 | RPCFoundDef DefUpdate
                 | RPCFoundOverride Override

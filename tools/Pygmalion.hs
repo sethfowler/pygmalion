@@ -18,7 +18,6 @@ import System.Process
 import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.Index.Command
-import Pygmalion.Index.Result
 import Pygmalion.Log
 import Pygmalion.RPC.Client
 --import Pygmalion.JSON
@@ -162,136 +161,62 @@ getCommandInfoOr a f cf = do
   return . fromJust $ cmd
 
 printDef :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
-printDef cf f (Just line) (Just col) = do
-    defs <- withRPC cf $ runRPC (rpcGetDefinition (SourceLocation f line col))
-    case defs of
-      [] -> bailWith idErr
-      _  -> mapM_ putDef defs
+printDef = queryCmd "definition" rpcGetDefinition putDef
   where 
-    errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
-    idErr = errPrefix ++ "No identifier at this location. Make sure the file compiles "
-                      ++ "with no errors and the index is up-to-date."
     putDef (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Definition: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
-printDef _ _ _ _ = usage
 
 printCallers :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
-printCallers cf f (Just line) (Just col) = do
-    info <- doGetLookupInfo cf (SourceLocation f line col)
-    case info of
-      GotDef di     -> printCallers' (diUSR di)
-      GotDecl usr _ -> printCallers' usr
-      GotUSR usr    -> printCallers' usr
-      GotNothing    -> bailWith idErr
+printCallers = queryCmd "caller" rpcGetCallers putCaller
   where 
-    errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
-    idErr = errPrefix ++ "No identifier at this location."
-    defErr usr = errPrefix ++ "No callers for this identifier. USR = [" ++ (B.toString usr) ++ "]"
-    printCallers' usr = do
-      callers <- withRPC cf $ runRPC (rpcGetCallers usr)
-      case (null callers) of
-        True  -> bailWith (defErr usr)
-        False -> mapM_ putCaller callers
     putCaller (Invocation (DefInfo n _ _ _) (SourceLocation idF idLine idCol)) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Caller: " ++ (B.toString n)
-printCallers _ _ _ _ = usage
 
 printCallees :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
-printCallees cf f (Just line) (Just col) = do
-    info <- doGetLookupInfo cf (SourceLocation f line col)
-    case info of
-      GotDef di     -> printCallees' (diUSR di)
-      GotDecl usr _ -> printCallees' usr
-      GotUSR usr    -> printCallees' usr
-      GotNothing    -> bailWith idErr
+printCallees = queryCmd "callee" rpcGetCallees putCallee
   where 
-    errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
-    idErr = errPrefix ++ "No identifier at this location."
-    defErr usr = errPrefix ++ "No callees for this identifier. USR = [" ++ (B.toString usr) ++ "]"
-    printCallees' usr = do
-      callees <- withRPC cf $ runRPC (rpcGetCallees usr)
-      case (null callees) of
-        True  -> bailWith (defErr usr)
-        False -> mapM_ putCallee callees
     putCallee (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Callee: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
-printCallees _ _ _ _ = usage
 
 printBases :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
-printBases cf f (Just line) (Just col) = do
-    info <- doGetLookupInfo cf (SourceLocation f line col)
-    case info of
-      GotDef di     -> printBases' (diUSR di)
-      GotDecl usr _ -> printBases' usr
-      GotUSR usr    -> printBases' usr
-      GotNothing    -> bailWith idErr
+printBases = queryCmd "base" rpcGetBases putBase
   where 
-    errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
-    idErr = errPrefix ++ "No identifier at this location."
-    defErr usr = errPrefix ++ "No bases for this identifier. USR = [" ++ (B.toString usr) ++ "]"
-    printBases' usr = do
-      callers <- withRPC cf $ runRPC (rpcGetBases usr)
-      case (null callers) of
-        True  -> bailWith (defErr usr)
-        False -> mapM_ putBase callers
     putBase (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Base: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
-printBases _ _ _ _ = usage
 
 printOverrides :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
-printOverrides cf f (Just line) (Just col) = do
-    info <- doGetLookupInfo cf (SourceLocation f line col)
-    case info of
-      GotDef di     -> printOverrides' (diUSR di)
-      GotDecl usr _ -> printOverrides' usr
-      GotUSR usr    -> printOverrides' usr
-      GotNothing    -> bailWith idErr
+printOverrides = queryCmd "override" rpcGetOverrides putOverride
   where 
-    errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
-    idErr = errPrefix ++ "No identifier at this location."
-    defErr usr = errPrefix ++ "No overrides for this identifier. USR = [" ++ (B.toString usr) ++ "]"
-    printOverrides' usr = do
-      callees <- withRPC cf $ runRPC (rpcGetOverrides usr)
-      case (null callees) of
-        True  -> bailWith (defErr usr)
-        False -> mapM_ putOverride callees
     putOverride (DefInfo n _ (SourceLocation idF idLine idCol) k) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Override: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
-printOverrides _ _ _ _ = usage
 
 printRefs :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
-printRefs cf f (Just line) (Just col) = do
-    info <- doGetLookupInfo cf (SourceLocation f line col)
-    case info of
-      GotDef di     -> printRefs' (diUSR di)
-      GotDecl usr _ -> printRefs' usr
-      GotUSR usr    -> printRefs' usr
-      GotNothing    -> bailWith idErr
+printRefs = queryCmd "reference" rpcGetRefs putRef
   where 
-    errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
-    idErr = errPrefix ++ "No identifier at this location."
-    defErr usr = errPrefix ++ "No references for this identifier. USR = [" ++ (B.toString usr) ++ "]"
-    printRefs' usr = do
-      refs <- withRPC cf $ runRPC (rpcGetRefs usr)
-      case (null refs) of
-        True  -> bailWith (defErr usr)
-        False -> mapM_ putRef refs
     putRef (SourceReference (SourceLocation idF idLine idCol) k ctx) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Reference: " ++ (B.toString ctx) ++ " [" ++ (show k) ++ "]"
-printRefs _ _ _ _ = usage
 
-doGetLookupInfo :: Config -> SourceLocation -> IO LookupInfo
-doGetLookupInfo cf sl = do
-    referenced <- withRPC cf $ runRPC (rpcGetReferenced sl)
-    case referenced of
-      Just referenced' -> return (GotDef . sdDef $ referenced')
-      Nothing          -> return GotNothing
+queryCmd :: String -> (SourceLocation -> RPC [a]) -> (a -> IO ())
+         -> Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
+queryCmd item rpcCall f cf file (Just line) (Just col) = do
+    defs <- withRPC cf $ runRPC (rpcCall (SourceLocation file line col))
+    case defs of
+      [] -> bailWith (errMsg item file line col)
+      _  -> mapM_ f defs
+queryCmd _ _ _ _ _ _ _ = usage
+
+errMsg :: String -> SourceFile -> SourceLine -> SourceCol -> String
+errMsg item f line col = errPrefix ++ "No " ++ item ++ " available for an identifier at this "
+                                   ++ "location. Make sure the file compiles with no errors "
+                                   ++ "and the index is up-to-date."
+  where
+    errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
 
 bail :: IO ()
 bail = exitWith (ExitFailure (-1))

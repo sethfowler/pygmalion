@@ -97,20 +97,20 @@ rpcGetSimilarCommandInfo sf = callRPC (RPCGetSimilarCommandInfo sf) =<< Reader.a
 rpcGetDefinition :: SourceLocation -> RPC [DefInfo]
 rpcGetDefinition sl = callRPC (RPCGetDefinition sl) =<< Reader.ask
 
-rpcGetCallers :: USR -> RPC [Invocation]
-rpcGetCallers usr = callRPC (RPCGetCallers usr) =<< Reader.ask
+rpcGetCallers :: SourceLocation -> RPC [Invocation]
+rpcGetCallers sl = callRPC (RPCGetCallers sl) =<< Reader.ask
 
-rpcGetCallees :: USR -> RPC [DefInfo]
-rpcGetCallees usr = callRPC (RPCGetCallees usr) =<< Reader.ask
+rpcGetCallees :: SourceLocation -> RPC [DefInfo]
+rpcGetCallees sl = callRPC (RPCGetCallees sl) =<< Reader.ask
 
-rpcGetBases :: USR -> RPC [DefInfo]
-rpcGetBases usr = callRPC (RPCGetBases usr) =<< Reader.ask
+rpcGetBases :: SourceLocation -> RPC [DefInfo]
+rpcGetBases sl = callRPC (RPCGetBases sl) =<< Reader.ask
 
-rpcGetOverrides :: USR -> RPC [DefInfo]
-rpcGetOverrides usr = callRPC (RPCGetOverrides usr) =<< Reader.ask
+rpcGetOverrides :: SourceLocation -> RPC [DefInfo]
+rpcGetOverrides sl = callRPC (RPCGetOverrides sl) =<< Reader.ask
 
-rpcGetRefs :: USR -> RPC [SourceReference]
-rpcGetRefs usr = callRPC (RPCGetRefs usr) =<< Reader.ask
+rpcGetRefs :: SourceLocation -> RPC [SourceReference]
+rpcGetRefs sl = callRPC (RPCGetRefs sl) =<< Reader.ask
 
 rpcGetReferenced :: SourceLocation -> RPC (Maybe SourceReferenced)
 rpcGetReferenced sl = callRPC (RPCGetReferenced sl) =<< Reader.ask

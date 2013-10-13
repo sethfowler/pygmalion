@@ -490,7 +490,7 @@ getDef h sl = go =<< getReferenced h sl
     getTransitiveOverriders :: DefInfo -> IO [DefInfo]
     getTransitiveOverriders di = do
       -- This is a slow algorithm. Rewrite.
-      os <- (getOverriders h (diUSR di)) :: IO [DefInfo]
+      os <- (getOverriders' h (diUSR di)) :: IO [DefInfo]
       os' <- (mapM getTransitiveOverriders os) :: IO [[DefInfo]]
       return $ os ++ (concat os')
 
@@ -527,8 +527,16 @@ resetOverridesSQL = T.concat
   [ "delete from Overrides where Definition in         "
   , "(select USRHash from Definitions where File = ?)" ]
 
-getOverrided :: DBHandle -> USR -> IO [DefInfo]
-getOverrided h usr = execQuery h getOverridedStmt (Only $ hash usr)
+getOverrided :: DBHandle -> SourceLocation -> IO [DefInfo]
+getOverrided h sl = do
+  maySd <- getReferenced h sl
+  case maySd of
+    Nothing -> return []
+    Just sd -> let usrHash = hash . diUSR . sdDef $ sd in
+               execQuery h getOverridedStmt (Only usrHash)
+
+getOverrided' :: DBHandle -> USR -> IO [DefInfo]
+getOverrided' h usr = execQuery h getOverridedStmt (Only . hash $ usr)
 
 getOverridedSQL :: T.Text
 getOverridedSQL = T.concat
@@ -538,8 +546,16 @@ getOverridedSQL = T.concat
   , "join Files as F on D.File = F.Hash                  "
   , "where O.Definition = ?" ]
 
-getOverriders :: DBHandle -> USR -> IO [DefInfo]
-getOverriders h usr = execQuery h getOverridersStmt (Only $ hash usr)
+getOverriders :: DBHandle -> SourceLocation -> IO [DefInfo]
+getOverriders h sl = do
+  maySd <- getReferenced h sl
+  case maySd of
+    Nothing -> return []
+    Just sd -> let usrHash = hash . diUSR . sdDef $ sd in
+               execQuery h getOverridersStmt (Only usrHash)
+
+getOverriders' :: DBHandle -> USR -> IO [DefInfo]
+getOverriders' h usr = execQuery h getOverridersStmt (Only . hash $ usr)
 
 getOverridersSQL :: T.Text
 getOverridersSQL = T.concat
@@ -636,8 +652,13 @@ narrowReferenced = return . filterNarrowest . filterCall . filterExpansion
 
     rangeSize (SourceRange _ l c el ec) = (el - l, ec - c)
 
-getReferences :: DBHandle -> USR -> IO [SourceReference]
-getReferences h usr = execQuery h getReferencesStmt (Only $ hash usr)
+getReferences :: DBHandle -> SourceLocation -> IO [SourceReference]
+getReferences h sl = do
+  maySd <- getReferenced h sl
+  case maySd of
+    Nothing -> return []
+    Just sd -> let usrHash = hash . diUSR . sdDef $ sd in
+               execQuery h getReferencesStmt (Only usrHash)
 
 getReferencesSQL :: T.Text
 getReferencesSQL = T.concat
@@ -648,12 +669,16 @@ getReferencesSQL = T.concat
   , "where R.Ref = ?                                              "
   , "order by F.Name, R.Line, R.Col, R.EndLine desc, R.EndCol desc" ]
 
-getCallers :: DBHandle -> USR -> IO [Invocation]
-getCallers h usr = go CallExpr DynamicCallExpr MacroExpansion usr
+getCallers :: DBHandle -> SourceLocation -> IO [Invocation]
+getCallers h sl = do
+    maySd <- getReferenced h sl
+    case maySd of
+      Nothing -> return []
+      Just sd -> go CallExpr DynamicCallExpr MacroExpansion (diUSR . sdDef $ sd)
   where
     go !k1 !k2 !k3 !nextUSR = do
       is <- execQuery h getCallersStmt (fromEnum k1, fromEnum k2, fromEnum k3, hash nextUSR)
-      os <- getOverrided h nextUSR
+      os <- getOverrided' h nextUSR
       foldM accumCallers is os
     accumCallers :: [Invocation] -> DefInfo -> IO [Invocation]
     accumCallers is o = do
@@ -670,8 +695,13 @@ getCallersSQL = T.concat
   , "where R.RefKind in (?, ?, ?) and R.Ref = ?                                  "
   , "order by FR.Name, R.Line, R.Col" ]
 
-getCallees :: DBHandle -> USR -> IO [DefInfo]
-getCallees h usr = execQuery h getCalleesStmt (fromEnum CallExpr, fromEnum MacroExpansion, hash usr)
+getCallees :: DBHandle -> SourceLocation -> IO [DefInfo]
+getCallees h sl = do
+  maySd <- getReferenced h sl
+  case maySd of
+    Nothing -> return []
+    Just sd -> let usrHash = hash . diUSR . sdDef $ sd in
+               execQuery h getCalleesStmt (fromEnum CallExpr, fromEnum MacroExpansion, usrHash)
 
 getCalleesSQL :: T.Text
 getCalleesSQL = T.concat
