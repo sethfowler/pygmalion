@@ -33,6 +33,7 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBGetOverrides SourceLocation (Response [DefInfo])
                | DBGetRefs SourceLocation (Response [SourceReference])
                | DBGetReferenced SourceLocation (Response (Maybe SourceReferenced))
+               | DBGetHierarchy SourceLocation (Response String)
                | DBShutdown
                deriving (Show)
 type DBChan = LenChan DBRequest
@@ -75,6 +76,7 @@ route h (DBGetBases !usr !v)            = query "bases" getOverrided h usr v
 route h (DBGetOverrides !usr !v)        = query "overrides" getOverriders h usr v
 route h (DBGetRefs !usr !v)             = query "references" getReferences h usr v
 route h (DBGetReferenced !sl !v)        = query "referenced" getReferenced h sl v
+route h (DBGetHierarchy !sl !v)         = query "hierarchy" getHierarchy h sl v
 route _ (DBShutdown)                    = error "Should not route DBShutdown"
 
 readEitherChan :: Int -> DBChan -> DBChan -> IO (Bool, Int, DBRequest)

@@ -20,6 +20,7 @@ module Pygmalion.Database.IO
 , updateOverride
 , getOverrided
 , getOverriders
+, getHierarchy
 , getCallers
 , getCallees
 , updateReference
@@ -34,16 +35,17 @@ import Control.Exception (bracket)
 import Control.Monad
 import qualified Data.ByteString as B
 import Data.Int
-import Data.List (minimumBy)
+import Data.List (foldl', minimumBy)
 import Data.Ord (comparing)
 import Data.String
 import qualified Data.Text as T
+import Data.Tuple.Curry (uncurryN)
 import qualified Database.SQLite3.Direct as Direct
 import Database.SQLite.Simple
 import System.FilePath.Posix
-
 import Control.Exception.Labeled
 import Pygmalion.Core
+import Pygmalion.Dot
 import Pygmalion.Hash
 import Pygmalion.Log
 
@@ -564,6 +566,40 @@ getOverridersSQL = T.concat
   , "join Definitions as D on O.Definition = D.USRHash   "
   , "join Files as F on D.File = F.Hash                  "
   , "where O.Overrided = ?" ]
+
+getHierarchy :: DBHandle -> SourceLocation -> IO String
+getHierarchy h sl = do
+    maySd <- getReferenced h sl
+    case maySd of
+      Nothing -> return []
+      Just sd -> asDot <$> generateHierarchy (sdDef sd)
+  where
+    generateHierarchy di = do
+      let usr = diUSR di
+      let name = diIdentifier di
+      let node = Node (fromIntegral . hash $ usr) name [("penwidth", "4")]
+
+      -- Find subclasses.
+      ovs <- getOverriders' h usr
+      subclasses <- mapM (expandHierarchy Edge getOverriders' di) ovs
+
+      -- Find superclasses.
+      ods <- getOverrided' h usr
+      superclasses <- mapM (expandHierarchy reverseEdge getOverrided' di) ods
+
+      return $ uncurryN Graph $ foldl' merge ([node], []) (subclasses ++ superclasses)
+      
+    expandHierarchy mkEdge nextLevelF superDI di = do
+      let usr = diUSR di
+      let usrHash = fromIntegral . hash $ usr
+      let node = Node usrHash (diIdentifier di) []
+      let edge = mkEdge (fromIntegral . hash . diUSR $ superDI) usrHash
+      
+      os <- nextLevelF h usr
+      hierarchy <- mapM (expandHierarchy mkEdge nextLevelF di) os
+      return $ foldl' merge ([node], [edge]) hierarchy
+
+    merge (ns, es) (ns', es') = (ns ++ ns', es ++ es')
 
 -- Schema and operations for the References table.
 defineReferencesTable :: Connection -> IO ()

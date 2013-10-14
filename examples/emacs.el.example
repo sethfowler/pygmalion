@@ -18,12 +18,23 @@
             " "
             (number-to-string (column-number-at-pos (point))))))
 
+(defun pygmalion-hierarchy-invoke ()
+  (compilation-start
+    (concat "pygmalion hierarchy "
+            (buffer-file-name)
+            " "
+            (number-to-string (line-number-at-pos))
+            " "
+            (number-to-string (column-number-at-pos (point)))
+            " | dot -Tpdf > /tmp/pygmalion.hierarchy.pdf && open /tmp/pygmalion.hierarchy.pdf")))
+
 (defun pygmalion-go-to-definition () (interactive) (pygmalion-command "definition"))
 (defun pygmalion-callers () (interactive) (pygmalion-command "callers"))
 (defun pygmalion-callees () (interactive) (pygmalion-command "callees"))
 (defun pygmalion-bases () (interactive) (pygmalion-command "bases"))
 (defun pygmalion-overrides () (interactive) (pygmalion-command "overrides"))
 (defun pygmalion-references () (interactive) (pygmalion-command "references"))
+(defun pygmalion-hierarchy () (interactive) (pygmalion-hierarchy-invoke))
 
 (eval-after-load "cc-mode"
   '(progn
@@ -32,7 +43,8 @@
       (define-key c-mode-base-map (kbd "M-p M-C") 'pygmalion-callees)
       (define-key c-mode-base-map (kbd "M-p M-b") 'pygmalion-bases)
       (define-key c-mode-base-map (kbd "M-p M-o") 'pygmalion-overrides)
-      (define-key c-mode-base-map (kbd "M-p M-r") 'pygmalion-references)))
+      (define-key c-mode-base-map (kbd "M-p M-r") 'pygmalion-references)
+      (define-key c-mode-base-map (kbd "M-p M-r") 'pygmalion-hierarchy)))
 
 ;; Pygmalion integration for irony-mode.
 (defun trim-string (string)

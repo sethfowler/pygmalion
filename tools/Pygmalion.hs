@@ -64,6 +64,8 @@ usage = do
   putStrLn   " bases [file] [line] [col]"
   putStrLn   " overrides [file] [line] [col]"
   putStrLn   " references [file] [line] [col]"
+  putStrLn   " hierarchy [file] [line] [col] Prints a graphviz graph showing the inheritance"
+  putStrLn   "                               hierarchy of the identifier at this location."
   bail
 
 parseConfiglessArgs :: [String] -> IO () -> IO ()
@@ -94,6 +96,8 @@ parseArgs c wd ["overrides", f, line, col] = printOverrides c (asSourceFile wd f
                                                               (readMay line) (readMay col)
 parseArgs c wd ["references", f, line, col] = printRefs c (asSourceFile wd f)
                                                           (readMay line) (readMay col)
+parseArgs c wd ["hierarchy", f, line, col] = printHierarchy c (asSourceFile wd f)
+                                                              (readMay line) (readMay col)
 parseArgs _ _ _           = usage
 
 asSourceFile :: FilePath -> FilePath -> SourceFile
@@ -202,13 +206,21 @@ printRefs = queryCmd "reference" rpcGetRefs putRef
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Reference: " ++ (B.toString ctx) ++ " [" ++ (show k) ++ "]"
 
+printHierarchy :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
+printHierarchy cf file (Just line) (Just col) = do
+  dotGraph <- withRPC cf $ runRPC (rpcGetHierarchy (SourceLocation file line col))
+  case dotGraph of
+    [] -> putStrLn "diGraph G {}"  -- Print an empty graph instead of an error.
+    _  -> putStrLn dotGraph
+printHierarchy _ _ _ _ = usage
+
 queryCmd :: String -> (SourceLocation -> RPC [a]) -> (a -> IO ())
          -> Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 queryCmd item rpcCall f cf file (Just line) (Just col) = do
-    defs <- withRPC cf $ runRPC (rpcCall (SourceLocation file line col))
-    case defs of
+    results <- withRPC cf $ runRPC (rpcCall (SourceLocation file line col))
+    case results of
       [] -> bailWith (errMsg item file line col)
-      _  -> mapM_ f defs
+      _  -> mapM_ f results
 queryCmd _ _ _ _ _ _ _ = usage
 
 errMsg :: String -> SourceFile -> SourceLine -> SourceCol -> String

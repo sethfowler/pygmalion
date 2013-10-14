@@ -6,6 +6,7 @@
 " <Leader>pb - List the bases of the identifier under the cursor.
 " <Leader>po - List the overrides of the identifier under the cursor.
 " <Leader>pr - List locations which reference the identifier under the cursor.
+" <Leader>ph - Display the inheritance hierarchy of the identifier under the cursor.
 
 " pygmalion commands
 command! PygGoToDefinition cexpr system('pygmalion definition ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
@@ -14,6 +15,7 @@ command! PygCallees cexpr system('pygmalion callees ' .expand('%:p') . ' ' . lin
 command! PygBases cexpr system('pygmalion bases ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
 command! PygOverrides cexpr system('pygmalion overrides ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
 command! PygReferences cexpr system('pygmalion references ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
+command! PygHierarchy cexpr system('pygmalion hierarchy ' .expand('%:p') . ' ' . line('.') . ' ' . col('.') . ' \| dot -Tpdf > /tmp/pygmalion.hierarchy.pdf && open /tmp/pygmalion.hierarchy.pdf')
 
 augroup pygmalion
   au BufEnter *.c,*.cpp,*.C,*.h,*.hpp,*.H  nnoremap <buffer><silent> <Leader>] :PygGoToDefinition<CR>
@@ -23,4 +25,5 @@ augroup pygmalion
   au BufEnter *.c,*.cpp,*.C,*.h,*.hpp,*.H  nnoremap <buffer><silent> <Leader>pb :PygBases<CR>
   au BufEnter *.c,*.cpp,*.C,*.h,*.hpp,*.H  nnoremap <buffer><silent> <Leader>po :PygOverrides<CR>
   au BufEnter *.c,*.cpp,*.C,*.h,*.hpp,*.H  nnoremap <buffer><silent> <Leader>pr :PygReferences<CR>
+  au BufEnter *.c,*.cpp,*.C,*.h,*.hpp,*.H  nnoremap <buffer><silent> <Leader>ph :PygHierarchy<CR>
 augroup END

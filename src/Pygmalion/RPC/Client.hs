@@ -23,6 +23,7 @@ module Pygmalion.RPC.Client
 , rpcGetOverrides
 , rpcGetRefs
 , rpcGetReferenced
+, rpcGetHierarchy
 , rpcFoundDef
 , rpcFoundOverride
 , rpcFoundRef
@@ -114,6 +115,9 @@ rpcGetRefs sl = callRPC (RPCGetRefs sl) =<< Reader.ask
 
 rpcGetReferenced :: SourceLocation -> RPC (Maybe SourceReferenced)
 rpcGetReferenced sl = callRPC (RPCGetReferenced sl) =<< Reader.ask
+
+rpcGetHierarchy :: SourceLocation -> RPC String
+rpcGetHierarchy sl = callRPC (RPCGetHierarchy sl) =<< Reader.ask
 
 rpcFoundDef :: DefUpdate -> RPC ()
 rpcFoundDef di = callRPC_ (RPCFoundDef di) =<< Reader.ask

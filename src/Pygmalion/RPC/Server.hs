@@ -103,6 +103,7 @@ route (RPCGetBases sl)              = sendQuery $ DBGetBases sl
 route (RPCGetOverrides sl)          = sendQuery $ DBGetOverrides sl
 route (RPCGetRefs sl)               = sendQuery $ DBGetRefs sl
 route (RPCGetReferenced sl)         = sendQuery $ DBGetReferenced sl
+route (RPCGetHierarchy sl)          = sendQuery $ DBGetHierarchy sl
 route (RPCFoundDef df)              = sendUpdate_ $ DBUpdateDef df
 route (RPCFoundOverride ov)         = sendUpdate_ $ DBUpdateOverride ov
 route (RPCFoundRef ru)              = sendUpdate_ $ DBUpdateRef ru
