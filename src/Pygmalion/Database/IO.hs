@@ -20,6 +20,7 @@ module Pygmalion.Database.IO
 , updateOverride
 , getOverrided
 , getOverriders
+, getMembers
 , getHierarchy
 , getCallers
 , getCallees
@@ -81,6 +82,7 @@ data DBHandle = DBHandle
     , resetOverridesStmt        :: Statement
     , getOverridedStmt          :: Statement
     , getOverridersStmt         :: Statement
+    , getMembersStmt            :: Statement
     , getCallersStmt            :: Statement
     , getCalleesStmt            :: Statement
     , updateReferenceStmt       :: Statement
@@ -140,6 +142,7 @@ openDB db = labeledCatch "openDB" $ do
                   <*> openStatement c (mkQueryT resetOverridesSQL)
                   <*> openStatement c (mkQueryT getOverridedSQL)
                   <*> openStatement c (mkQueryT getOverridersSQL)
+                  <*> openStatement c (mkQueryT getMembersSQL)
                   <*> openStatement c (mkQueryT getCallersSQL)
                   <*> openStatement c (mkQueryT getCalleesSQL)
                   <*> openStatement c (mkQueryT updateReferenceSQL)
@@ -170,6 +173,7 @@ closeDB h = do
   closeStatement (resetOverridesStmt h)
   closeStatement (getOverridedStmt h)
   closeStatement (getOverridersStmt h)
+  closeStatement (getMembersStmt h)
   closeStatement (getCallersStmt h)
   closeStatement (getCalleesStmt h)
   closeStatement (updateReferenceStmt h)
@@ -246,7 +250,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int64
 dbMajorVersion = 0
-dbMinorVersion = 17
+dbMinorVersion = 18
 
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c (mkQueryT sql)
@@ -455,19 +459,20 @@ defineDefinitionsTable c = execute_ c (mkQueryT sql)
                        , "File integer not null,                       "
                        , "Line integer not null,                       "
                        , "Col integer not null,                        "
-                       , "Kind integer not null)" ]
+                       , "Kind integer not null,                       "
+                       , "Context integer not null)" ]
 
 updateDef :: DBHandle -> DefUpdate -> IO ()
-updateDef h (DefUpdate n u sfHash l c k) = do
+updateDef h (DefUpdate n u sfHash l c k ctx) = do
     let usrHash = hash u
     let kind = fromEnum k
-    execStatement h updateDefStmt (usrHash, n, u, sfHash, l, c, kind)
+    execStatement h updateDefStmt (usrHash, n, u, sfHash, l, c, kind, ctx)
 
 updateDefSQL :: T.Text
 updateDefSQL = T.concat
-  [ "replace into Definitions                    "
-  , "(USRHash, Name, USR, File, Line, Col, Kind) "
-  , "values (?, ?, ?, ?, ?, ?, ?)" ]
+  [ "replace into Definitions                             "
+  , "(USRHash, Name, USR, File, Line, Col, Kind, Context) "
+  , "values (?, ?, ?, ?, ?, ?, ?, ?)" ]
 
 resetDefs :: DBHandle -> SourceFile -> IO ()
 resetDefs h sf = do
@@ -498,9 +503,11 @@ getDef h sl = go =<< getReferenced h sl
 
 getDefSQL :: T.Text
 getDefSQL = T.concat
-  [ "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind "
-  , "from Definitions as D                               "
-  , "join Files as F on D.File = F.Hash                  "
+  [ "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind, "
+  , "  coalesce(C.USR, x'')                               "
+  , "from Definitions as D                                "
+  , "join Files as F on D.File = F.Hash                   "
+  , "left join Definitions as C on D.Context = C.USRHash  "
   , "where D.USRHash = ? limit 1" ]
   
 -- Schema and operations for the Overrides table.
@@ -542,10 +549,12 @@ getOverrided' h usr = execQuery h getOverridedStmt (Only . hash $ usr)
 
 getOverridedSQL :: T.Text
 getOverridedSQL = T.concat
-  [ "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind "
-  , "from Overrides as O                                 "
-  , "join Definitions as D on O.Overrided = D.USRHash    "
-  , "join Files as F on D.File = F.Hash                  "
+  [ "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind, "
+  , "  coalesce(C.USR, x'')                               "
+  , "from Overrides as O                                  "
+  , "join Definitions as D on O.Overrided = D.USRHash     "
+  , "join Files as F on D.File = F.Hash                   "
+  , "left join Definitions as C on D.Context = C.USRHash  "
   , "where O.Definition = ?" ]
 
 getOverriders :: DBHandle -> SourceLocation -> IO [DefInfo]
@@ -561,10 +570,12 @@ getOverriders' h usr = execQuery h getOverridersStmt (Only . hash $ usr)
 
 getOverridersSQL :: T.Text
 getOverridersSQL = T.concat
-  [ "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind "
-  , "from Overrides as O                                 "
-  , "join Definitions as D on O.Definition = D.USRHash   "
-  , "join Files as F on D.File = F.Hash                  "
+  [ "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind, "
+  , "  coalesce(C.USR, x'')                               "
+  , "from Overrides as O                                  "
+  , "join Definitions as D on O.Definition = D.USRHash    "
+  , "join Files as F on D.File = F.Hash                   "
+  , "left join Definitions as C on D.Context = C.USRHash  "
   , "where O.Overrided = ?" ]
 
 getHierarchy :: DBHandle -> SourceLocation -> IO String
@@ -600,6 +611,22 @@ getHierarchy h sl = do
       return $ foldl' merge ([node], [edge]) hierarchy
 
     merge (ns, es) (ns', es') = (ns ++ ns', es ++ es')
+
+getMembers :: DBHandle -> SourceLocation -> IO [DefInfo]
+getMembers h sl = do
+  maySd <- getReferenced h sl
+  case maySd of
+    Nothing -> return []
+    Just sd -> let usrHash = hash . diUSR . sdDef $ sd in
+               execQuery h getMembersStmt (Only usrHash)
+
+getMembersSQL :: T.Text
+getMembersSQL = T.concat
+  [ "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind, C.USR "
+  , "from Definitions as D                                      "
+  , "join Files as F on D.File = F.Hash                         "
+  , "join Definitions as C on D.Context = C.USRHash             "
+  , "where D.Context = ?" ]
 
 -- Schema and operations for the References table.
 defineReferencesTable :: Connection -> IO ()
@@ -658,16 +685,17 @@ getReferenced h (SourceLocation sf l c) = do
 -- Note below that the columns of the reference are [Col, EndCol).
 getReferencedSQL :: T.Text
 getReferencedSQL = T.concat
-  [ "select D.Name, D.USR, DF.Name, D.Line, D.Col, D.Kind,     "
-  , "  RF.Name, R.Line, R.Col, R.EndLine, R.EndCol, R.RefKind, "
-  , "  R.RefVia                                                "
-  , "from Refs as R                                            "
-  , "join Definitions as D on R.Ref = D.USRHash                "
-  , "join Files as DF on D.File = DF.Hash                      "
-  , "join Files as RF on R.File = RF.Hash                      "
-  , "where R.File = ? and                                      "
-  , "  ((? between R.Line and R.EndLine) and                   "
-  , "   (? > R.Line or ? >= R.Col) and                         "
+  [ "select D.Name, D.USR, DF.Name, D.Line, D.Col, D.Kind,        "
+  , "  coalesce(C.USR, x''), RF.Name, R.Line, R.Col, R.EndLine,   "
+  , "  R.EndCol, R.RefKind, R.RefVia                              "
+  , "from Refs as R                                               "
+  , "join Definitions as D on R.Ref = D.USRHash                   "
+  , "join Files as DF on D.File = DF.Hash                         "
+  , "join Files as RF on R.File = RF.Hash                         "
+  , "left join Definitions as C on D.Context = C.USRHash          "
+  , "where R.File = ? and                                         "
+  , "  ((? between R.Line and R.EndLine) and                      "
+  , "   (? > R.Line or ? >= R.Col) and                            "
   , "   (? < R.EndLine or ? < R.EndCol))" ]
 
 
@@ -723,12 +751,14 @@ getCallers h sl = do
 
 getCallersSQL :: T.Text
 getCallersSQL = T.concat
-  [ "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind, FR.Name, R.Line, R.Col "
-  , "from Refs as R                                                              "
-  , "join Files as FR on R.File = FR.Hash                                        "
-  , "join Definitions as D on R.RefContext = D.USRHash                           "
-  , "join Files as F on D.File = F.Hash                                          "
-  , "where R.RefKind in (?, ?, ?) and R.Ref = ?                                  "
+  [ "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind, "
+  , "       coalesce(C.USR, x''), FR.Name, R.Line, R.Col  "
+  , "from Refs as R                                       "
+  , "join Files as FR on R.File = FR.Hash                 "
+  , "join Definitions as D on R.RefContext = D.USRHash    "
+  , "join Files as F on D.File = F.Hash                   "
+  , "left join Definitions as C on D.Context = C.USRHash  "
+  , "where R.RefKind in (?, ?, ?) and R.Ref = ?           "
   , "order by FR.Name, R.Line, R.Col" ]
 
 getCallees :: DBHandle -> SourceLocation -> IO [DefInfo]
@@ -741,11 +771,13 @@ getCallees h sl = do
 
 getCalleesSQL :: T.Text
 getCalleesSQL = T.concat
-  [ "select distinct D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind "
-  , "from Refs as R                                               "
-  , "join Definitions as D on R.Ref = D.USRHash                   "
-  , "join Files as F on D.File = F.Hash                           "
-  , "where R.RefKind in (?, ?) and R.RefContext = ?               "
+  [ "select distinct D.Name, D.USR, F.Name, D.Line, D.Col, "
+  , "  D.Kind, coalesce(C.USR, x'')                        "
+  , "from Refs as R                                        "
+  , "join Definitions as D on R.Ref = D.USRHash            "
+  , "join Files as F on D.File = F.Hash                    "
+  , "left join Definitions as C on D.Context = C.USRHash   "
+  , "where R.RefKind in (?, ?) and R.RefContext = ?        "
   , "order by F.Name, D.Line, D.Col" ]
 
 -- Checks that the database has the correct schema and sets it up if needed.

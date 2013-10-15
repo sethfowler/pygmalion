@@ -31,6 +31,7 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBGetCallees SourceLocation (Response [DefInfo])
                | DBGetBases SourceLocation (Response [DefInfo])
                | DBGetOverrides SourceLocation (Response [DefInfo])
+               | DBGetMembers SourceLocation (Response [DefInfo])
                | DBGetRefs SourceLocation (Response [SourceReference])
                | DBGetReferenced SourceLocation (Response (Maybe SourceReferenced))
                | DBGetHierarchy SourceLocation (Response String)
@@ -74,6 +75,7 @@ route h (DBGetCallers !sl !v)           = query "callers" getCallers h sl v
 route h (DBGetCallees !usr !v)          = query "callees" getCallees h usr v
 route h (DBGetBases !usr !v)            = query "bases" getOverrided h usr v
 route h (DBGetOverrides !usr !v)        = query "overrides" getOverriders h usr v
+route h (DBGetMembers !usr !v)          = query "members" getMembers h usr v
 route h (DBGetRefs !usr !v)             = query "references" getReferences h usr v
 route h (DBGetReferenced !sl !v)        = query "referenced" getReferenced h sl v
 route h (DBGetHierarchy !sl !v)         = query "hierarchy" getHierarchy h sl v

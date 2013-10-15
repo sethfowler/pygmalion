@@ -33,6 +33,7 @@
 (defun pygmalion-callees () (interactive) (pygmalion-command "callees"))
 (defun pygmalion-bases () (interactive) (pygmalion-command "bases"))
 (defun pygmalion-overrides () (interactive) (pygmalion-command "overrides"))
+(defun pygmalion-members () (interactive) (pygmalion-command "members"))
 (defun pygmalion-references () (interactive) (pygmalion-command "references"))
 (defun pygmalion-hierarchy () (interactive) (pygmalion-hierarchy-invoke))
 
@@ -43,8 +44,9 @@
       (define-key c-mode-base-map (kbd "M-p M-C") 'pygmalion-callees)
       (define-key c-mode-base-map (kbd "M-p M-b") 'pygmalion-bases)
       (define-key c-mode-base-map (kbd "M-p M-o") 'pygmalion-overrides)
+      (define-key c-mode-base-map (kbd "M-p M-m") 'pygmalion-members)
       (define-key c-mode-base-map (kbd "M-p M-r") 'pygmalion-references)
-      (define-key c-mode-base-map (kbd "M-p M-r") 'pygmalion-hierarchy)))
+      (define-key c-mode-base-map (kbd "M-p M-h") 'pygmalion-hierarchy)))
 
 ;; Pygmalion integration for irony-mode.
 (defun trim-string (string)

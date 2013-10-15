@@ -19,6 +19,7 @@ data RPCRequest = RPCIndexCommand CommandInfo
                 | RPCGetCallees SourceLocation
                 | RPCGetBases SourceLocation
                 | RPCGetOverrides SourceLocation
+                | RPCGetMembers SourceLocation
                 | RPCGetRefs SourceLocation
                 | RPCGetReferenced SourceLocation
                 | RPCGetHierarchy SourceLocation

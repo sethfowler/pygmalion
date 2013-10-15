@@ -82,6 +82,7 @@ addFileDef conn ci = do
                              1
                              1
                              SourceFile
+                             0
   liftIO $ runRPC (rpcFoundDef def) conn
   
 defsAnalysis :: RPCConnection -> CommandInfo -> TranslationUnit -> ClangApp s ()
@@ -206,12 +207,18 @@ defsVisitor conn ci tu cursor _ = do
         usr <- XRef.getUSR cursor >>= CS.unpackByteString
         name <- fqn cursor
         let kind = toSourceKind cKind
+
+        -- Determine the context.
+        ctxC <- getContext' tu cursor
+        ctxUSR <- XRef.getUSR ctxC >>= CS.unpackByteString
+
         def <- return $! DefUpdate name
                                    usr
                                    (hash . slFile $ loc)
                                    (slLine loc)
                                    (slCol loc)
                                    kind
+                                   (hash ctxUSR)
         liftIO $ runRPC (rpcFoundDef def) conn
 
     -- Recurse (most of the time).
@@ -298,6 +305,15 @@ getContext tu cursor = do
                            C.Cursor_MacroExpansion -> return c  -- Will loop infinitely otherwise.
                            _                       -> getContext tu srcCursor
     go c _ _ = C.getSemanticParent c >>= getContext tu
+
+getContext' :: TranslationUnit -> C.Cursor -> ClangApp s C.Cursor
+getContext' tu cursor = do
+  isNull <- C.isNullCursor cursor
+  cKind <- C.getKind cursor
+  case (isNull, cKind) of
+    (True, _)                         -> return cursor
+    (False, C.Cursor_TranslationUnit) -> return cursor
+    (False, _)                        -> C.getSemanticParent cursor >>= getContext tu
 
 cursorName :: C.Cursor -> ClangApp s Identifier
 cursorName c = C.getDisplayName c >>= CS.unpackByteString >>= anonymize

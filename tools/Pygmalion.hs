@@ -63,6 +63,7 @@ usage = do
   putStrLn   " callees [file] [line] [col]"
   putStrLn   " bases [file] [line] [col]"
   putStrLn   " overrides [file] [line] [col]"
+  putStrLn   " members [file] [line] [col]"
   putStrLn   " references [file] [line] [col]"
   putStrLn   " hierarchy [file] [line] [col] Prints a graphviz graph showing the inheritance"
   putStrLn   "                               hierarchy of the identifier at this location."
@@ -94,6 +95,8 @@ parseArgs c wd ["bases", f, line, col] = printBases c (asSourceFile wd f)
                                                       (readMay line) (readMay col)
 parseArgs c wd ["overrides", f, line, col] = printOverrides c (asSourceFile wd f)
                                                               (readMay line) (readMay col)
+parseArgs c wd ["members", f, line, col] = printMembers c (asSourceFile wd f)
+                                                          (readMay line) (readMay col)
 parseArgs c wd ["references", f, line, col] = printRefs c (asSourceFile wd f)
                                                           (readMay line) (readMay col)
 parseArgs c wd ["hierarchy", f, line, col] = printHierarchy c (asSourceFile wd f)
@@ -167,37 +170,44 @@ getCommandInfoOr a f cf = do
 printDef :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printDef = queryCmd "definition" rpcGetDefinition putDef
   where 
-    putDef (DefInfo n _ (SourceLocation idF idLine idCol) k) =
+    putDef (DefInfo n _ (SourceLocation idF idLine idCol) k _) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Definition: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
 
 printCallers :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printCallers = queryCmd "caller" rpcGetCallers putCaller
   where 
-    putCaller (Invocation (DefInfo n _ _ _) (SourceLocation idF idLine idCol)) =
+    putCaller (Invocation (DefInfo n _ _ _ _) (SourceLocation idF idLine idCol)) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Caller: " ++ (B.toString n)
 
 printCallees :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printCallees = queryCmd "callee" rpcGetCallees putCallee
   where 
-    putCallee (DefInfo n _ (SourceLocation idF idLine idCol) k) =
+    putCallee (DefInfo n _ (SourceLocation idF idLine idCol) k _) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Callee: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
 
 printBases :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printBases = queryCmd "base" rpcGetBases putBase
   where 
-    putBase (DefInfo n _ (SourceLocation idF idLine idCol) k) =
+    putBase (DefInfo n _ (SourceLocation idF idLine idCol) k _) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Base: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
 
 printOverrides :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printOverrides = queryCmd "override" rpcGetOverrides putOverride
   where 
-    putOverride (DefInfo n _ (SourceLocation idF idLine idCol) k) =
+    putOverride (DefInfo n _ (SourceLocation idF idLine idCol) k _) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Override: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
+
+printMembers :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
+printMembers = queryCmd "member" rpcGetMembers putMember
+  where 
+    putMember (DefInfo n _ (SourceLocation idF idLine idCol) k _) =
+      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
+                 ": Member: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
 
 printRefs :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printRefs = queryCmd "reference" rpcGetRefs putRef

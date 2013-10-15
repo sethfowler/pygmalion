@@ -101,6 +101,7 @@ route (RPCGetCallers sl)            = sendQuery $ DBGetCallers sl
 route (RPCGetCallees sl)            = sendQuery $ DBGetCallees sl
 route (RPCGetBases sl)              = sendQuery $ DBGetBases sl
 route (RPCGetOverrides sl)          = sendQuery $ DBGetOverrides sl
+route (RPCGetMembers sl)            = sendQuery $ DBGetMembers sl
 route (RPCGetRefs sl)               = sendQuery $ DBGetRefs sl
 route (RPCGetReferenced sl)         = sendQuery $ DBGetReferenced sl
 route (RPCGetHierarchy sl)          = sendQuery $ DBGetHierarchy sl

@@ -120,12 +120,13 @@ data DefInfo = DefInfo
     , diUSR            :: !USR
     , diSourceLocation :: !SourceLocation
     , diDefKind        :: !SourceKind
+    , diContext        :: !USR
     } deriving (Eq, Show, Generic)
 
 instance Serialize DefInfo
 
 instance FromRow DefInfo where
-  fromRow = DefInfo <$> field <*> field <*> fromRow <*> fromRow
+  fromRow = DefInfo <$> field <*> field <*> fromRow <*> fromRow <*> field
 
 -- Cheaper variant of DefInfo used for database updates.
 data DefUpdate = DefUpdate
@@ -133,8 +134,9 @@ data DefUpdate = DefUpdate
     , diuUSR        :: !USR
     , diuFileHash   :: !SourceFileHash
     , diuLine       :: !SourceLine
-    , dieCol        :: !SourceCol
+    , diuCol        :: !SourceCol
     , diuDefKind    :: !SourceKind
+    , diuContext    :: !USRHash
     } deriving (Eq, Show, Generic)
 
 instance Serialize DefUpdate
