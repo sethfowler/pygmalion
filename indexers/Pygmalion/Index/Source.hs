@@ -425,15 +425,14 @@ baseRefKind = T.getKind <=< C.getType <=< C.getReferenced
 withTranslationUnit :: CommandInfo -> (forall s. TranslationUnit -> ClangApp s a) -> IO a
 withTranslationUnit ci f = 
     withCreateIndex False False $ \index -> do
+      clangIncludePath <- liftIO $ libclangIncludePath
+      let clangIncludeArg = "-I" ++ clangIncludePath
+      let args = (clangIncludeArg : map BU.toString (ciArgs ci))
       setGlobalOptions index GlobalOpt_ThreadBackgroundPriorityForAll
-      withParse index (Just . unSourceFile $ sf) clangArgs [] [TranslationUnit_DetailedPreprocessingRecord] f bail
+      withParse index (Just . unSourceFile $ sf) args [] [TranslationUnit_DetailedPreprocessingRecord] f bail
   where
     sf = ciSourceFile ci
     bail = throw . ClangException $ "Libclang couldn't parse " ++ unSourceFile sf
-    clangArgs = map BU.toString (ciArgs ci)
-    -- FIXME: Is something along these lines useful? Internet claims so but this
-    -- may be outdated information, as things seems to work OK without it.
-    --clangArgs = map BU.toString ("-I/usr/local/Cellar/llvm/3.2/lib/clang/3.2/include" : args)
 
 data ClangException = ClangException String
   deriving (Show, Typeable)
