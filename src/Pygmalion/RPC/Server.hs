@@ -105,6 +105,9 @@ route (RPCGetMembers sl)            = sendQuery $ DBGetMembers sl
 route (RPCGetRefs sl)               = sendQuery $ DBGetRefs sl
 route (RPCGetReferenced sl)         = sendQuery $ DBGetReferenced sl
 route (RPCGetHierarchy sl)          = sendQuery $ DBGetHierarchy sl
+route (RPCGetInclusions sf)         = sendQuery $ DBGetInclusions sf
+route (RPCGetIncluders sf)          = sendQuery $ DBGetIncluders sf
+route (RPCGetInclusionHierarchy sf) = sendQuery $ DBGetInclusionHierarchy sf
 route (RPCFoundDef df)              = sendUpdate_ $ DBUpdateDef df
 route (RPCFoundOverride ov)         = sendUpdate_ $ DBUpdateOverride ov
 route (RPCFoundRef ru)              = sendUpdate_ $ DBUpdateRef ru
@@ -138,7 +141,7 @@ sendInclusionUpdate_ ic = do
   ctx <- ask
   writeLenChan (rsDBChan ctx) (DBUpdateInclusion ic)
   existing <- callLenChan (rsDBQueryChan ctx)
-                          (DBInsertFileAndCheck . icHeaderFile $ ic)
+                          (DBInsertFileAndCheck . ciSourceFile . icCommandInfo $ ic)
   when (not existing) $
     writeLenChan (rsIndexChan ctx) (Index . FromBuild . icCommandInfo $ ic)
   return Nothing

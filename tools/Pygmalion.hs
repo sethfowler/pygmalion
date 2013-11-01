@@ -5,7 +5,7 @@ import Control.Exception (catch, SomeException)
 import Control.Monad
 import Control.Monad.Trans (liftIO)
 import qualified Data.ByteString.UTF8 as B
-import Data.List (intercalate)
+import Data.List (intercalate, isPrefixOf, sortBy)
 import Data.Maybe
 import Safe (readMay)
 import System.Directory
@@ -35,29 +35,33 @@ usage :: IO ()
 usage = do
   putStrLn $ "Usage: " ++ queryExecutable ++ " [command]"
   putStrLn   "where [command] is one of the following:"
-  putStrLn   " help                      Prints this message."
-  putStrLn   " start                     Starts the pygmalion daemon."
-  putStrLn   " stop                      Terminates the pygmalion daemon."
-  putStrLn   " init                      Initializes a pygmalion index rooted at"
-  putStrLn   "                           the current directory."
-  putStrLn   " index ([file]|[command])  Manually request indexing. If a single"
-  putStrLn   "                           argument is provided, it's interpreted"
-  putStrLn   "                           as a file to index using the default"
-  putStrLn   "                           compiler flags. Multiple arguments are"
-  putStrLn   "                           interpreted as a compiler invocation"
-  putStrLn   "                           (e.g. 'clang -c file.c') and the compiler"
-  putStrLn   "                           flags to use will be extracted appropriately."
-  putStrLn   " make [command]            Both requests indexing and executes the"
-  putStrLn   "                           provided command."
-  putStrLn   " wait                      Blocks until all previous requests have been"
-  putStrLn   "                           handled by the pygmalion daemon."
-  putStrLn   " generate-compile-commands Prints a clang compilation database."
-  putStrLn   " compile-flags [file]      Prints the compilation flags for the"
-  putStrLn   "                           given file, or nothing on failure. If"
-  putStrLn   "                           the file isn't in the database, a guess"
-  putStrLn   "                           will be printed if possible."
-  putStrLn   " working-directory [file]  Prints the working directory at the time"
-  putStrLn   "                           the file was compiled. Guesses if needed."
+  putStrLn   " help                       Prints this message."
+  putStrLn   " start                      Starts the pygmalion daemon."
+  putStrLn   " stop                       Terminates the pygmalion daemon."
+  putStrLn   " init                       Initializes a pygmalion index rooted at"
+  putStrLn   "                            the current directory."
+  putStrLn   " index ([file]|[command])   Manually request indexing. If a single"
+  putStrLn   "                            argument is provided, it's interpreted"
+  putStrLn   "                            as a file to index using the default"
+  putStrLn   "                            compiler flags. Multiple arguments are"
+  putStrLn   "                            interpreted as a compiler invocation"
+  putStrLn   "                            (e.g. 'clang -c file.c') and the compiler"
+  putStrLn   "                            flags to use will be extracted appropriately."
+  putStrLn   " make [command]             Both requests indexing and executes the"
+  putStrLn   "                            provided command."
+  putStrLn   " wait                       Blocks until all previous requests have been"
+  putStrLn   "                            handled by the pygmalion daemon."
+  putStrLn   " generate-compile-commands  Prints a clang compilation database."
+  putStrLn   " compile-flags [file]       Prints the compilation flags for the"
+  putStrLn   "                            given file, or nothing on failure. If"
+  putStrLn   "                            the file isn't in the database, a guess"
+  putStrLn   "                            will be printed if possible."
+  putStrLn   " working-directory [file]   Prints the working directory at the time"
+  putStrLn   "                            the file was compiled. Guesses if needed."
+  putStrLn   " inclusions [file]          Lists the files included by the given file."
+  putStrLn   " includers [file]           Lists the files which include the given file."
+  putStrLn   " inclusion-hierarchy [file] Prints a graphviz graph showing the inclusion"
+  putStrLn   "                            hierarchy of the given file."
   putStrLn   " definition [file] [line] [col]"
   putStrLn   " callers [file] [line] [col]"
   putStrLn   " callees [file] [line] [col]"
@@ -85,6 +89,9 @@ parseArgs c _  ("wait" : []) = waitForServer c
 parseArgs c _  ["generate-compile-commands"] = printCDB c
 parseArgs c wd ["compile-flags", f] = printFlags c (asSourceFile wd f)
 parseArgs c wd ["working-directory", f] = printDir c (asSourceFile wd f)
+parseArgs c wd ["inclusions", f] = printInclusions c (asSourceFile wd f)
+parseArgs c wd ["includers", f] = printIncluders c (asSourceFile wd f)
+parseArgs c wd ["inclusion-hierarchy", f] = printInclusionHierarchy c (asSourceFile wd f)
 parseArgs c wd ["definition", f, line, col] = printDef c (asSourceFile wd f)
                                                          (readMay line) (readMay col)
 parseArgs c wd ["callers", f, line, col] = printCallers c (asSourceFile wd f)
@@ -166,6 +173,38 @@ getCommandInfoOr a f cf = do
   cmd <- withRPC cf $ runRPC (rpcGetSimilarCommandInfo f)
   unless (isJust cmd) a
   return . fromJust $ cmd
+
+printInclusions :: Config -> SourceFile -> IO ()
+printInclusions cf file = do
+    is <- withRPC cf $ runRPC (rpcGetInclusions file)
+    mapM_ putInclusion (sortBy (locationOrder cf) is)
+  where
+    putInclusion sf = putStrLn $ (unSourceFile sf) ++ ":1:1: Inclusion of "
+                                                   ++ (unSourceFile file)
+
+printIncluders :: Config -> SourceFile -> IO ()
+printIncluders cf file = do
+    is <- withRPC cf $ runRPC (rpcGetIncluders file)
+    mapM_ putIncluder (sortBy (locationOrder cf) is)
+  where 
+    putIncluder sf = putStrLn $ (unSourceFile sf) ++ ":1:1: Includer of "
+                                                  ++ (unSourceFile file)
+
+locationOrder :: Config -> SourceFile -> SourceFile -> Ordering
+locationOrder cf a b
+    | inProject a && inProject b = compare a b
+    | inProject a                = LT
+    | inProject b                = GT
+    | otherwise                  = compare a b
+  where
+    inProject f = (projectDir cf) `isPrefixOf` (unSourceFile f)
+
+printInclusionHierarchy :: Config -> SourceFile -> IO ()
+printInclusionHierarchy cf file = do
+  dotGraph <- withRPC cf $ runRPC (rpcGetInclusionHierarchy file)
+  case dotGraph of
+    [] -> putStrLn "diGraph G {}"  -- Print an empty graph instead of an error.
+    _  -> putStrLn dotGraph
 
 printDef :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printDef = queryCmd "definition" rpcGetDefinition putDef

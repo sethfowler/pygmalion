@@ -26,7 +26,10 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBGetCommandInfo SourceFile (Response (Maybe CommandInfo))
                | DBGetSimilarCommandInfo SourceFile (Response (Maybe CommandInfo))
                | DBGetDefinition SourceLocation (Response [DefInfo])
-               | DBGetIncluders SourceFile (Response [CommandInfo])
+               | DBGetInclusions SourceFile (Response [SourceFile])
+               | DBGetIncluders SourceFile (Response [SourceFile])
+               | DBGetIncluderInfo SourceFile (Response [CommandInfo])
+               | DBGetInclusionHierarchy SourceFile (Response String)
                | DBGetCallers SourceLocation (Response [Invocation])
                | DBGetCallees SourceLocation (Response [DefInfo])
                | DBGetBases SourceLocation (Response [DefInfo])
@@ -60,26 +63,30 @@ runDatabaseManager chan queryChan = do
                 _          -> route h req >> go (n+1) s h
                 
 route :: DBHandle -> DBRequest -> IO ()
-route h (DBUpdateCommandInfo !ci)       = update "command info" updateSourceFile h ci
-route h (DBUpdateDef !di)               = update "definition" updateDef h di
-route h (DBUpdateOverride !ov)          = update "override" updateOverride h ov
-route h (DBUpdateRef !rf)               = update "reference" updateReference h rf
-route h (DBInsertFileAndCheck !sf !v)   = query "file and inserting" insertFileAndCheck h sf v
-route h (DBUpdateInclusion !ic)         = update "inclusion" updateInclusion h ic
-route h (DBResetMetadata !sf)           = update "resetted metadata" resetMetadata h sf
-route h (DBGetCommandInfo !f !v)        = query "command info" getCommandInfo h f v
-route h (DBGetSimilarCommandInfo !f !v) = getSimilarCommandInfoQuery h f v
-route h (DBGetDefinition !sl !v)        = query "definition" getDef h sl v
-route h (DBGetIncluders !sf !v)         = query "includers" getIncluders h sf v
-route h (DBGetCallers !sl !v)           = query "callers" getCallers h sl v
-route h (DBGetCallees !usr !v)          = query "callees" getCallees h usr v
-route h (DBGetBases !usr !v)            = query "bases" getOverrided h usr v
-route h (DBGetOverrides !usr !v)        = query "overrides" getOverriders h usr v
-route h (DBGetMembers !usr !v)          = query "members" getMembers h usr v
-route h (DBGetRefs !usr !v)             = query "references" getReferences h usr v
-route h (DBGetReferenced !sl !v)        = query "referenced" getReferenced h sl v
-route h (DBGetHierarchy !sl !v)         = query "hierarchy" getHierarchy h sl v
-route _ (DBShutdown)                    = error "Should not route DBShutdown"
+route h (DBUpdateCommandInfo !ci)        = update "command info" updateSourceFile h ci
+route h (DBUpdateDef !di)                = update "definition" updateDef h di
+route h (DBUpdateOverride !ov)           = update "override" updateOverride h ov
+route h (DBUpdateRef !rf)                = update "reference" updateReference h rf
+route h (DBInsertFileAndCheck !sf !v)    = query "file and inserting" insertFileAndCheck h sf v
+route h (DBUpdateInclusion !ic)          = update "inclusion" updateInclusion h ic
+route h (DBResetMetadata !sf)            = update "resetted metadata" resetMetadata h sf
+route h (DBGetCommandInfo !f !v)         = query "command info" getCommandInfo h f v
+route h (DBGetSimilarCommandInfo !f !v)  = getSimilarCommandInfoQuery h f v
+route h (DBGetDefinition !sl !v)         = query "definition" getDef h sl v
+route h (DBGetInclusions !sf !v)         = query "inclusions" getInclusions h sf v
+route h (DBGetIncluders !sf !v)          = query "includers" getIncluders h sf v
+route h (DBGetIncluderInfo !sf !v)       = query "includer info" getIncluderInfo h sf v
+route h (DBGetInclusionHierarchy !sf !v) = query "inclusion hierarchy"
+                                                 getInclusionHierarchy h sf v
+route h (DBGetCallers !sl !v)            = query "callers" getCallers h sl v
+route h (DBGetCallees !usr !v)           = query "callees" getCallees h usr v
+route h (DBGetBases !usr !v)             = query "bases" getOverrided h usr v
+route h (DBGetOverrides !usr !v)         = query "overrides" getOverriders h usr v
+route h (DBGetMembers !usr !v)           = query "members" getMembers h usr v
+route h (DBGetRefs !usr !v)              = query "references" getReferences h usr v
+route h (DBGetReferenced !sl !v)         = query "referenced" getReferenced h sl v
+route h (DBGetHierarchy !sl !v)          = query "hierarchy" getHierarchy h sl v
+route _ (DBShutdown)                     = error "Should not route DBShutdown"
 
 readEitherChan :: Int -> DBChan -> DBChan -> IO (Bool, Int, DBRequest)
 readEitherChan n queryChan chan

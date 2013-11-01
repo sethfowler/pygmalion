@@ -1,15 +1,17 @@
 " Pygmalion commands.
-" <Leader>]  - Go to the definition of the identifier under the cursor.
-" <Leader>[  - Go back.
-" <Leader>pc - List the callers of the function or method under the cursor.
-" <Leader>pC - List the callees of the function or method under the cursor.
-" <Leader>pb - List the bases of the identifier under the cursor.
-" <Leader>po - List the overrides of the identifier under the cursor.
-" <Leader>pm - Display the members of the class under the cursor.
-" <Leader>pr - List locations which reference the identifier under the cursor.
-" <Leader>ph - Display the inheritance hierarchy of the identifier under the cursor.
+" <Leader>]   - Go to the definition of the identifier under the cursor.
+" <Leader>[   - Go back.
+" <Leader>pc  - List the callers of the function or method under the cursor.
+" <Leader>pC  - List the callees of the function or method under the cursor.
+" <Leader>pb  - List the bases of the identifier under the cursor.
+" <Leader>po  - List the overrides of the identifier under the cursor.
+" <Leader>pm  - Display the members of the class under the cursor.
+" <Leader>pr  - List locations which reference the identifier under the cursor.
+" <Leader>ph  - Display the inheritance hierarchy of the identifier under the cursor.
+" <Leader>pi  - Display the files included by this file.
+" <Leader>pI  - Display the files which include this file.
+" <Leader>pih - Display the inclusion hierarchy of this file.
 
-" pygmalion commands
 command! PygGoToDefinition cexpr system('pygmalion definition ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
 command! PygCallers cexpr system('pygmalion callers ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
 command! PygCallees cexpr system('pygmalion callees ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
@@ -18,6 +20,9 @@ command! PygOverrides cexpr system('pygmalion overrides ' .expand('%:p') . ' ' .
 command! PygMembers cexpr system('pygmalion members ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
 command! PygReferences cexpr system('pygmalion references ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
 command! PygHierarchy cexpr system('pygmalion hierarchy ' .expand('%:p') . ' ' . line('.') . ' ' . col('.') . ' \| dot -Tpdf > /tmp/pygmalion.hierarchy.pdf && open /tmp/pygmalion.hierarchy.pdf')
+command! PygInclusions cexpr system('pygmalion inclusions ' .expand('%:p'))
+command! PygIncluders cexpr system('pygmalion includers ' .expand('%:p'))
+command! PygInclusionHierarchy cexpr system('pygmalion inclusion-hierarchy ' .expand('%:p') . ' \| dot -Tpdf > /tmp/pygmalion.inclusion-hierarchy.pdf && open /tmp/pygmalion.inclusion-hierarchy.pdf')
 
 augroup pygmalion
   au BufEnter *.c,*.cpp,*.C,*.h,*.hpp,*.H  nnoremap <buffer><silent> <Leader>] :PygGoToDefinition<CR>
@@ -29,4 +34,7 @@ augroup pygmalion
   au BufEnter *.c,*.cpp,*.C,*.h,*.hpp,*.H  nnoremap <buffer><silent> <Leader>pm :PygMembers<CR>
   au BufEnter *.c,*.cpp,*.C,*.h,*.hpp,*.H  nnoremap <buffer><silent> <Leader>pr :PygReferences<CR>
   au BufEnter *.c,*.cpp,*.C,*.h,*.hpp,*.H  nnoremap <buffer><silent> <Leader>ph :PygHierarchy<CR>
+  au BufEnter *.c,*.cpp,*.C,*.h,*.hpp,*.H  nnoremap <buffer><silent> <Leader>pi :PygInclusions<CR>
+  au BufEnter *.c,*.cpp,*.C,*.h,*.hpp,*.H  nnoremap <buffer><silent> <Leader>pI :PygIncluders<CR>
+  au BufEnter *.c,*.cpp,*.C,*.h,*.hpp,*.H  nnoremap <buffer><silent> <Leader>pih :PygInclusionHierarchy<CR>
 augroup END

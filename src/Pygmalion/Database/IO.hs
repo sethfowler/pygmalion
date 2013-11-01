@@ -10,6 +10,8 @@ module Pygmalion.Database.IO
 , updateInclusion
 , getInclusions
 , getIncluders
+, getIncluderInfo
+, getInclusionHierarchy
 , insertFileAndCheck
 , updateSourceFile
 , getAllSourceFiles
@@ -38,6 +40,7 @@ import qualified Data.ByteString as B
 import Data.Int
 import Data.List (foldl', minimumBy)
 import Data.Ord (comparing)
+import qualified Data.Set as Set
 import Data.String
 import qualified Data.Text as T
 import Data.Tuple.Curry (uncurryN)
@@ -71,7 +74,10 @@ data DBHandle = DBHandle
     , updateInclusionStmt       :: Statement
     , resetInclusionsStmt       :: Statement
     , getInclusionsStmt         :: Statement
+    , getDirectInclusionsStmt   :: Statement
     , getIncludersStmt          :: Statement
+    , getIncluderInfoStmt       :: Statement
+    , getDirectIncludersStmt    :: Statement
     , updateSourceFileStmt      :: Statement
     , getCommandInfoStmt        :: Statement
     , getSimilarCommandInfoStmt :: Statement
@@ -131,7 +137,10 @@ openDB db = labeledCatch "openDB" $ do
                   <*> openStatement c (mkQueryT updateInclusionSQL)
                   <*> openStatement c (mkQueryT resetInclusionsSQL)
                   <*> openStatement c (mkQueryT getInclusionsSQL)
+                  <*> openStatement c (mkQueryT getDirectInclusionsSQL)
                   <*> openStatement c (mkQueryT getIncludersSQL)
+                  <*> openStatement c (mkQueryT getIncluderInfoSQL)
+                  <*> openStatement c (mkQueryT getDirectIncludersSQL)
                   <*> openStatement c (mkQueryT updateSourceFileSQL)
                   <*> openStatement c (mkQueryT getCommandInfoSQL)
                   <*> openStatement c (mkQueryT getSimilarCommandInfoSQL)
@@ -162,7 +171,10 @@ closeDB h = do
   closeStatement (updateInclusionStmt h)
   closeStatement (resetInclusionsStmt h)
   closeStatement (getInclusionsStmt h)
+  closeStatement (getDirectInclusionsStmt h)
   closeStatement (getIncludersStmt h)
+  closeStatement (getIncluderInfoStmt h)
+  closeStatement (getDirectIncludersStmt h)
   closeStatement (updateSourceFileStmt h)
   closeStatement (getCommandInfoStmt h)
   closeStatement (getSimilarCommandInfoStmt h)
@@ -250,7 +262,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int64
 dbMajorVersion = 0
-dbMinorVersion = 18
+dbMinorVersion = 19
 
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c (mkQueryT sql)
@@ -294,16 +306,17 @@ insertFileSQL = "insert or ignore into Files (Name, Hash) values (?, ?)"
 -- Schema and operations for the Inclusions table.
 defineInclusionsTable :: Connection -> IO ()
 defineInclusionsTable c = execute_ c (mkQueryT sql)
-  where sql = T.concat [ "create table if not exists Inclusions(    "
-                       , "File integer primary key unique not null, "
-                       , "Inclusion integer not null,               "
-                       , "Direct integer not null)" ]
+  where sql = T.concat [ "create table if not exists Inclusions( "
+                       , "File integer not null,                 "
+                       , "Inclusion integer not null,            "
+                       , "Direct integer not null,               "
+                       , "primary key (File, Inclusion))" ]
 
 updateInclusion :: DBHandle -> Inclusion -> IO ()
-updateInclusion h (Inclusion ci hf d) = do
-    let sfHash = hash (ciSourceFile ci)
-    let hfHash = hash hf
-    execStatement h updateInclusionStmt (sfHash, hfHash, d)
+updateInclusion h (Inclusion hci sf d) = do
+  let hfHash = hash (ciSourceFile hci)
+  let sfHash = hash sf
+  execStatement h updateInclusionStmt (sfHash, hfHash, d)
 
 updateInclusionSQL :: T.Text
 updateInclusionSQL = T.concat
@@ -318,25 +331,47 @@ resetInclusions h sf = do
 resetInclusionsSQL :: T.Text
 resetInclusionsSQL = "delete from Inclusions where File = ?"
 
-getInclusions :: DBHandle -> SourceFile -> IO [CommandInfo]
-getInclusions h sf = execQuery h getInclusionsStmt (Only $ hash sf)
+getInclusions :: DBHandle -> SourceFile -> IO [SourceFile]
+getInclusions h sf = do
+  is <- execQuery h getInclusionsStmt (Only $ hash sf)
+  return $ map unwrapSourceFile is
 
 getInclusionsSQL :: T.Text
 getInclusionsSQL = T.concat
-  [ "select F.Name, W.Path, C.Command, A.Args, S.Language, S.LastIndexed, S.SHA "
-  , "from Inclusions as I                                                       "
-  , "join SourceFiles as S on I.Inclusion = S.File                              "
-  , "join Files as F on S.File = F.Hash                                         "
-  , "join Paths as W on S.WorkingPath = W.Hash                                  "
-  , "join BuildCommands as C on S.BuildCommand = C.Hash                         "
-  , "join BuildArgs as A on S.BuildArgs = A.Hash                                "
+  [ "select F.Name                           "
+  , "from Inclusions as I                    "
+  , "join Files as F on I.Inclusion = F.Hash "
   , "where I.File = ?" ]
 
-getIncluders :: DBHandle -> SourceFile -> IO [CommandInfo]
-getIncluders h sf = execQuery h getIncludersStmt (Only $ hash sf)
+getDirectInclusions :: DBHandle -> SourceFile -> IO [SourceFile]
+getDirectInclusions h sf = do
+  is <- execQuery h getDirectInclusionsStmt (Only $ hash sf)
+  return $ map unwrapSourceFile is
+
+getDirectInclusionsSQL :: T.Text
+getDirectInclusionsSQL = T.concat
+  [ "select F.Name                                 "
+  , "from Inclusions as I                          "
+  , "join Files as F on I.Inclusion = F.Hash       "
+  , "where I.Direct = 1 and I.File = ?" ]
+
+getIncluders :: DBHandle -> SourceFile -> IO [SourceFile]
+getIncluders h sf = do
+  is <- execQuery h getIncludersStmt (Only $ hash sf)
+  return $ map unwrapSourceFile is
 
 getIncludersSQL :: T.Text
 getIncludersSQL = T.concat
+  [ "select F.Name                      "
+  , "from Inclusions as I               "
+  , "join Files as F on I.File = F.Hash "
+  , "where I.Inclusion = ?" ]
+
+getIncluderInfo :: DBHandle -> SourceFile -> IO [CommandInfo]
+getIncluderInfo h sf = execQuery h getIncluderInfoStmt (Only $ hash sf)
+
+getIncluderInfoSQL :: T.Text
+getIncluderInfoSQL = T.concat
   [ "select F.Name, W.Path, C.Command, A.Args, S.Language, S.LastIndexed, S.SHA "
   , "from Inclusions as I                                                       "
   , "join SourceFiles as S on I.File = S.File                                   "
@@ -345,6 +380,50 @@ getIncludersSQL = T.concat
   , "join BuildCommands as C on S.BuildCommand = C.Hash                         "
   , "join BuildArgs as A on S.BuildArgs = A.Hash                                "
   , "where I.Inclusion = ?" ]
+
+getDirectIncluders :: DBHandle -> SourceFile -> IO [SourceFile]
+getDirectIncluders h sf = do
+  is <- execQuery h getDirectIncludersStmt (Only $ hash sf)
+  return $ map unwrapSourceFile is
+
+getDirectIncludersSQL :: T.Text
+getDirectIncludersSQL = T.concat
+  [ "select F.Name                           "
+  , "from Inclusions as I                    "
+  , "join Files as F on I.File = F.Hash "
+  , "where I.Direct = 1 and I.Inclusion = ?" ]
+
+getInclusionHierarchy :: DBHandle -> SourceFile -> IO String
+getInclusionHierarchy h sf = asDot <$> generateHierarchy
+  where
+    generateHierarchy = do
+      let nid = fromIntegral . hash $ sf
+      let node = Node nid sf [("penwidth", "4")]
+
+      -- Find includers.
+      logInfo "INCLUDERS"
+      irs <- getDirectIncluders h sf
+      includers <- mapM (expandHierarchy Edge getDirectIncluders nid) irs
+
+      -- Find inclusions.
+      logInfo "INCLUSIONS"
+      ics <- getDirectInclusions h sf
+      inclusions <- mapM (expandHierarchy reverseEdge getDirectInclusions nid) ics
+
+      return $ uncurryN Graph $ foldl' merge (Set.singleton node, Set.empty)
+                                             (includers ++ inclusions)
+      
+    expandHierarchy mkEdge nextLevelF superNodeId sf' = do
+      logInfo $ "expandHierarchy adding node" ++ (unSourceFile sf')
+      let nid = fromIntegral . hash $ sf'
+      let node = Node nid sf' []
+      let edge = mkEdge superNodeId nid
+      
+      is <- nextLevelF h sf'
+      hierarchy <- mapM (expandHierarchy mkEdge nextLevelF nid) is
+      return $ foldl' merge (Set.singleton node, Set.singleton edge) hierarchy
+
+    merge (ns, es) (ns', es') = (ns `Set.union` ns', es `Set.union` es')
 
 -- Schema and operations for the Paths table.
 definePathsTable :: Connection -> IO ()
@@ -598,7 +677,8 @@ getHierarchy h sl = do
       ods <- getOverrided' h usr
       superclasses <- mapM (expandHierarchy reverseEdge getOverrided' di) ods
 
-      return $ uncurryN Graph $ foldl' merge ([node], []) (subclasses ++ superclasses)
+      return $ uncurryN Graph $ foldl' merge (Set.singleton node, Set.empty)
+                                             (subclasses ++ superclasses)
       
     expandHierarchy mkEdge nextLevelF superDI di = do
       let usr = diUSR di
@@ -608,9 +688,9 @@ getHierarchy h sl = do
       
       os <- nextLevelF h usr
       hierarchy <- mapM (expandHierarchy mkEdge nextLevelF di) os
-      return $ foldl' merge ([node], [edge]) hierarchy
+      return $ foldl' merge (Set.singleton node, Set.singleton edge) hierarchy
 
-    merge (ns, es) (ns', es') = (ns ++ ns', es ++ es')
+    merge (ns, es) (ns', es') = (ns `Set.union` ns', es `Set.union` es')
 
 getMembers :: DBHandle -> SourceLocation -> IO [DefInfo]
 getMembers h sl = do
@@ -671,7 +751,7 @@ getReferenced h (SourceLocation sf l c) = do
     rs <- execQuery h getReferencedStmt (hash sf, l, l, c, l, c)
 
     when (multipleItems rs) $ do
-      logDebug $ "Multiple referenced entities:"
+      logDebug "Multiple referenced entities:"
       mapM_ (logDebug . show) rs
 
     narrowReferenced rs

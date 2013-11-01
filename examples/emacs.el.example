@@ -18,15 +18,40 @@
             " "
             (number-to-string (column-number-at-pos (point))))))
 
-(defun pygmalion-hierarchy-invoke ()
+(defun pygmalion-file-command (cmd)
   (compilation-start
-    (concat "pygmalion hierarchy "
+    (concat "pygmalion "
+            cmd
+            " "
+            (buffer-file-name))))
+
+(defun pygmalion-dot-command (cmd)
+  (compilation-start
+    (concat "pygmalion "
+            cmd
+            " "
             (buffer-file-name)
             " "
             (number-to-string (line-number-at-pos))
             " "
             (number-to-string (column-number-at-pos (point)))
-            " | dot -Tpdf > /tmp/pygmalion.hierarchy.pdf && open /tmp/pygmalion.hierarchy.pdf")))
+            " | dot -Tpdf > /tmp/pygmalion."
+            cmd
+            ".pdf && open /tmp/pygmalion."
+            cmd
+            ".pdf")))
+
+(defun pygmalion-file-dot-command (cmd)
+  (compilation-start
+    (concat "pygmalion "
+            cmd
+            " "
+            (buffer-file-name)
+            " | dot -Tpdf > /tmp/pygmalion."
+            cmd
+            ".pdf && open /tmp/pygmalion."
+            cmd
+            ".pdf")))
 
 (defun pygmalion-go-to-definition () (interactive) (pygmalion-command "definition"))
 (defun pygmalion-callers () (interactive) (pygmalion-command "callers"))
@@ -35,7 +60,10 @@
 (defun pygmalion-overrides () (interactive) (pygmalion-command "overrides"))
 (defun pygmalion-members () (interactive) (pygmalion-command "members"))
 (defun pygmalion-references () (interactive) (pygmalion-command "references"))
-(defun pygmalion-hierarchy () (interactive) (pygmalion-hierarchy-invoke))
+(defun pygmalion-hierarchy () (interactive) (pygmalion-dot-command "hierarchy"))
+(defun pygmalion-inclusions () (interactive) (pygmalion-file-command "inclusions"))
+(defun pygmalion-includers () (interactive) (pygmalion-file-command "includers"))
+(defun pygmalion-inclusion-hierarchy () (interactive) (pygmalion-file-dot-command "inclusion-hierarchy"))
 
 (eval-after-load "cc-mode"
   '(progn
@@ -46,7 +74,10 @@
       (define-key c-mode-base-map (kbd "M-p M-o") 'pygmalion-overrides)
       (define-key c-mode-base-map (kbd "M-p M-m") 'pygmalion-members)
       (define-key c-mode-base-map (kbd "M-p M-r") 'pygmalion-references)
-      (define-key c-mode-base-map (kbd "M-p M-h") 'pygmalion-hierarchy)))
+      (define-key c-mode-base-map (kbd "M-p M-h") 'pygmalion-hierarchy)
+      (define-key c-mode-base-map (kbd "M-p M-i") 'pygmalion-inclusions)
+      (define-key c-mode-base-map (kbd "M-p M-I") 'pygmalion-includers)
+      (define-key c-mode-base-map (kbd "M-p M-i M-h") 'pygmalion-inclusion-hierarchy)))
 
 ;; Pygmalion integration for irony-mode.
 (defun trim-string (string)

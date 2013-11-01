@@ -51,6 +51,7 @@ data Config = Config
   , genTAGS    :: Bool     -- If true, pygmake generates a TAGS file automatically.
   , idleDelay  :: Int64    -- Numbers of seconds with no activity before we're idle.
   , logLevel   :: Priority -- The level of logging to enable.
+  , projectDir :: FilePath -- The location of ".pygmalion". Set automatically.
   } deriving (Eq, Show)
 
 defaultConfig :: Config
@@ -70,6 +71,7 @@ defaultConfig = Config
   , genTAGS    = False
   , idleDelay  = 1
   , logLevel   = INFO
+  , projectDir = ""
   }
 
 instance FromJSON Priority where
@@ -100,37 +102,37 @@ instance FromJSON Config where
            <*> o .:? "tags"                .!= genTAGS defaultConfig
            <*> o .:? "idleDelay"           .!= idleDelay defaultConfig
            <*> o .:? "logLevel"            .!= logLevel defaultConfig
+           <*> pure (projectDir defaultConfig)
   parseJSON _ = mzero
 
-readConfigFile :: IO B.ByteString
-readConfigFile = B.readFile =<< findConfigFile =<< getCurrentDirectory
-  where
-    findConfigFile dir = do
-      let dirConfigFile = dir </> configFile
-      exists <- doesFileExist dirConfigFile
+findConfigFile :: FilePath -> IO (FilePath, FilePath)
+findConfigFile dir = do
+  let dirConfigFile = dir </> configFile
+  exists <- doesFileExist dirConfigFile
 
-      case (exists, dir) of
-        (True, _)    -> return dirConfigFile
-        (False, "")  -> error "Couldn't locate pygmalion configuration file"
-        (False, "/") -> error "Couldn't locate pygmalion configuration file"
-        _            -> findConfigFile $ takeDirectory dir
+  case (exists, dir) of
+    (True, _)    -> return (dir, dirConfigFile)
+    (False, "")  -> error "Couldn't locate pygmalion configuration file"
+    (False, "/") -> error "Couldn't locate pygmalion configuration file"
+    _            -> findConfigFile $ takeDirectory dir
 
-checkError :: ParseException -> IO Config
-checkError (UnexpectedEvent Nothing
-                            (Just EventStreamStart)) = return defaultConfig
-checkError (UnexpectedEvent (Just EventStreamEnd)
-                            (Just EventDocumentStart)) = return defaultConfig
-checkError ex = reportError . show $ ex
+checkError :: FilePath -> ParseException -> IO Config
+checkError dir (UnexpectedEvent Nothing
+                (Just EventStreamStart)) = return $ defaultConfig { projectDir = dir }
+checkError dir (UnexpectedEvent (Just EventStreamEnd)
+                (Just EventDocumentStart)) = return $ defaultConfig { projectDir = dir }
+checkError _ ex = reportError . show $ ex
 
 reportError :: String -> IO a
 reportError err = error $ "Couldn't parse configuration file: " ++ err
 
-checkConfig :: Config -> IO Config
-checkConfig conf@Config { ifPort = port }
+checkConfig :: FilePath -> Config -> IO Config
+checkConfig dir conf@Config { ifPort = port }
   | port == 0 = reportError "Port 0 is invalid"
-  | otherwise = return conf
+  | otherwise = return $ conf { projectDir = dir }
 
 getConfiguration :: IO Config
 getConfiguration = do
-  result <- decodeEither' <$> readConfigFile
-  either checkError checkConfig result
+  (dir, conf) <- findConfigFile =<< getCurrentDirectory
+  result <- decodeEither' <$> B.readFile conf
+  either (checkError dir) (checkConfig dir) result

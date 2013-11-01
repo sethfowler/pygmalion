@@ -23,6 +23,9 @@ data RPCRequest = RPCIndexCommand CommandInfo
                 | RPCGetRefs SourceLocation
                 | RPCGetReferenced SourceLocation
                 | RPCGetHierarchy SourceLocation
+                | RPCGetInclusions SourceFile
+                | RPCGetIncluders SourceFile
+                | RPCGetInclusionHierarchy SourceFile
                 | RPCFoundDef DefUpdate
                 | RPCFoundOverride Override
                 | RPCFoundRef ReferenceUpdate

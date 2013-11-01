@@ -4,6 +4,7 @@ module Pygmalion.Core
 ( CommandInfo (..)
 , SourceFile
 , SourceFileHash
+, SourceFileWrapper (..)
 , WorkingPath
 , Time
 , Language (..)
@@ -92,6 +93,13 @@ mkSourceFile = B.fromString
 unSourceFile :: SourceFile -> FilePath
 unSourceFile = B.toString
 
+data SourceFileWrapper = SourceFileWrapper
+  { unwrapSourceFile :: !SourceFile
+  } deriving (Eq, Show)
+
+instance FromRow SourceFileWrapper where
+  fromRow = SourceFileWrapper <$> field
+
 type WorkingPath = B.ByteString
 type Time = Int64
 
@@ -105,11 +113,11 @@ instance Serialize Language
 instance FromRow Language where
   fromRow = toEnum <$> field
 
--- Inclusion metadata.
+-- | Inclusion metadata.
 data Inclusion = Inclusion
-    { icCommandInfo :: !CommandInfo
-    , icHeaderFile  :: !SourceFile
-    , icDirect      :: !Bool
+    { icCommandInfo :: !CommandInfo  -- ^ Information about the included file.
+    , icSourceFile  :: !SourceFile   -- ^ The file which does the including.
+    , icDirect      :: !Bool         -- ^ Is it included directly?
     } deriving (Eq, Show, Generic)
 
 instance Serialize Inclusion

@@ -197,7 +197,7 @@ ignoreUnreadable src = logInfo $ "Not indexing unreadable file "
 otherFilesToReindex :: CommandInfo -> Indexer [CommandInfo]
 otherFilesToReindex ci = do
   ctx <- ask
-  callLenChan (acDBQueryChan ctx) $ DBGetIncluders (ciSourceFile ci)
+  callLenChan (acDBQueryChan ctx) $ DBGetIncluderInfo (ciSourceFile ci)
 
 updateCommand :: CommandInfo -> Indexer ()
 updateCommand ci = do

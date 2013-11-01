@@ -50,26 +50,34 @@ displayAST ci = do
 
 inclusionsAnalysis :: RPCConnection -> CommandInfo -> TranslationUnit
                    -> ClangApp s ()
-inclusionsAnalysis conn ci tu = void $ getInclusions tu
-                                       (inclusionsVisitor conn ci)
-
-inclusionsVisitor :: RPCConnection -> CommandInfo -> InclusionVisitor s
-inclusionsVisitor conn ci file iStack = do
-    ic <- File.getName file >>= CS.unpackByteString
-    let mkInclusion' = mkInclusion ic
-    case iStack of
-      []       -> return () -- The source file itself.
-      (_ : []) -> liftIO $ runRPC (rpcFoundInclusion (mkInclusion' True)) conn
-      (_ : _)  -> liftIO $ runRPC (rpcFoundInclusion (mkInclusion' False)) conn
+inclusionsAnalysis conn ci tu = do
+  clangIncPath <- liftIO $ libclangIncludePath
+  let clangIncSF = mkSourceFile clangIncPath
+  void $ getInclusions tu (inclusionsVisitor conn templateCI clangIncSF)
   where
-    mkInclusion ic =
-      Inclusion (ci { ciArgs = ciArgs ci ++ (incArgs . ciLanguage $ ci)
-                    , ciLastIndexed = 0
-                    , ciSourceFile = ic
-                    }) ic
-    incArgs CLanguage       = ["-x", "c"]
-    incArgs CPPLanguage     = ["-x", "c++"]
-    incArgs UnknownLanguage = []
+    templateCI = ci { ciArgs = withIncArgs (ciArgs ci) (ciLanguage ci)
+                    , ciLastIndexed = 0 }
+
+    -- Header files often have the wrong extension for the language
+    -- they contain, so we have to explicitly specify the language if
+    -- the given arguments don't do so already.
+    withIncArgs [] CLanguage       = ["-x", "c"]
+    withIncArgs [] CPPLanguage     = ["-x", "c++"]
+    withIncArgs [] UnknownLanguage = []
+    withIncArgs xs@("-x":_) _      = xs
+    withIncArgs (x:xs) lang        = x : withIncArgs xs lang
+
+inclusionsVisitor :: RPCConnection -> CommandInfo -> SourceFile -> InclusionVisitor s
+inclusionsVisitor conn ci clangIncSF file iStack = do
+    ic <- File.getName file >>= CS.unpackByteString
+    when (not $ clangIncSF `B.isPrefixOf` ic) $ do
+      let mkInclusion' = mkInclusion ic
+      case iStack of
+        []       -> return () -- The source file itself.
+        (_ : []) -> liftIO $ runRPC (rpcFoundInclusion (mkInclusion' True)) conn
+        (_ : _)  -> liftIO $ runRPC (rpcFoundInclusion (mkInclusion' False)) conn
+  where
+    mkInclusion ic = Inclusion (ci { ciSourceFile = ic }) (ciSourceFile ci)
 
 addFileDef :: RPCConnection -> CommandInfo -> ClangApp s ()
 addFileDef conn ci = do
