@@ -398,7 +398,7 @@ getInclusionHierarchy h sf = asDot <$> generateHierarchy
   where
     generateHierarchy = do
       let nid = fromIntegral . hash $ sf
-      let node = Node nid sf [("penwidth", "4")]
+      let node = highlightNode $ mkNode nid sf []
 
       -- Find includers.
       logInfo "INCLUDERS"
@@ -414,9 +414,9 @@ getInclusionHierarchy h sf = asDot <$> generateHierarchy
                                              (includers ++ inclusions)
       
     expandHierarchy mkEdge nextLevelF superNodeId sf' = do
-      logInfo $ "expandHierarchy adding node" ++ (unSourceFile sf')
+      logInfo $ "expandHierarchy adding node" ++ unSourceFile sf'
       let nid = fromIntegral . hash $ sf'
-      let node = Node nid sf' []
+      let node = mkNode nid sf' []
       let edge = mkEdge superNodeId nid
       
       is <- nextLevelF h sf'
@@ -667,7 +667,7 @@ getHierarchy h sl = do
     generateHierarchy di = do
       let usr = diUSR di
       let name = diIdentifier di
-      let node = Node (fromIntegral . hash $ usr) name [("penwidth", "4")]
+      let node = highlightNode $ mkNode (fromIntegral . hash $ usr) name []
 
       -- Find subclasses.
       ovs <- getOverriders' h usr
@@ -683,7 +683,7 @@ getHierarchy h sl = do
     expandHierarchy mkEdge nextLevelF superDI di = do
       let usr = diUSR di
       let usrHash = fromIntegral . hash $ usr
-      let node = Node usrHash (diIdentifier di) []
+      let node = mkNode usrHash (diIdentifier di) []
       let edge = mkEdge (fromIntegral . hash . diUSR $ superDI) usrHash
       
       os <- nextLevelF h usr
