@@ -1,61 +1,79 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings, RecordWildCards #-}
 
 module Pygmalion.Dot
-( Graph (..)
-, Node (..)
-, Edge (..)
+( Graph
+, Node
+, Edge
+, mkGraph
 , mkNode
-, highlightNode
+, mkHighlightedNode
+, mkEdge
+, mkReverseEdge
+, addNode
+, addEdge
 , asDot
-, reverseEdge
 ) where
 
 import qualified Data.ByteString as B
-import qualified Data.ByteString.UTF8 as BU
-import Data.Set (Set, toList)
-import Data.Tuple.Curry (uncurryN)
-import Text.Dot (attribute, edge, NodeId, showDot, userNode, userNodeId)
+import qualified Data.Graph.Inductive as G
+import Data.GraphViz
+import Data.GraphViz.Attributes.Complete
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Encoding as E
 
-data Graph = Graph
-  { graphNodes :: Set Node
-  , graphEdges :: Set Edge
-  } deriving (Eq, Show)
-
-data Node = Node
-  { nodeId    :: Int
-  , nodeName  :: B.ByteString
-  , nodeItems :: [[B.ByteString]]
-  , nodeAttrs :: [(String, String)]
+data NodeLabel = NodeLabel
+  { nodeName      :: B.ByteString
+  , nodeItems     :: [[B.ByteString]]
+  , nodeHighlight :: Bool
   } deriving (Eq, Ord, Show)
 
-data Edge = Edge
-  { edgeFrom :: Int
-  , edgeTo   :: Int
-  } deriving (Eq, Ord, Show)
+type Graph = G.Gr NodeLabel ()
+type Node = G.LNode NodeLabel
+type Edge = G.UEdge
+
+mkGraph :: Graph
+mkGraph = G.empty
 
 mkNode :: Int -> B.ByteString -> [[B.ByteString]] -> Node
-mkNode nid name items = Node nid name items [("shape", "record")]
+mkNode nid name items = (nid, NodeLabel name items False)
 
-highlightNode :: Node -> Node
-highlightNode node = node { nodeAttrs = ("penwidth", "4") : nodeAttrs node }
+mkHighlightedNode :: Int -> B.ByteString -> [[B.ByteString]] -> Node
+mkHighlightedNode nid name items = (nid, NodeLabel name items True)
 
-reverseEdge :: Int -> Int -> Edge
-reverseEdge a b = Edge b a
+mkEdge :: Int -> Int -> Edge
+mkEdge a b = (a, b, ())
 
-dotLabel :: Node -> String
-dotLabel Node {..} = "{" ++ BU.toString nodeName ++ concatMap toSection nodeItems ++ "}"
+mkReverseEdge :: Int -> Int -> Edge
+mkReverseEdge = flip mkEdge
+
+-- Ignores duplicate nodes.
+addNode :: Node -> Graph -> Graph
+addNode n@(nid, _) g = if nid `G.gelem` g then g
+                                          else G.insNode n g
+
+-- Ignores duplicate edges.
+addEdge :: Edge -> Graph -> Graph
+addEdge e@(a, b, _) g = if b `elem` G.suc g a then g
+                                              else G.insEdge e g
+
+bsToText :: B.ByteString -> TL.Text
+bsToText = TL.fromStrict . E.decodeUtf8
+
+dotAttribsForNode :: Node -> Attributes
+dotAttribsForNode (_, NodeLabel {..}) = highlight nodeHighlight $ label nodeName nodeItems
   where
-    toSection :: [B.ByteString] -> String
-    toSection items = '|' : concatMap ((++ "\\1") . BU.toString) items
+    label n is = [toLabel $ FieldLabel (bsToText n) : map label' is]
+    label' is  = FieldLabel $ TL.concat $ map ((`TL.append` "\\l") . bsToText) is
 
-asDotNode :: Node -> (NodeId, [(String, String)])
-asDotNode node@Node {..} = (userNodeId nodeId, ("label", dotLabel node) : nodeAttrs)
-
-asDotEdge :: Edge -> (NodeId, NodeId, [(String, String)])
-asDotEdge Edge {..} = (userNodeId edgeFrom, userNodeId edgeTo, [("color", "grey")])
+    highlight True as  = PenWidth 4.0 : as
+    highlight False as = as
 
 asDot :: Graph -> String
-asDot g = showDot $ do
-  attribute ("rankdir", "LR")
-  mapM_ (uncurryN userNode . asDotNode) (toList . graphNodes $ g)
-  mapM_ (uncurryN edge . asDotEdge) (toList . graphEdges $ g)
+asDot = TL.unpack . printDotGraph . graphToDot params
+  where
+    params = nonClusteredParams { globalAttributes = [ GraphAttrs [RankDir FromLeft]
+                                                     , NodeAttrs [Shape MRecord]
+                                                     , EdgeAttrs [Color [toWC $ X11Color Gray]]]
+                                , isDirected       = True
+                                , fmtNode          = dotAttribsForNode
+                                }

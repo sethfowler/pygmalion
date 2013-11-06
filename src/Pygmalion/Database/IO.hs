@@ -38,12 +38,10 @@ import Control.Exception (bracket)
 import Control.Monad
 import qualified Data.ByteString as B
 import Data.Int
-import Data.List (foldl', minimumBy)
+import Data.List (minimumBy)
 import Data.Ord (comparing)
-import qualified Data.Set as Set
 import Data.String
 import qualified Data.Text as T
-import Data.Tuple.Curry (uncurryN)
 import qualified Database.SQLite3.Direct as Direct
 import Database.SQLite.Simple
 import System.FilePath.Posix
@@ -398,32 +396,28 @@ getInclusionHierarchy h sf = asDot <$> generateHierarchy
   where
     generateHierarchy = do
       let nid = fromIntegral . hash $ sf
-      let node = highlightNode $ mkNode nid sf []
+      let node = mkHighlightedNode nid sf []
+      let g = addNode node mkGraph
 
       -- Find includers.
-      logInfo "INCLUDERS"
       irs <- getDirectIncluders h sf
-      includers <- mapM (expandHierarchy Edge getDirectIncluders nid) irs
+      g' <- foldM (expandHierarchy mkEdge getDirectIncluders nid) g irs
 
       -- Find inclusions.
-      logInfo "INCLUSIONS"
       ics <- getDirectInclusions h sf
-      inclusions <- mapM (expandHierarchy reverseEdge getDirectInclusions nid) ics
+      g'' <- foldM (expandHierarchy mkReverseEdge getDirectInclusions nid) g' ics
 
-      return $ uncurryN Graph $ foldl' merge (Set.singleton node, Set.empty)
-                                             (includers ++ inclusions)
+      return g''
       
-    expandHierarchy mkEdge nextLevelF superNodeId sf' = do
-      logInfo $ "expandHierarchy adding node" ++ unSourceFile sf'
+    expandHierarchy newEdgeF nextLevelF superNodeId g sf' = do
       let nid = fromIntegral . hash $ sf'
       let node = mkNode nid sf' []
-      let edge = mkEdge superNodeId nid
+      let edge = newEdgeF superNodeId nid
+      let g' = (addEdge edge) . (addNode node) $ g
       
       is <- nextLevelF h sf'
-      hierarchy <- mapM (expandHierarchy mkEdge nextLevelF nid) is
-      return $ foldl' merge (Set.singleton node, Set.singleton edge) hierarchy
-
-    merge (ns, es) (ns', es') = (ns `Set.union` ns', es `Set.union` es')
+      g'' <- foldM (expandHierarchy newEdgeF nextLevelF nid) g' is
+      return g''
 
 -- Schema and operations for the Paths table.
 definePathsTable :: Connection -> IO ()
@@ -667,30 +661,29 @@ getHierarchy h sl = do
     generateHierarchy di = do
       let usr = diUSR di
       let name = diIdentifier di
-      let node = highlightNode $ mkNode (fromIntegral . hash $ usr) name []
+      let node = mkHighlightedNode (fromIntegral . hash $ usr) name []
+      let g = addNode node mkGraph
 
       -- Find subclasses.
       ovs <- getOverriders' h usr
-      subclasses <- mapM (expandHierarchy Edge getOverriders' di) ovs
+      g' <- foldM (expandHierarchy mkEdge getOverriders' di) g ovs
 
       -- Find superclasses.
       ods <- getOverrided' h usr
-      superclasses <- mapM (expandHierarchy reverseEdge getOverrided' di) ods
+      g'' <- foldM (expandHierarchy mkReverseEdge getOverrided' di) g' ods
 
-      return $ uncurryN Graph $ foldl' merge (Set.singleton node, Set.empty)
-                                             (subclasses ++ superclasses)
+      return g''
       
-    expandHierarchy mkEdge nextLevelF superDI di = do
+    expandHierarchy newEdgeF nextLevelF superDI g di = do
       let usr = diUSR di
       let usrHash = fromIntegral . hash $ usr
       let node = mkNode usrHash (diIdentifier di) []
-      let edge = mkEdge (fromIntegral . hash . diUSR $ superDI) usrHash
+      let edge = newEdgeF (fromIntegral . hash . diUSR $ superDI) usrHash
+      let g' = (addEdge edge) . (addNode node) $ g
       
       os <- nextLevelF h usr
-      hierarchy <- mapM (expandHierarchy mkEdge nextLevelF di) os
-      return $ foldl' merge (Set.singleton node, Set.singleton edge) hierarchy
-
-    merge (ns, es) (ns', es') = (ns `Set.union` ns', es `Set.union` es')
+      g'' <- foldM (expandHierarchy newEdgeF nextLevelF di) g' os
+      return g''
 
 getMembers :: DBHandle -> SourceLocation -> IO [DefInfo]
 getMembers h sl = do
