@@ -391,6 +391,8 @@ dumpSubtree cursor = do
           refCursor <- C.getReferenced c
           refName <- C.getDisplayName refCursor >>= CS.unpack
           refUSR <- XRef.getUSR refCursor >>= CS.unpack
+          refLoc <- getCursorLocation refCursor
+          let refFile = BU.toString $ slFile refLoc
 
           -- Get type.
           typ <- C.getType c
@@ -424,7 +426,7 @@ dumpSubtree cursor = do
                               show startLn ++ "," ++ show startCol ++ " -> " ++
                               show endLn ++ "," ++ show endCol ++ " " ++
                               "definition [" ++ defName ++ "/" ++ defUSR ++ "] " ++
-                              "reference [" ++ refName ++ "/" ++ refUSR ++ "]"
+                              "reference [" ++ refName ++ "/" ++ refFile ++ "%" ++ refUSR ++ "]"
 
 underlyingType :: C.Cursor -> ClangApp s T.Type
 underlyingType c = do

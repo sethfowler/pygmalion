@@ -730,12 +730,10 @@ defineReferencesTable c = do
 updateReference :: DBHandle -> ReferenceUpdate -> IO ()
 updateReference h ReferenceUpdate {..} = do
   let kind = fromEnum rfuKind
-  logInfo "About to handle refupdate"
   execStatement h updateReferenceStmt (rfuId, rfuFileHash, rfuLine, rfuCol,
                                        rfuEndLine, rfuEndCol, kind,
                                        rfuViaHash, rfuDeclHash,
                                        rfuContextHash, rfuUSRHash)
-  logInfo "Finished with refupdate"
   
 updateReferenceSQL :: T.Text
 updateReferenceSQL = T.concat
