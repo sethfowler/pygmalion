@@ -69,38 +69,39 @@ import Pygmalion.Log
 -- underlying database implementation that also verify that the database is
 -- configured according to the correct schema and enable foreign keys.
 data DBHandle = DBHandle
-    { conn                      :: Connection
-    , beginTransactionStmt      :: Statement
-    , endTransactionStmt        :: Statement
-    , updateInclusionStmt       :: Statement
-    , resetInclusionsStmt       :: Statement
-    , getInclusionsStmt         :: Statement
-    , getDirectInclusionsStmt   :: Statement
-    , getIncludersStmt          :: Statement
-    , getIncluderInfoStmt       :: Statement
-    , getDirectIncludersStmt    :: Statement
-    , updateSourceFileStmt      :: Statement
-    , getCommandInfoStmt        :: Statement
-    , getSimilarCommandInfoStmt :: Statement
-    , updateDefStmt             :: Statement
-    , resetDefsStmt             :: Statement
-    , getDefStmt                :: Statement
-    , updateOverrideStmt        :: Statement
-    , resetOverridesStmt        :: Statement
-    , getOverridedStmt          :: Statement
-    , getOverridersStmt         :: Statement
-    , getMembersStmt            :: Statement
-    , getCallersStmt            :: Statement
-    , getCalleesStmt            :: Statement
-    , updateReferenceStmt       :: Statement
-    , resetReferencesStmt       :: Statement
-    , getDeclReferencedStmt     :: Statement
-    , getReferencedStmt         :: Statement
-    , getReferencesStmt         :: Statement
-    , insertFileStmt            :: Statement
-    , insertPathStmt            :: Statement
-    , insertCommandStmt         :: Statement
-    , insertArgsStmt            :: Statement
+    { conn                         :: Connection
+    , beginTransactionStmt         :: Statement
+    , endTransactionStmt           :: Statement
+    , updateInclusionStmt          :: Statement
+    , resetInclusionsStmt          :: Statement
+    , getInclusionsStmt            :: Statement
+    , getDirectInclusionsStmt      :: Statement
+    , getIncludersStmt             :: Statement
+    , getIncluderInfoStmt          :: Statement
+    , getDirectIncludersStmt       :: Statement
+    , updateSourceFileStmt         :: Statement
+    , getCommandInfoStmt           :: Statement
+    , getSimilarCommandInfoStmt    :: Statement
+    , updateDefStmt                :: Statement
+    , resetDefsStmt                :: Statement
+    , getDefStmt                   :: Statement
+    , updateOverrideStmt           :: Statement
+    , resetOverridesStmt           :: Statement
+    , getOverridedStmt             :: Statement
+    , getOverridersStmt            :: Statement
+    , getMembersStmt               :: Statement
+    , getCallersStmt               :: Statement
+    , getCalleesStmt               :: Statement
+    , updateReferenceStmt          :: Statement
+    , resetReferencesStmt          :: Statement
+    , getDeclReferencedStmt        :: Statement
+    , getDeclsReferencedInFileStmt :: Statement
+    , getReferencedStmt            :: Statement
+    , getReferencesStmt            :: Statement
+    , insertFileStmt               :: Statement
+    , insertPathStmt               :: Statement
+    , insertCommandStmt            :: Statement
+    , insertArgsStmt               :: Statement
     }
 
 ensureDB :: IO ()
@@ -159,6 +160,7 @@ openDB db = labeledCatch "openDB" $ do
                   <*> openStatement c (mkQueryT updateReferenceSQL)
                   <*> openStatement c (mkQueryT resetReferencesSQL)
                   <*> openStatement c (mkQueryT getDeclReferencedSQL)
+                  <*> openStatement c (mkQueryT getDeclsReferencedInFileSQL)
                   <*> openStatement c (mkQueryT getReferencedSQL)
                   <*> openStatement c (mkQueryT getReferencesSQL)
                   <*> openStatement c (mkQueryT insertFileSQL)
@@ -194,6 +196,7 @@ closeDB h = do
   closeStatement (updateReferenceStmt h)
   closeStatement (resetReferencesStmt h)
   closeStatement (getDeclReferencedStmt h)
+  closeStatement (getDeclsReferencedInFileStmt h)
   closeStatement (getReferencedStmt h)
   closeStatement (getReferencesStmt h)
   closeStatement (insertFileStmt h)
@@ -407,22 +410,31 @@ getInclusionHierarchy h sf = asDot <$> generateHierarchy
 
       -- Find includers.
       irs <- getDirectIncluders h sf
-      g' <- foldM (expandHierarchy mkEdge getDirectIncluders nid) g irs
+      g' <- foldM (expandHierarchy mkEdge
+                                   (getDeclsReferencedInFile h)
+                                   getDirectIncluders nid)
+                  g irs
 
       -- Find inclusions.
       ics <- getDirectInclusions h sf
-      g'' <- foldM (expandHierarchy mkReverseEdge getDirectInclusions nid) g' ics
+      g'' <- foldM (expandHierarchy mkReverseEdge
+                                    (\a b -> getDeclsReferencedInFile h b a)
+                                    getDirectInclusions nid)
+                   g' ics
 
       return g''
       
-    expandHierarchy newEdgeF nextLevelF superNodeId g sf' = do
+    expandHierarchy newEdgeF refsF nextLevelF superNodeId g sf' = do
+      -- Find references to this inclusion in the original source file.
+      refs <- refsF sf' sf
+
       let nid = fromIntegral . hash $ sf'
-      let node = mkNode nid sf' []
+      let node = mkNode nid sf' [(map diIdentifier refs)]
       let edge = newEdgeF superNodeId nid
       let g' = (addEdge edge) . (addNode node) $ g
       
       is <- nextLevelF h sf'
-      g'' <- foldM (expandHierarchy newEdgeF nextLevelF nid) g' is
+      g'' <- foldM (expandHierarchy newEdgeF refsF nextLevelF nid) g' is
       return g''
 
 -- Schema and operations for the Paths table.
@@ -766,6 +778,22 @@ getDeclReferencedSQL = T.concat
   , "join Files as RF on R.File = RF.Hash                                          "
   , "left join Definitions as C on R.RefContext = C.USRHash                        "
   , "where R.RefId = ?" ]
+
+-- Search for declarations referenced by the first file which are
+-- located in the second file. Used by getInclusionHierarchy.
+getDeclsReferencedInFile :: DBHandle -> SourceFile -> SourceFile -> IO [DefInfo]
+getDeclsReferencedInFile h sf hf = execQuery h getDeclsReferencedInFileStmt (hash sf, hash hf)
+
+getDeclsReferencedInFileSQL :: T.Text
+getDeclsReferencedInFileSQL = T.concat
+  [ "select distinct D.Name, D.USR, RF.Name, RHdr.Line, RHdr.Col, "
+  , "RHdr.RefKind, coalesce(C.USR, x'')                           "
+  , "from Refs as RSrc                                            "
+  , "join Refs as RHdr on RSrc.RefDecl = RHdr.RefId               "
+  , "join Definitions as D on RHdr.Ref = D.USRHash                "
+  , "join Files as RF on RHdr.File = RF.Hash                      "
+  , "left join Definitions as C on RHdr.RefContext = C.USRHash    "
+  , "where RSrc.File = ? and RHdr.File = ?" ]
 
 getReferenced :: DBHandle -> SourceLocation -> IO (Maybe SourceReferenced)
 getReferenced h (SourceLocation sf l c) = do
