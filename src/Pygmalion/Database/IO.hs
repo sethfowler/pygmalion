@@ -678,8 +678,10 @@ getHierarchy h sl = do
   where
     generateHierarchy di = do
       let usr = diUSR di
+      let usrHash = fromIntegral . hash $ usr
       let name = diIdentifier di
-      let node = mkHighlightedNode (fromIntegral . hash $ usr) name []
+      members <- getMembersForUSR h usr
+      let node = mkHighlightedNode usrHash name [(map diIdentifier members)]
       let g = addNode node mkGraph
 
       -- Find subclasses.
@@ -695,7 +697,9 @@ getHierarchy h sl = do
     expandHierarchy newEdgeF nextLevelF superDI g di = do
       let usr = diUSR di
       let usrHash = fromIntegral . hash $ usr
-      let node = mkNode usrHash (diIdentifier di) []
+      let name = diIdentifier di
+      members <- getMembersForUSR h usr
+      let node = mkNode usrHash name [(map diIdentifier members)]
       let edge = newEdgeF (fromIntegral . hash . diUSR $ superDI) usrHash
       let g' = (addEdge edge) . (addNode node) $ g
       
@@ -710,6 +714,9 @@ getMembers h sl = do
     Nothing -> return []
     Just sd -> let usrHash = hash . diUSR . sdDef $ sd in
                execQuery h getMembersStmt (Only usrHash)
+
+getMembersForUSR :: DBHandle -> USR -> IO [DefInfo]
+getMembersForUSR h usr = execQuery h getMembersStmt (Only $ hash usr)
 
 getMembersSQL :: T.Text
 getMembersSQL = T.concat
