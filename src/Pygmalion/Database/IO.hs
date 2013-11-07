@@ -269,7 +269,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int64
 dbMajorVersion = 0
-dbMinorVersion = 20
+dbMinorVersion = 21
 
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c (mkQueryT sql)
@@ -296,10 +296,14 @@ setDBVersion c = execute c (mkQueryT sql) params
 
 -- Schema and operations for the Files table.
 defineFilesTable :: Connection -> IO ()
-defineFilesTable c = execute_ c (mkQueryT sql)
-  where sql = T.concat [ "create table if not exists Files(         "
-                       , "Hash integer primary key unique not null, "
-                       , "Name varchar(2048) not null)" ]
+defineFilesTable c = do
+    execute_ c (mkQueryT sql)
+    execute_ c (mkQueryT indexSQL)
+  where
+    sql = T.concat [ "create table if not exists Files(          "
+                   , "Hash integer primary key unique not null,  "
+                   , "Name varchar(2048) not null collate nocase)" ]
+    indexSQL = "create index if not exists FilesNameIndex on Files(Name collate nocase)"
 
 insertFileAndCheck :: DBHandle -> SourceFile -> IO Bool
 insertFileAndCheck h sf = do
@@ -312,12 +316,16 @@ insertFileSQL = "insert or ignore into Files (Name, Hash) values (?, ?)"
 
 -- Schema and operations for the Inclusions table.
 defineInclusionsTable :: Connection -> IO ()
-defineInclusionsTable c = execute_ c (mkQueryT sql)
-  where sql = T.concat [ "create table if not exists Inclusions( "
-                       , "File integer not null,                 "
-                       , "Inclusion integer not null,            "
-                       , "Direct integer not null,               "
-                       , "primary key (File, Inclusion))" ]
+defineInclusionsTable c = do
+    execute_ c (mkQueryT sql)
+    execute_ c (mkQueryT indexSQL)
+  where
+    sql = T.concat [ "create table if not exists Inclusions( "
+                   , "File integer not null,                 "
+                   , "Inclusion integer not null,            "
+                   , "Direct integer not null,               "
+                   , "primary key (File, Inclusion))" ]
+    indexSQL = "create index if not exists InclusionsInclusionIndex on Inclusions(Inclusion)"
 
 updateInclusion :: DBHandle -> Inclusion -> IO ()
 updateInclusion h (Inclusion hci sf d) = do
@@ -360,7 +368,7 @@ getDirectInclusionsSQL = T.concat
   [ "select F.Name                                 "
   , "from Inclusions as I                          "
   , "join Files as F on I.Inclusion = F.Hash       "
-  , "where I.Direct = 1 and I.File = ?" ]
+  , "where I.File = ? and I.Direct = 1" ]
 
 getIncluders :: DBHandle -> SourceFile -> IO [SourceFile]
 getIncluders h sf = do
@@ -398,7 +406,7 @@ getDirectIncludersSQL = T.concat
   [ "select F.Name                           "
   , "from Inclusions as I                    "
   , "join Files as F on I.File = F.Hash "
-  , "where I.Direct = 1 and I.Inclusion = ?" ]
+  , "where I.Inclusion = ? and I.Direct = 1" ]
 
 getInclusionHierarchy :: DBHandle -> SourceFile -> IO String
 getInclusionHierarchy h sf = asDot <$> generateHierarchy
@@ -518,7 +526,7 @@ getCommandInfoSQL = T.concat
   , "join Paths as W on SourceFiles.WorkingPath = W.Hash                  "
   , "join BuildCommands as C on SourceFiles.BuildCommand = C.Hash         "
   , "join BuildArgs as A on SourceFiles.BuildArgs = A.Hash                "
-  , "where F.Hash = ? limit 1" ]
+  , "where SourceFiles.File = ? limit 1" ]
 
 -- Eventually this should be more statistical, but right now it will just
 -- return an arbitrary file from the same directory.
@@ -532,26 +540,32 @@ getSimilarCommandInfo h sf = do
 
 getSimilarCommandInfoSQL :: T.Text
 getSimilarCommandInfoSQL = T.concat
-  [ "select F.Name, W.Path, C.Command, A.Args, Language, LastIndexed, SHA "
-  , "from SourceFiles                                                     "
-  , "join Files as F on SourceFiles.File = F.Hash                         "
-  , "join Paths as W on SourceFiles.WorkingPath = W.Hash                  "
-  , "join BuildCommands as C on SourceFiles.BuildCommand = C.Hash         "
-  , "join BuildArgs as A on SourceFiles.BuildArgs = A.Hash                "
+  [ "select F.Name, W.Path, C.Command, A.Args, SF.Language, SF.LastIndexed, SF.SHA "
+  , "from Files as F                                                               "
+  , "join SourceFiles as SF on F.Hash = SF.File                                    "
+  , "join Paths as W on SF.WorkingPath = W.Hash                                    "
+  , "join BuildCommands as C on SF.BuildCommand = C.Hash                           "
+  , "join BuildArgs as A on SF.BuildArgs = A.Hash                                  "
   , "where F.Name like ? limit 1" ]
 
 -- Schema and operations for the Definitions table.
 defineDefinitionsTable :: Connection -> IO ()
-defineDefinitionsTable c = execute_ c (mkQueryT sql)
-  where sql = T.concat [ "create table if not exists Definitions(      "
-                       , "USRHash integer primary key unique not null, "
-                       , "Name varchar(2048) not null,                 "
-                       , "USR varchar(2048) not null,                  "
-                       , "File integer not null,                       "
-                       , "Line integer not null,                       "
-                       , "Col integer not null,                        "
-                       , "Kind integer not null,                       "
-                       , "Context integer not null)" ]
+defineDefinitionsTable c = do
+    execute_ c (mkQueryT sql)
+    execute_ c (mkQueryT indexSQL)
+    execute_ c (mkQueryT indexSQL')
+  where
+    sql = T.concat [ "create table if not exists Definitions(      "
+                   , "USRHash integer primary key unique not null, "
+                   , "Name varchar(2048) not null,                 "
+                   , "USR varchar(2048) not null,                  "
+                   , "File integer not null,                       "
+                   , "Line integer not null,                       "
+                   , "Col integer not null,                        "
+                   , "Kind integer not null,                       "
+                   , "Context integer not null)" ]
+    indexSQL = "create index if not exists DefsFileIndex on Definitions(File)"
+    indexSQL' = "create index if not exists DefsFileIndex on Definitions(Context)"
 
 updateDef :: DBHandle -> DefUpdate -> IO ()
 updateDef h (DefUpdate n u sfHash l c k ctx) = do
@@ -603,10 +617,14 @@ getDefSQL = T.concat
   
 -- Schema and operations for the Overrides table.
 defineOverridesTable :: Connection -> IO ()
-defineOverridesTable c = execute_ c (mkQueryT sql)
-  where sql = T.concat [ "create table if not exists Overrides(           "
-                       , "Definition integer primary key unique not null, "
-                       , "Overrided integer not null)" ]
+defineOverridesTable c = do
+    execute_ c (mkQueryT sql)
+    execute_ c (mkQueryT indexSQL)
+  where
+    sql = T.concat [ "create table if not exists Overrides(           "
+                   , "Definition integer primary key unique not null, "
+                   , "Overrided integer not null)" ]
+    indexSQL = "create index if not exists OverridesOverridedIndex on Overrides(Overrided)"
 
 updateOverride :: DBHandle -> Override -> IO ()
 updateOverride h (Override defUSRHash overrideUSRHash) =
@@ -731,6 +749,8 @@ defineReferencesTable :: Connection -> IO ()
 defineReferencesTable c = do
     execute_ c (mkQueryT sql)
     execute_ c (mkQueryT indexSQL)
+    execute_ c (mkQueryT indexSQL')
+    execute_ c (mkQueryT indexSQL'')
   where
     sql = T.concat [ "create table if not exists Refs(           "
                    , "RefId integer unique primary key not null, "
@@ -745,6 +765,8 @@ defineReferencesTable c = do
                    , "RefContext integer not null,               "
                    , "Ref integer not null)" ]
     indexSQL = "create index if not exists RefsFileIndex on Refs(File)"
+    indexSQL' = "create index if not exists RefsRefIndex on Refs(Ref)"
+    indexSQL'' = "create index if not exists RefsRefContextIndex on Refs(RefContext)"
 
 updateReference :: DBHandle -> ReferenceUpdate -> IO ()
 updateReference h ReferenceUpdate {..} = do
