@@ -37,6 +37,7 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBGetMembers SourceLocation (Response [DefInfo])
                | DBGetRefs SourceLocation (Response [SourceReference])
                | DBGetReferenced SourceLocation (Response (Maybe SourceReferenced))
+               | DBGetDeclReferenced SourceLocation (Response [DefInfo])
                | DBGetHierarchy SourceLocation (Response String)
                | DBShutdown
                deriving (Show)
@@ -85,6 +86,7 @@ route h (DBGetOverrides !usr !v)         = query "overrides" getOverriders h usr
 route h (DBGetMembers !usr !v)           = query "members" getMembers h usr v
 route h (DBGetRefs !usr !v)              = query "references" getReferences h usr v
 route h (DBGetReferenced !sl !v)         = query "referenced" getReferenced h sl v
+route h (DBGetDeclReferenced !sl !v)     = query "decl referenced" getDeclReferenced h sl v
 route h (DBGetHierarchy !sl !v)          = query "hierarchy" getHierarchy h sl v
 route _ (DBShutdown)                     = error "Should not route DBShutdown"
 

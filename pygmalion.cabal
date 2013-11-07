@@ -68,7 +68,8 @@ library
                    Pygmalion.RPC.Request,
                    Pygmalion.RPC.Server
                    Pygmalion.SourceKind
-  other-modules:   Control.Exception.Labeled
+  other-modules:   Control.Exception.Labeled,
+                   Pygmalion.Database.Orphans
   hs-source-dirs:  src
 
 executable pygmalion

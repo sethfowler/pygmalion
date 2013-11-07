@@ -176,6 +176,7 @@ instance FromRow SourceRange where
 type Identifier = B.ByteString
 type USR        = B.ByteString
 type USRHash    = Int64
+type RefHash    = Int64
 type SourceLine = Int
 type SourceCol  = Int
 
@@ -210,13 +211,15 @@ instance Serialize Reference
 
 -- Cheaper variant of Reference used for database updates.
 data ReferenceUpdate = ReferenceUpdate
-    { rfuFileHash    :: !SourceFileHash
+    { rfuId          :: !RefHash
+    , rfuFileHash    :: !SourceFileHash
     , rfuLine        :: !SourceLine
     , rfuCol         :: !SourceCol
     , rfuEndLine     :: !SourceLine
     , rfuEndCol      :: !SourceCol
     , rfuKind        :: !SourceKind
     , rfuViaHash     :: !USRHash
+    , rfuDeclHash    :: !RefHash
     , rfuContextHash :: !USRHash
     , rfuUSRHash     :: !USRHash
     } deriving (Eq, Show, Generic)
@@ -224,16 +227,17 @@ data ReferenceUpdate = ReferenceUpdate
 instance Serialize ReferenceUpdate
 
 data SourceReferenced = SourceReferenced
-    { sdDef     :: !DefInfo
-    , sdRange   :: !SourceRange
-    , sdKind    :: !SourceKind
-    , sdViaHash :: !USRHash
+    { sdDef      :: !DefInfo
+    , sdRange    :: !SourceRange
+    , sdKind     :: !SourceKind
+    , sdViaHash  :: !USRHash
+    , sdDeclHash :: !RefHash
     } deriving (Eq, Show, Generic)
 
 instance Serialize SourceReferenced
 
 instance FromRow SourceReferenced where
-  fromRow = SourceReferenced <$> fromRow <*> fromRow <*> fromRow <*> field
+  fromRow = SourceReferenced <$> fromRow <*> fromRow <*> fromRow <*> field <*> field
 
 data SourceReference = SourceReference
     { srLocation :: !SourceLocation

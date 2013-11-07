@@ -24,6 +24,7 @@ module Pygmalion.RPC.Client
 , rpcGetMembers
 , rpcGetRefs
 , rpcGetReferenced
+, rpcGetDeclReferenced
 , rpcGetHierarchy
 , rpcGetInclusions
 , rpcGetIncluders
@@ -122,6 +123,9 @@ rpcGetRefs sl = callRPC (RPCGetRefs sl) =<< Reader.ask
 
 rpcGetReferenced :: SourceLocation -> RPC (Maybe SourceReferenced)
 rpcGetReferenced sl = callRPC (RPCGetReferenced sl) =<< Reader.ask
+
+rpcGetDeclReferenced :: SourceLocation -> RPC [DefInfo]
+rpcGetDeclReferenced sl = callRPC (RPCGetDeclReferenced sl) =<< Reader.ask
 
 rpcGetHierarchy :: SourceLocation -> RPC String
 rpcGetHierarchy sl = callRPC (RPCGetHierarchy sl) =<< Reader.ask

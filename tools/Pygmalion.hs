@@ -63,6 +63,7 @@ usage = do
   putStrLn   " inclusion-hierarchy [file] Prints a graphviz graph showing the inclusion"
   putStrLn   "                            hierarchy of the given file."
   putStrLn   " definition [file] [line] [col]"
+  putStrLn   " declaration [file] [line] [col]"
   putStrLn   " callers [file] [line] [col]"
   putStrLn   " callees [file] [line] [col]"
   putStrLn   " bases [file] [line] [col]"
@@ -94,6 +95,8 @@ parseArgs c wd ["includers", f] = printIncluders c (asSourceFile wd f)
 parseArgs c wd ["inclusion-hierarchy", f] = printInclusionHierarchy c (asSourceFile wd f)
 parseArgs c wd ["definition", f, line, col] = printDef c (asSourceFile wd f)
                                                          (readMay line) (readMay col)
+parseArgs c wd ["declaration", f, line, col] = printDecl c (asSourceFile wd f)
+                                                           (readMay line) (readMay col)
 parseArgs c wd ["callers", f, line, col] = printCallers c (asSourceFile wd f)
                                                           (readMay line) (readMay col)
 parseArgs c wd ["callees", f, line, col] = printCallees c (asSourceFile wd f)
@@ -212,6 +215,13 @@ printDef = queryCmd "definition" rpcGetDefinition putDef
     putDef (DefInfo n _ (SourceLocation idF idLine idCol) k _) =
       putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
                  ": Definition: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
+
+printDecl :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
+printDecl = queryCmd "declaration" rpcGetDeclReferenced putDecl
+  where 
+    putDecl (DefInfo n _ (SourceLocation idF idLine idCol) k _) =
+      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
+                 ": Declaration: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
 
 printCallers :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printCallers = queryCmd "caller" rpcGetCallers putCaller

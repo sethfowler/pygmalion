@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns, OverloadedStrings #-}
+{-# LANGUAGE BangPatterns, OverloadedStrings, RecordWildCards #-}
 
 module Pygmalion.Database.IO
 ( ensureDB
@@ -27,6 +27,7 @@ module Pygmalion.Database.IO
 , getCallers
 , getCallees
 , updateReference
+, getDeclReferenced
 , getReferenced
 , getReferences
 , enableTracing
@@ -45,8 +46,10 @@ import qualified Data.Text as T
 import qualified Database.SQLite3.Direct as Direct
 import Database.SQLite.Simple
 import System.FilePath.Posix
+
 import Control.Exception.Labeled
 import Pygmalion.Core
+import Pygmalion.Database.Orphans ()
 import Pygmalion.Dot
 import Pygmalion.Hash
 import Pygmalion.Log
@@ -91,6 +94,7 @@ data DBHandle = DBHandle
     , getCalleesStmt            :: Statement
     , updateReferenceStmt       :: Statement
     , resetReferencesStmt       :: Statement
+    , getDeclReferencedStmt     :: Statement
     , getReferencedStmt         :: Statement
     , getReferencesStmt         :: Statement
     , insertFileStmt            :: Statement
@@ -154,6 +158,7 @@ openDB db = labeledCatch "openDB" $ do
                   <*> openStatement c (mkQueryT getCalleesSQL)
                   <*> openStatement c (mkQueryT updateReferenceSQL)
                   <*> openStatement c (mkQueryT resetReferencesSQL)
+                  <*> openStatement c (mkQueryT getDeclReferencedSQL)
                   <*> openStatement c (mkQueryT getReferencedSQL)
                   <*> openStatement c (mkQueryT getReferencesSQL)
                   <*> openStatement c (mkQueryT insertFileSQL)
@@ -188,6 +193,7 @@ closeDB h = do
   closeStatement (getCalleesStmt h)
   closeStatement (updateReferenceStmt h)
   closeStatement (resetReferencesStmt h)
+  closeStatement (getDeclReferencedStmt h)
   closeStatement (getReferencedStmt h)
   closeStatement (getReferencesStmt h)
   closeStatement (insertFileStmt h)
@@ -260,7 +266,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int64
 dbMajorVersion = 0
-dbMinorVersion = 19
+dbMinorVersion = 20
 
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c (mkQueryT sql)
@@ -707,29 +713,36 @@ defineReferencesTable c = do
     execute_ c (mkQueryT sql)
     execute_ c (mkQueryT indexSQL)
   where
-    sql = T.concat [ "create table if not exists Refs(        "
-                   , "Id integer unique primary key not null, "
-                   , "File integer not null,                  "
-                   , "Line integer not null,                  "
-                   , "Col integer not null,                   "
-                   , "EndLine integer not null,               "
-                   , "EndCol integer not null,                "
-                   , "RefKind integer not null,               "
-                   , "RefVia integer not null,                "
-                   , "RefContext integer not null,            "
+    sql = T.concat [ "create table if not exists Refs(           "
+                   , "RefId integer unique primary key not null, "
+                   , "File integer not null,                     "
+                   , "Line integer not null,                     "
+                   , "Col integer not null,                      "
+                   , "EndLine integer not null,                  "
+                   , "EndCol integer not null,                   "
+                   , "RefKind integer not null,                  "
+                   , "RefVia integer not null,                   "
+                   , "RefDecl integer not null,                  "
+                   , "RefContext integer not null,               "
                    , "Ref integer not null)" ]
     indexSQL = "create index if not exists RefsFileIndex on Refs(File)"
 
 updateReference :: DBHandle -> ReferenceUpdate -> IO ()
-updateReference h (ReferenceUpdate sfHash l c el ec k viaUSRHash ctxUSRHash refUSRHash) = do
-    let kind = fromEnum k
-    execStatement h updateReferenceStmt (sfHash, l, c, el, ec, kind,
-                                         viaUSRHash, ctxUSRHash, refUSRHash)
-
+updateReference h ReferenceUpdate {..} = do
+  let kind = fromEnum rfuKind
+  logInfo "About to handle refupdate"
+  execStatement h updateReferenceStmt (rfuId, rfuFileHash, rfuLine, rfuCol,
+                                       rfuEndLine, rfuEndCol, kind,
+                                       rfuViaHash, rfuDeclHash,
+                                       rfuContextHash, rfuUSRHash)
+  logInfo "Finished with refupdate"
+  
 updateReferenceSQL :: T.Text
 updateReferenceSQL = T.concat
-  [ "replace into Refs (File, Line, Col, EndLine, EndCol, RefKind, RefVia, RefContext, Ref) "
-  , "values (?, ?, ?, ?, ?, ?, ?, ?, ?)" ]
+  [ "replace into Refs                            "
+  , " (RefId, File, Line, Col, EndLine, EndCol,   "
+  , "  RefKind, RefVia, RefDecl, RefContext, Ref) "
+  , "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)" ]
 
 resetReferences :: DBHandle -> SourceFile -> IO ()
 resetReferences h sf = do
@@ -738,6 +751,23 @@ resetReferences h sf = do
 
 resetReferencesSQL :: T.Text
 resetReferencesSQL = "delete from Refs where File = ?"
+
+-- FIXME: Crappy implementation.
+getDeclReferenced :: DBHandle -> SourceLocation -> IO [DefInfo]
+getDeclReferenced h sl = do
+  maySd <- getReferenced h sl
+  case maySd of
+    Nothing -> return []
+    Just sd -> execQuery h getDeclReferencedStmt (Only $ sdDeclHash sd)
+
+getDeclReferencedSQL :: T.Text
+getDeclReferencedSQL = T.concat
+  [ "select D.Name, D.USR, RF.Name, R.Line, R.Col, R.RefKind, coalesce(C.USR, x'') "
+  , "from Refs as R                                                                "
+  , "join Definitions as D on R.Ref = D.USRHash                                    "
+  , "join Files as RF on R.File = RF.Hash                                          "
+  , "left join Definitions as C on R.RefContext = C.USRHash                        "
+  , "where R.RefId = ?" ]
 
 getReferenced :: DBHandle -> SourceLocation -> IO (Maybe SourceReferenced)
 getReferenced h (SourceLocation sf l c) = do
@@ -760,7 +790,7 @@ getReferencedSQL :: T.Text
 getReferencedSQL = T.concat
   [ "select D.Name, D.USR, DF.Name, D.Line, D.Col, D.Kind,        "
   , "  coalesce(C.USR, x''), RF.Name, R.Line, R.Col, R.EndLine,   "
-  , "  R.EndCol, R.RefKind, R.RefVia                              "
+  , "  R.EndCol, R.RefKind, R.RefVia, R.RefDecl                   "
   , "from Refs as R                                               "
   , "join Definitions as D on R.Ref = D.USRHash                   "
   , "join Files as DF on D.File = DF.Hash                         "
@@ -831,7 +861,7 @@ getCallersSQL = T.concat
   , "join Definitions as D on R.RefContext = D.USRHash    "
   , "join Files as F on D.File = F.Hash                   "
   , "left join Definitions as C on D.Context = C.USRHash  "
-  , "where R.RefKind in (?, ?, ?) and R.Ref = ?           "
+  , "where R.Ref = ? and R.RefKind in (?, ?, ?)           "
   , "order by FR.Name, R.Line, R.Col" ]
 
 getCallees :: DBHandle -> SourceLocation -> IO [DefInfo]
@@ -850,7 +880,7 @@ getCalleesSQL = T.concat
   , "join Definitions as D on R.Ref = D.USRHash            "
   , "join Files as F on D.File = F.Hash                    "
   , "left join Definitions as C on D.Context = C.USRHash   "
-  , "where R.RefKind in (?, ?) and R.RefContext = ?        "
+  , "where R.RefContext = ? and R.RefKind in (?, ?)        "
   , "order by F.Name, D.Line, D.Col" ]
 
 -- Checks that the database has the correct schema and sets it up if needed.

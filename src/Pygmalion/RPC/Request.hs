@@ -22,6 +22,7 @@ data RPCRequest = RPCIndexCommand CommandInfo
                 | RPCGetMembers SourceLocation
                 | RPCGetRefs SourceLocation
                 | RPCGetReferenced SourceLocation
+                | RPCGetDeclReferenced SourceLocation
                 | RPCGetHierarchy SourceLocation
                 | RPCGetInclusions SourceFile
                 | RPCGetIncluders SourceFile

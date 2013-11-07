@@ -54,6 +54,7 @@
             ".pdf")))
 
 (defun pygmalion-go-to-definition () (interactive) (pygmalion-command "definition"))
+(defun pygmalion-go-to-declaration () (interactive) (pygmalion-command "declaration"))
 (defun pygmalion-callers () (interactive) (pygmalion-command "callers"))
 (defun pygmalion-callees () (interactive) (pygmalion-command "callees"))
 (defun pygmalion-bases () (interactive) (pygmalion-command "bases"))
@@ -68,6 +69,7 @@
 (eval-after-load "cc-mode"
   '(progn
       (define-key c-mode-base-map (kbd "M-p M-d") 'pygmalion-go-to-definition)
+      (define-key c-mode-base-map (kbd "M-p M-D") 'pygmalion-go-to-declaration)
       (define-key c-mode-base-map (kbd "M-p M-c") 'pygmalion-callers)
       (define-key c-mode-base-map (kbd "M-p M-C") 'pygmalion-callees)
       (define-key c-mode-base-map (kbd "M-p M-b") 'pygmalion-bases)

@@ -104,6 +104,7 @@ route (RPCGetOverrides sl)          = sendQuery $ DBGetOverrides sl
 route (RPCGetMembers sl)            = sendQuery $ DBGetMembers sl
 route (RPCGetRefs sl)               = sendQuery $ DBGetRefs sl
 route (RPCGetReferenced sl)         = sendQuery $ DBGetReferenced sl
+route (RPCGetDeclReferenced sl)     = sendQuery $ DBGetDeclReferenced sl
 route (RPCGetHierarchy sl)          = sendQuery $ DBGetHierarchy sl
 route (RPCGetInclusions sf)         = sendQuery $ DBGetInclusions sf
 route (RPCGetIncluders sf)          = sendQuery $ DBGetIncluders sf

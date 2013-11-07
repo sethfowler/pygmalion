@@ -21,7 +21,6 @@ import Control.Monad
 import Control.Monad.IO.Class
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as BU
-import Data.Int
 import Data.Typeable
 
 import Data.Bool.Predicate
@@ -130,12 +129,15 @@ defsVisitor conn ci tu cursor _ = do
         ctxUSR <- XRef.getUSR ctxC >>= CS.unpackByteString
 
         -- Record.
-        reference <- return $! ReferenceUpdate (hash . slFile $ loc)
+        refId <- refHash includedFile loc
+        reference <- return $! ReferenceUpdate refId
+                                               (hash . slFile $ loc)
                                                (slLine loc)
                                                (slCol loc)
                                                endLn
                                                endCol
                                                (toSourceKind cKind)
+                                               0
                                                0
                                                (hash ctxUSR)
                                                (hash includedFile)
@@ -178,14 +180,21 @@ defsVisitor conn ci tu cursor _ = do
         viaUSRHash <- if cKind == C.Cursor_CallExpr then callBaseUSRHash cursor
                                                     else return 0
 
+        -- Record location of reference for declaration lookups.
+        declHash <- if refIsNull then return 0
+                                 else refHash referToUSR =<< getCursorLocation refC
+
         -- Record.
-        reference <- return $! ReferenceUpdate (hash . slFile $ loc)
+        refId <- refHash referToUSR loc
+        reference <- return $! ReferenceUpdate refId
+                                               (hash . slFile $ loc)
                                                (slLine loc)
                                                (slCol loc)
                                                endLn
                                                endCol
                                                refKind
                                                viaUSRHash
+                                               declHash
                                                (hash ctxUSR)
                                                (hash referToUSR)
         liftIO $ runRPC (rpcFoundRef reference) conn
@@ -271,7 +280,7 @@ analyzeCall c = do
   else 
     return CallExpr
 
-callBaseUSRHash :: C.Cursor -> ClangApp s Int64
+callBaseUSRHash :: C.Cursor -> ClangApp s USRHash
 callBaseUSRHash = return . hash
               -- <=< (\x -> (liftIO . putStrLn $ "Got base USR: " ++ (show x)) >> return x)
               <=< CS.unpackByteString
@@ -279,6 +288,12 @@ callBaseUSRHash = return . hash
               <=< C.getTypeDeclaration
               <=< underlyingType
               <=< C.getBaseExpression
+
+refHash :: USR -> SourceLocation -> ClangApp s USRHash
+refHash usr loc = return . hash $ (BU.fromString . show $ slLine loc) `B.append`
+                                  (slFile loc) `B.append`
+                                  (BU.fromString . show $ slCol loc) `B.append`
+                                  usr
 
 isDef :: C.Cursor -> C.CursorKind -> ClangApp s Bool
 isDef c k = do
