@@ -414,7 +414,7 @@ getInclusionHierarchy h sf = asDot <$> generateHierarchy
     generateHierarchy = do
       let nid = fromIntegral . hash $ sf
       let node = mkHighlightedNode nid sf []
-      let g = addNode node mkGraph
+      let g = addUniqueNode node mkGraph
 
       -- Find includers.
       irs <- getDirectIncluders h sf
@@ -433,17 +433,24 @@ getInclusionHierarchy h sf = asDot <$> generateHierarchy
       return g''
       
     expandHierarchy newEdgeF refsF nextLevelF superNodeId g sf' = do
-      -- Find references to this inclusion in the original source file.
-      refs <- refsF sf' sf
-
       let nid = fromIntegral . hash $ sf'
-      let node = mkNode nid sf' [(map diIdentifier refs)]
-      let edge = newEdgeF superNodeId nid
-      let g' = (addEdge edge) . (addNode node) $ g
-      
-      is <- nextLevelF h sf'
-      g'' <- foldM (expandHierarchy newEdgeF refsF nextLevelF nid) g' is
-      return g''
+
+      -- If this inclusion already exists in the graph, bail.
+      case nid `nodeElem` g of
+        True  -> do let edge = newEdgeF superNodeId nid
+                    return $ (addEdge edge) g
+        False -> do -- Find references to this inclusion in the original source file.
+                    refs <- refsF sf' sf
+
+                    -- Add this inclusion as a node in the graph.
+                    let node = mkNode nid sf' [(map diIdentifier refs)]
+                    let edge = newEdgeF superNodeId nid
+                    let g' = (addEdge edge) . (addUniqueNode node) $ g
+
+                    -- Add its inclusions in turn.
+                    is <- nextLevelF h sf'
+                    g'' <- foldM (expandHierarchy newEdgeF refsF nextLevelF nid) g' is
+                    return g''
 
 -- Schema and operations for the Paths table.
 definePathsTable :: Connection -> IO ()
@@ -700,7 +707,7 @@ getHierarchy h sl = do
       let name = diIdentifier di
       members <- getMembersForUSR h usr
       let node = mkHighlightedNode usrHash name [(map diIdentifier members)]
-      let g = addNode node mkGraph
+      let g = addUniqueNode node mkGraph
 
       -- Find subclasses.
       ovs <- getOverriders' h usr

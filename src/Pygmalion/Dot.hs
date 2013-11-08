@@ -10,7 +10,9 @@ module Pygmalion.Dot
 , mkEdge
 , mkReverseEdge
 , addNode
+, addUniqueNode
 , addEdge
+, nodeElem
 , asDot
 ) where
 
@@ -51,10 +53,19 @@ addNode :: Node -> Graph -> Graph
 addNode n@(nid, _) g = if nid `G.gelem` g then g
                                           else G.insNode n g
 
+-- Adds a node without checking to see that it's a duplicate. By using
+-- this you assert that the node you're adding is unique.
+addUniqueNode :: Node -> Graph -> Graph
+addUniqueNode = G.insNode
+
 -- Ignores duplicate edges.
 addEdge :: Edge -> Graph -> Graph
 addEdge e@(a, b, _) g = if b `elem` G.suc g a then g
                                               else G.insEdge e g
+
+-- Checks whether a node exists in the graph already.
+nodeElem :: Int -> Graph -> Bool
+nodeElem = G.gelem
 
 bsToText :: B.ByteString -> TL.Text
 bsToText = TL.fromStrict . E.decodeUtf8
