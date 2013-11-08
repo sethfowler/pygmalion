@@ -10,6 +10,7 @@ module Pygmalion.Index.Manager
 , indexLockSetCounter
 ) where
 
+import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Exception
@@ -28,13 +29,15 @@ import Pygmalion.Core
 import Pygmalion.Database.Manager
 import Pygmalion.Log
 
-data IndexSource = FromBuild  CommandInfo
-                 | FromNotify SourceFile
+data IndexSource = FromBuild     CommandInfo
+                 | FromNotify    SourceFile
+                 | FromDepChange CommandInfo Time
                  deriving (Show)
 
 sfFromSource :: IndexSource -> SourceFile
-sfFromSource (FromBuild  ci) = ciSourceFile ci
-sfFromSource (FromNotify sf) = sf
+sfFromSource (FromBuild  ci)      = ciSourceFile ci
+sfFromSource (FromNotify sf)      = sf
+sfFromSource (FromDepChange ci _) = ciSourceFile ci
 
 data IndexRequest = Index IndexSource
                   | ShutdownIndexer
@@ -135,6 +138,10 @@ analyzeIfDirty src = do
       | ciLastIndexed oldCI /= mtime  -> analyze oldCI
       | otherwise                     -> ignoreUnchanged src mtime
     (FromNotify _, Nothing, _)        -> ignoreUnknown src
+    (FromDepChange ci t, Just oldCI, _)
+      | ciLastIndexed oldCI < t       -> analyze ci
+      | otherwise                     -> ignoreUnchanged src (ciLastIndexed oldCI)
+    (FromDepChange ci _, Nothing, _)  -> analyze ci
 
 commandInfoChanged :: CommandInfo -> CommandInfo -> Bool
 commandInfoChanged a b | ciWorkingPath a /= ciWorkingPath b = True
@@ -147,9 +154,10 @@ analyze :: CommandInfo -> Indexer ()
 analyze ci = do
   ctx <- ask
   others <- otherFilesToReindex ci
+  time <- floor <$> lift getPOSIXTime
   forM_ others $ \f ->
-    writeLenChan (acIndexChan ctx) (Index . FromBuild $ f)
-  analyzeCode ci
+    writeLenChan (acIndexChan ctx) (Index $ FromDepChange f time)
+  analyzeCode ci time
 
 ignoreUnchanged :: IndexSource -> Time -> Indexer ()
 ignoreUnchanged src mtime = logInfo $ "Index is up-to-date for file "
@@ -184,17 +192,16 @@ invalidateCommand ci = ci { ciLastIndexed = 0
                           , ciSHA = B.empty
                           }
 
-analyzeCode :: CommandInfo -> Indexer ()
-analyzeCode ci = do
-    ctx <- ask
-    let sf = ciSourceFile ci
-    logInfo $ "Indexing " ++ show sf
-    time <- lift getPOSIXTime
-    writeLenChan (acDBChan ctx) (DBResetMetadata sf)
-    (_, _, _, h) <- lift $ createProcess
-                         (proc (acIndexer ctx) [show (acPort ctx), show ci])
-    code <- lift $ waitForProcess h
-    case code of
-      ExitSuccess -> updateCommand $ ci { ciLastIndexed = floor time }
-      _           -> do logInfo "Indexing process failed"
-                        updateCommand (invalidateCommand ci)
+analyzeCode :: CommandInfo -> Time -> Indexer ()
+analyzeCode ci time = do
+  ctx <- ask
+  let sf = ciSourceFile ci
+  logInfo $ "Indexing " ++ show sf
+  writeLenChan (acDBChan ctx) (DBResetMetadata sf)
+  (_, _, _, h) <- lift $ createProcess
+                       (proc (acIndexer ctx) [show (acPort ctx), show ci])
+  code <- lift $ waitForProcess h
+  case code of
+    ExitSuccess -> updateCommand $ ci { ciLastIndexed = time }
+    _           -> do logInfo "Indexing process failed"
+                      updateCommand (invalidateCommand ci)
