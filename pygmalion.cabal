@@ -23,7 +23,6 @@ library
                    conduit,
                    configurator,
                    containers,
-                   cryptohash,
                    direct-sqlite,
                    directory,
                    filepath,
