@@ -51,7 +51,13 @@ runDatabaseManager chan queryChan = do
     go :: Int -> UTCTime -> DBHandle -> IO ()
     go 1000 !start !h = do 
       stop <- getCurrentTime
+      queryChanCount <- getLenChanCount queryChan
+      dbChanCount <- getLenChanCount chan
       logInfo $ "Handled 1000 records in " ++ (show $ stop `diffUTCTime` start)
+                                           ++ " -- " ++ (show queryChanCount)
+                                           ++ " queries waiting, "
+                                           ++ (show dbChanCount)
+                                           ++ " DB requests waiting"
       newStart <- getCurrentTime
       go 0 newStart h
     go !n !s !h = {-# SCC "databaseThread" #-}
