@@ -53,18 +53,15 @@ runDatabaseManager chan queryChan = do
       stop <- getCurrentTime
       queryChanCount <- getLenChanCount queryChan
       dbChanCount <- getLenChanCount chan
-      logInfo $ "Handled 1000 records in " ++ (show $ stop `diffUTCTime` start)
-                                           ++ " -- " ++ (show queryChanCount)
+      logInfo $ "Handled 1000 records in " ++ show (stop `diffUTCTime` start)
+                                           ++ " -- " ++ show queryChanCount
                                            ++ " queries waiting, "
-                                           ++ (show dbChanCount)
+                                           ++ show dbChanCount
                                            ++ " DB requests waiting"
       newStart <- getCurrentTime
       go 0 newStart h
     go !n !s !h = {-# SCC "databaseThread" #-}
-           do (!tookFirst, !newCount, !req) <- readEitherChan n queryChan chan
-              logDebug $ "Database request: " ++ (show req)
-              logDebug $ if tookFirst then "Query channel now has " ++ (show newCount) ++ " queries waiting"
-                                      else "Database channel now has " ++ (show newCount) ++ " requests waiting"
+           do (_, _, !req) <- readLenChanPreferFirst queryChan chan
               case req of
                 DBShutdown -> logInfo "Shutting down DB thread"
                 _          -> route h req >> go (n+1) s h
@@ -95,11 +92,6 @@ route h (DBGetReferenced !sl !v)         = query "referenced" getReferenced h sl
 route h (DBGetDeclReferenced !sl !v)     = query "decl referenced" getDeclReferenced h sl v
 route h (DBGetHierarchy !sl !v)          = query "hierarchy" getHierarchy h sl v
 route _ (DBShutdown)                     = error "Should not route DBShutdown"
-
-readEitherChan :: Int -> DBChan -> DBChan -> IO (Bool, Int, DBRequest)
-readEitherChan n queryChan chan
-  | n `rem` 10 == 0 = readLenChanPreferFirst queryChan chan
-  | otherwise       = readLenChanPreferFirst chan queryChan
 
 update :: Show a => String -> (DBHandle -> a -> IO ()) -> DBHandle -> a -> IO ()
 update item f h x = do

@@ -107,6 +107,7 @@ executable pygd
                ,  fsnotify
                ,  mtl
                ,  pygmalion
+               ,  stm
                ,  system-filepath
                ,  time
                ,  void
