@@ -130,18 +130,20 @@ analyzeIfDirty src = do
   case (src, mayOldCI, mayMTime) of
     (_, _, Nothing)                   -> ignoreUnreadable src
     (FromBuild ci, Just oldCI, Just mtime)
-      | commandInfoChanged ci oldCI   -> analyze ci
-      | ciLastIndexed oldCI /= mtime  -> analyze ci
+      | commandInfoChanged ci oldCI   -> analyze ci mtime
+      | ciLastIndexed oldCI /= mtime  -> analyze ci mtime
       | otherwise                     -> ignoreUnchanged src mtime
-    (FromBuild ci, Nothing, _)        -> analyze ci
+    (FromBuild ci, Nothing, Just mtime)
+                                      -> analyze ci mtime
     (FromNotify _, Just oldCI, Just mtime)
-      | ciLastIndexed oldCI /= mtime  -> analyze oldCI
+      | ciLastIndexed oldCI /= mtime  -> analyze oldCI mtime
       | otherwise                     -> ignoreUnchanged src mtime
     (FromNotify _, Nothing, _)        -> ignoreUnknown src
-    (FromDepChange ci t, Just oldCI, _)
-      | ciLastIndexed oldCI < t       -> analyze ci
+    (FromDepChange ci t, Just oldCI, Just mtime)
+      | ciLastIndexed oldCI < t       -> analyze ci mtime
       | otherwise                     -> ignoreUnchanged src (ciLastIndexed oldCI)
-    (FromDepChange ci _, Nothing, _)  -> analyze ci
+    (FromDepChange ci _, Nothing, Just mtime)
+                                      -> analyze ci mtime
 
 commandInfoChanged :: CommandInfo -> CommandInfo -> Bool
 commandInfoChanged a b | ciWorkingPath a /= ciWorkingPath b = True
@@ -150,14 +152,13 @@ commandInfoChanged a b | ciWorkingPath a /= ciWorkingPath b = True
                        | ciLanguage a    /= ciLanguage b    = True
                        | otherwise                          = False
 
-analyze :: CommandInfo -> Indexer ()
-analyze ci = do
+analyze :: CommandInfo -> Time -> Indexer ()
+analyze ci mtime = do
   ctx <- ask
   others <- otherFilesToReindex ci
-  time <- floor <$> lift getPOSIXTime
   forM_ others $ \f ->
-    writeLenChan (acIndexChan ctx) (Index $ FromDepChange f time)
-  analyzeCode ci time
+    writeLenChan (acIndexChan ctx) (Index $ FromDepChange f mtime)
+  analyzeCode ci
 
 ignoreUnchanged :: IndexSource -> Time -> Indexer ()
 ignoreUnchanged src mtime = logInfo $ "Index is up-to-date for file "
@@ -192,10 +193,11 @@ invalidateCommand ci = ci { ciLastIndexed = 0
                           , ciSHA = B.empty
                           }
 
-analyzeCode :: CommandInfo -> Time -> Indexer ()
-analyzeCode ci time = do
+analyzeCode :: CommandInfo -> Indexer ()
+analyzeCode ci = do
   ctx <- ask
   let sf = ciSourceFile ci
+  time <- floor <$> lift getPOSIXTime
   logInfo $ "Indexing " ++ show sf
   writeLenChan (acDBChan ctx) (DBResetMetadata sf)
   (_, _, _, h) <- lift $ createProcess
