@@ -126,7 +126,7 @@ runIndexManager cf dbChan dbQueryChan is = go
              Index r  -> do runReaderT (analyzeIfDirty r) ctx
                             atomically $ finishIndexingFile (acIndexStream ctx) r
                             go
-             Shutdown -> logInfo "Shutting down analysis thread"
+             Shutdown -> logInfo "Shutting down indexing thread"
 
 getMTime :: SourceFile -> Indexer (Maybe Time)
 getMTime sf = lift $ do
