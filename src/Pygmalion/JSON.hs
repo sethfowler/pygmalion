@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, RecordWildCards #-}
 
 module Pygmalion.JSON
 ( sourceRecordsToJSON
@@ -12,7 +12,7 @@ import Pygmalion.Core
 
 sourceRecordsToJSON :: [CommandInfo] -> String
 sourceRecordsToJSON cis = encodeStrict $ map (toJSObject . toKeyValue) cis
-  where toKeyValue (CommandInfo sf wd cmd args _ _ _) =
-          [("file", unSourceFile sf),
-           ("directory", B.toString wd),
-           ("command", intercalate " " $ map B.toString (cmd : args))]
+  where toKeyValue CommandInfo {..} =
+          [("file", unSourceFile ciSourceFile),
+           ("directory", B.toString ciWorkingPath),
+           ("command", intercalate " " $ map B.toString (ciCommand : ciArgs))]

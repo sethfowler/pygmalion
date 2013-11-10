@@ -14,7 +14,6 @@ import Control.Concurrent.STM
 import Control.Exception
 import Control.Monad
 import Control.Monad.Reader
-import qualified Data.ByteString as B
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Time.Clock.POSIX
@@ -203,14 +202,6 @@ updateCommand ci = do
   ctx <- ask
   writeLenChan (acDBChan ctx) (DBUpdateCommandInfo ci)
 
--- If indexing failed, we want to be sure to reattempt indexing on the file next
--- time we have an opportunity. We make sure this happens by invalidating all of
--- the metadata that might ordinarily cause us to skip indexing the file.
-invalidateCommand :: CommandInfo -> CommandInfo
-invalidateCommand ci = ci { ciLastIndexed = 0
-                          , ciSHA = B.empty
-                          }
-
 analyzeCode :: CommandInfo -> Int -> Indexer ()
 analyzeCode ci retries = do
   ctx <- ask
@@ -228,6 +219,7 @@ analyzeCode ci retries = do
   case (code, retries) of
     (ExitSuccess, _) -> updateCommand $ ci { ciLastIndexed = time }
     (_, 0)           -> do logInfo "Indexing process failed."
-                           updateCommand (invalidateCommand ci)
+                           -- Make sure we reindex next time.
+                           updateCommand $ ci { ciLastIndexed = 0 }
     (_, _)           -> do logInfo "Indexing process failed; will retry..."
                            analyzeCode ci (retries - 1)
