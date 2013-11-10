@@ -2,6 +2,7 @@
 
 import Control.Concurrent
 import Control.Concurrent.Async
+import Control.Concurrent.STM
 import Control.Exception (Exception, fromException, toException)
 import Control.Monad
 import Data.List
@@ -29,19 +30,16 @@ main = do
   initLogger (logLevel cf)
   ensureDB
   stopWatching <- newEmptyMVar
-  aChan <- newLenChan
   dbChan <- newLenChan
   dbQueryChan <- newLenChan
   idleChan <- newLenChan
-  fileLox <- mkIndexLockSet
+  idxStream <- mkIndexStream
 
   -- Launch threads.
   logDebug "Launching idle thread"
-  idleThread <- asyncBound (runIdleManager cf idleChan
-                                           [lenChanCounter aChan,
-                                            lenChanCounter dbChan,
-                                            lenChanCounter dbQueryChan,
-                                            indexLockSetCounter fileLox])
+  idleThread <- asyncBound (runIdleManager cf idleChan idxStream
+                                           [lenChanCounter dbChan,
+                                            lenChanCounter dbQueryChan])
   logDebug "Launching database thread"
   dbThread <- asyncBound (runDatabaseManager dbChan dbQueryChan)
   let maxThreads = case idxThreads cf of
@@ -49,9 +47,9 @@ main = do
                      n -> n
   indexThreads <- forM [1..maxThreads] $ \i -> do
     logDebug $ "Launching indexing thread #" ++ show i
-    asyncBound (runIndexManager cf aChan dbChan dbQueryChan fileLox)
-  rpcThread <- async (runRPCServer cf aChan dbChan dbQueryChan idleChan)
-  watchThread <- async (doWatch aChan stopWatching)
+    asyncBound (runIndexManager cf dbChan dbQueryChan idxStream)
+  rpcThread <- async (runRPCServer cf idxStream dbChan dbQueryChan idleChan)
+  watchThread <- async (doWatch idxStream stopWatching)
 
   -- Wait for something to terminate.
   void $ waitAnyCatch ([dbThread, rpcThread, watchThread] ++ indexThreads)
@@ -74,7 +72,7 @@ main = do
   putMVar stopWatching ()
   ensureNoException =<< waitCatch watchThread
   logDebug "Terminated watch thread."
-  forM_ indexThreads $ \_ -> writeLenChan aChan ShutdownIndexer  -- Signifies end of data.
+  atomically $ shutdownIndexStream idxStream
   forM_ (zip indexThreads [1..numCapabilities]) $ \(thread, i) -> do
     ensureNoException =<< waitCatch thread
     logDebug $ "Termination of thread #" ++ show i
@@ -82,20 +80,20 @@ main = do
   ensureNoException =<< waitCatch dbThread
   logDebug "Termination of database thread"
 
-doWatch :: IndexChan -> MVar () -> IO ()
-doWatch aChan stopWatching = do
+doWatch :: IndexStream -> MVar () -> IO ()
+doWatch idxStream stopWatching = do
   -- Restart every 10 minutes until a better fix is found. =(
-  _ <- race (withManager $ watch aChan stopWatching) (threadDelay $ 10 * 60 * 1000000)
+  _ <- race (withManager $ watch idxStream stopWatching) (threadDelay $ 10 * 60 * 1000000)
   shouldStop <- tryTakeMVar stopWatching
   case shouldStop of
     Just _  -> return ()
-    Nothing -> doWatch aChan stopWatching
+    Nothing -> doWatch idxStream stopWatching
 
-watch :: IndexChan -> MVar () -> WatchManager -> IO ()
-watch aChan stopWatching m = do
+watch :: IndexStream -> MVar () -> WatchManager -> IO ()
+watch idxStream stopWatching m = do
     curDir <- getCurrentDirectory
     logDebug $ "Started watching " ++ show curDir ++ "."
-    watchTree m (FP.decodeString curDir) checkEvent (handleEvent aChan)
+    watchTree m (FP.decodeString curDir) checkEvent (handleEvent idxStream)
     readMVar stopWatching
 
 checkEvent :: Event -> Bool
@@ -103,17 +101,17 @@ checkEvent (Added f _)    = isSource $! FP.encodeString $! f
 checkEvent (Modified f _) = isSource $! FP.encodeString $! f
 checkEvent (Removed f _)  = isSource $! FP.encodeString $! f
 
-handleEvent :: IndexChan -> Event -> IO ()
-handleEvent aChan (Added f _)    = handleSource aChan f
-handleEvent aChan (Modified f _) = handleSource aChan f
-handleEvent aChan (Removed f _)  = handleSource aChan f
+handleEvent :: IndexStream -> Event -> IO ()
+handleEvent idxStream (Added f _)    = handleSource idxStream f
+handleEvent idxStream (Modified f _) = handleSource idxStream f
+handleEvent idxStream (Removed f _)  = handleSource idxStream f
 
-handleSource :: IndexChan -> FP.FilePath -> IO ()
-handleSource aChan f = do
+handleSource :: IndexStream -> FP.FilePath -> IO ()
+handleSource idxStream f = do
   let file = FP.encodeString f
   fileExists <- doesFileExist file
   when (isSource file && fileExists) $
-    writeLenChan aChan $ Index . FromNotify . mkSourceFile $ file
+    atomically $ addPendingIndex idxStream (FromNotify . mkSourceFile $ file)
 
 isSource :: FilePath -> Bool
 isSource f = (hasSourceExtension f || hasHeaderExtension f) &&

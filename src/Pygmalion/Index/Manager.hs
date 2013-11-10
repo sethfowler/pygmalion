@@ -1,24 +1,23 @@
-{-# LANGUAGE OverloadedStrings, BangPatterns #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Pygmalion.Index.Manager
 ( runIndexManager
 , IndexRequest (..)
-, IndexSource (..)
-, IndexChan
-, IndexLockSet
-, mkIndexLockSet
-, indexLockSetCounter
+, IndexStream (..)
+, mkIndexStream
+, shutdownIndexStream
+, addPendingIndex
 ) where
 
-import Control.Concurrent
+import Control.Applicative
 import Control.Concurrent.STM
 import Control.Exception
 import Control.Monad
 import Control.Monad.Reader
-import Crypto.Hash.SHA1
 import qualified Data.ByteString as B
-import Data.Time.Clock.POSIX
+import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Data.Time.Clock.POSIX
 import System.Directory
 import System.Exit
 import System.Process
@@ -29,85 +28,106 @@ import Pygmalion.Core
 import Pygmalion.Database.Manager
 import Pygmalion.Log
 
-data IndexSource = FromBuild  CommandInfo
-                 | FromNotify SourceFile
-                 deriving (Show)
+data IndexRequest = FromBuild     CommandInfo
+                  | FromNotify    SourceFile
+                  | FromDepChange CommandInfo Time
+                    deriving (Show)
 
-sfFromSource :: IndexSource -> SourceFile
-sfFromSource (FromBuild  ci) = ciSourceFile ci
-sfFromSource (FromNotify sf) = sf
+reqSF :: IndexRequest -> SourceFile
+reqSF (FromBuild  ci)      = ciSourceFile ci
+reqSF (FromNotify sf)      = sf
+reqSF (FromDepChange ci _) = ciSourceFile ci
 
-data IndexRequest = Index IndexSource
-                  | ShutdownIndexer
-                  deriving (Show)
-
-type IndexChan = LenChan IndexRequest
+-- Combines two IndexRequests. Assumes that the first argument is 'new'
+-- and the second argument is 'old'.
+combineReqs :: IndexRequest -> IndexRequest -> IndexRequest
+combineReqs (FromDepChange _ t) (FromBuild ci) = FromDepChange ci t
+combineReqs new@(FromDepChange _ _) _          = new
+combineReqs (FromBuild ci) (FromDepChange _ t) = FromDepChange ci t
+combineReqs new@(FromBuild _) _                = new
+combineReqs (FromNotify _) old                 = old
 
 data IndexContext = IndexContext
   { acPort         :: !Port
   , acIndexer      :: !String
-  , acIndexChan    :: !IndexChan
+  , acIndexStream  :: !IndexStream
   , acDBChan       :: !DBChan
   , acDBQueryChan  :: !DBChan
   }
 type Indexer a = ReaderT IndexContext IO a
 
-data IndexLockSet = IndexLockSet
-  { lsSet     :: MVar (Set.Set SourceFile)
-  , lsCounter :: TVar Int
+data IndexStream = IndexStream
+  { lsCurrent        :: TMVar (Set.Set SourceFile)
+  , lsPending        :: TMVar (Map.Map SourceFile IndexRequest)
+  , lsShouldShutdown :: TVar Bool
   }
 
-mkIndexLockSet :: IO IndexLockSet
-mkIndexLockSet = do
-  set     <- newMVar Set.empty
-  counter <- newTVarIO 0
-  return $! IndexLockSet set counter
+mkIndexStream :: IO IndexStream
+mkIndexStream = do
+  emptySet <- newTMVarIO Set.empty
+  emptyMap <- newTMVarIO Map.empty
+  shouldShutdown <- newTVarIO False
+  return $! IndexStream emptySet emptyMap shouldShutdown
 
-takeIndexLockSet :: IndexLockSet -> Indexer (Set.Set SourceFile)
-takeIndexLockSet ils = lift $ takeMVar (lsSet ils)
+shutdownIndexStream :: IndexStream -> STM ()
+shutdownIndexStream is = writeTVar (lsShouldShutdown is) True
 
-putIndexLockSet :: IndexLockSet -> Set.Set SourceFile -> Indexer ()
-putIndexLockSet ils !set = do
-  lift $ atomically $ writeTVar (lsCounter ils) (Set.size set)
-  lift $ putMVar (lsSet ils) set
+addPendingIndex :: IndexStream -> IndexRequest -> STM ()
+addPendingIndex is req = do
+  curPending <- takeTMVar (lsPending is)
+  let newPending = Map.insertWith combineReqs (reqSF req) req curPending
+  putTMVar (lsPending is) newPending
 
-modifyIndexLockSet :: IndexLockSet -> (Set.Set SourceFile -> Indexer (Set.Set SourceFile))
-                                   -> Indexer ()
-modifyIndexLockSet ils f = do
-  set <- takeIndexLockSet ils
-  updatedSet <- f set
-  putIndexLockSet ils updatedSet
+data IndexRequestOrShutdown = Index IndexRequest
+                            | Shutdown
+                              deriving (Show)
 
-indexLockSetCounter :: IndexLockSet -> TVar Int
-indexLockSetCounter = lsCounter
-
-runIndexManager :: Config -> IndexChan -> DBChan -> DBChan -> IndexLockSet -> IO ()
-runIndexManager cf iChan dbChan dbQueryChan ils = go
+getNextFileToIndex :: IndexStream -> STM IndexRequestOrShutdown
+getNextFileToIndex is = do
+    shouldShutdown <- readTVar (lsShouldShutdown is)
+    if shouldShutdown then return Shutdown
+                      else getNext
   where
-    ctx = IndexContext (ifPort cf) (idxCmd cf) iChan dbChan dbQueryChan
-    go = {-# SCC "indexThread" #-} do
-         (!newCount, !req) <- readLenChan iChan
-         logDebug $ "Index request: " ++ show req
-         logDebug $ "Index channel now has " ++ show newCount ++ " items waiting"
-         case req of
-             Index src       -> runReaderT (checkLock ils src) ctx >> go
-             ShutdownIndexer -> logInfo "Shutting down analysis thread"
+    getNext = do
+      curPending <- takeTMVar (lsPending is)
 
-checkLock :: IndexLockSet -> IndexSource -> Indexer ()
-checkLock !ils !src = do
-  let sf = sfFromSource src
-  lockedFiles <- takeIndexLockSet ils
-  if sf `Set.member` lockedFiles
-    then do logInfo $ "Contention detected on source file "
-                   ++ unSourceFile sf ++ "; sleeping..."
-            putIndexLockSet ils lockedFiles
-            lift $ threadDelay 10000  -- Keep churn under control.
-            ctx <- ask
-            writeLenChan (acIndexChan ctx) (Index src)
-    else do putIndexLockSet ils (sf `Set.insert` lockedFiles)
-            analyzeIfDirty src
-            modifyIndexLockSet ils (\s -> return $! sf `Set.delete` s)
-  
+      -- Retry if there's nothing available. This is the magic that lets
+      -- us block until there's something to index.
+      check (not $ Map.null curPending)
+
+      -- There's something available, so grab it.
+      let (sf, req) = Map.elemAt 0 curPending
+
+      -- Make sure someone else isn't already working on it.
+      curCurrent <- takeTMVar (lsCurrent is)
+      check (not $ sf `Set.member` curCurrent)
+
+      -- OK, we're good to go.
+      let newCurrent = sf `Set.insert` curCurrent
+      putTMVar (lsCurrent is) newCurrent
+      let newPending = Map.deleteAt 0 curPending
+      putTMVar (lsPending is) newPending
+
+      return $ Index req
+
+finishIndexingFile :: IndexStream -> IndexRequest -> STM ()
+finishIndexingFile is req = do
+  curCurrent <- takeTMVar (lsCurrent is)
+  let newCurrent = (reqSF req) `Set.delete` curCurrent
+  putTMVar (lsCurrent is) newCurrent
+
+runIndexManager :: Config -> DBChan -> DBChan -> IndexStream -> IO ()
+runIndexManager cf dbChan dbQueryChan is = go
+  where
+    ctx = IndexContext (ifPort cf) (idxCmd cf) is dbChan dbQueryChan
+    go = {-# SCC "indexThread" #-} do
+         req <- atomically $ getNextFileToIndex is
+         case req of
+             Index r  -> do runReaderT (analyzeIfDirty r) ctx
+                            atomically $ finishIndexingFile (acIndexStream ctx) r
+                            go
+             Shutdown -> logInfo "Shutting down indexing thread"
+
 getMTime :: SourceFile -> Indexer (Maybe Time)
 getMTime sf = lift $ do
   result <- try $ getModificationTime (unSourceFile sf)
@@ -118,79 +138,58 @@ getMTime sf = lift $ do
                                  ++ show (e :: IOException)
                           return Nothing  -- Most likely the file has been deleted.
 
-getSHA :: SourceFile -> Indexer B.ByteString
-getSHA sf = lift $ do
-  result <- try $ B.readFile (unSourceFile sf)
-  case result of
-    Right file -> return $ hash file
-    Left e     -> do logInfo $ "Couldn't read and hash file "
-                            ++ unSourceFile sf ++ ": "
-                            ++ show (e :: IOException)
-                     return B.empty -- Most likely the file has been deleted.
-
-analyzeIfDirty :: IndexSource -> Indexer ()
-analyzeIfDirty src = do
+analyzeIfDirty :: IndexRequest -> Indexer ()
+analyzeIfDirty req = do
   ctx <- ask
-  let sf = sfFromSource src
+  let sf = reqSF req
   mayOldCI <- callLenChan (acDBQueryChan ctx) $ DBGetCommandInfo sf
   mayMTime <- getMTime sf
 
-  case (src, mayOldCI, mayMTime) of
-    (_, _, Nothing)                   -> ignoreUnreadable src
+  case (req, mayOldCI, mayMTime) of
+    (_, _, Nothing)                   -> ignoreUnreadable req
     (FromBuild ci, Just oldCI, Just mtime)
-      | commandInfoChanged ci oldCI   -> analyze ci
-      | ciLastIndexed oldCI < mtime   -> analyzeIfSHADirty ci oldCI
-      | otherwise                     -> ignoreUnchanged src mtime
-    (FromBuild ci, Nothing, _)        -> analyze ci
+      | commandInfoChanged ci oldCI   -> analyze ci mtime
+      | ciLastIndexed oldCI /= mtime  -> analyze ci mtime
+      | otherwise                     -> ignoreUnchanged req mtime
+    (FromBuild ci, Nothing, Just mtime)
+                                      -> analyze ci mtime
     (FromNotify _, Just oldCI, Just mtime)
-      | ciLastIndexed oldCI < mtime   -> analyzeIfSHADirty oldCI oldCI
-      | otherwise                     -> ignoreUnchanged src mtime
-    (FromNotify _, Nothing, _)        -> ignoreUnknown src
+      | ciLastIndexed oldCI /= mtime  -> analyze oldCI mtime
+      | otherwise                     -> ignoreUnchanged req mtime
+    (FromNotify _, Nothing, _)        -> ignoreUnknown req
+    (FromDepChange ci t, Just oldCI, Just mtime)
+      | ciLastIndexed oldCI < t       -> analyze ci mtime
+      | otherwise                     -> ignoreUnchanged req (ciLastIndexed oldCI)
+    (FromDepChange ci _, Nothing, Just mtime)
+                                      -> analyze ci mtime
 
 commandInfoChanged :: CommandInfo -> CommandInfo -> Bool
 commandInfoChanged a b | ciWorkingPath a /= ciWorkingPath b = True
                        | ciCommand a     /= ciCommand b     = True
                        | ciArgs a        /= ciArgs b        = True
                        | ciLanguage a    /= ciLanguage b    = True
-                       | otherwise                              = False
+                       | otherwise                          = False
 
-analyzeIfSHADirty :: CommandInfo -> CommandInfo -> Indexer ()
-analyzeIfSHADirty ci oldCI = do
-  -- Note that it's ok if ci and oldCI are the same. We just want to be able to
-  -- pass on the new version to |analyze| if they're different.
-  sha <- getSHA (ciSourceFile ci)
-  if sha /= ciSHA oldCI then analyze $ ci { ciSHA = sha }
-                        else shaUnchanged ci
-
-shaUnchanged :: CommandInfo -> Indexer ()
-shaUnchanged ci = do
-  -- Update the last index time so we don't waste time computing the SHA again.
-  logInfo $ "Index is up-to-date for file "
-         ++ (show . ciSourceFile $ ci)
-         ++ " (SHA1 digest is unchanged)"
-  time <- lift getPOSIXTime
-  updateCommand $ ci { ciLastIndexed = floor time }
-
-analyze :: CommandInfo -> Indexer ()
-analyze ci = do
+analyze :: CommandInfo -> Time -> Indexer ()
+analyze ci mtime = do
   ctx <- ask
   others <- otherFilesToReindex ci
   forM_ others $ \f ->
-    writeLenChan (acIndexChan ctx) (Index . FromBuild $ f)
+    lift $ atomically $ addPendingIndex (acIndexStream ctx) (FromDepChange f mtime)
   analyzeCode ci
 
-ignoreUnchanged :: IndexSource -> Time -> Indexer ()
-ignoreUnchanged src mtime = logInfo $ "Index is up-to-date for file "
-                                   ++ (show . sfFromSource $ src)
+ignoreUnchanged :: IndexRequest -> Time -> Indexer ()
+ignoreUnchanged req mtime = logInfo $ "Index is up-to-date for file "
+                                   ++ (show . reqSF $ req)
                                    ++ " (file mtime: " ++ show mtime ++ ")"
 
-ignoreUnknown :: IndexSource -> Indexer ()
-ignoreUnknown src = logInfo $ "Not indexing unknown file "
-                           ++ (show . sfFromSource $ src)
+ignoreUnknown :: IndexRequest -> Indexer ()
+ignoreUnknown req = logInfo $ "Not indexing unknown file "
+                           ++ (show . reqSF $ req)
 
-ignoreUnreadable :: IndexSource -> Indexer ()
-ignoreUnreadable src = logInfo $ "Not indexing unreadable file "
-                              ++ (show . sfFromSource $ src)
+ignoreUnreadable :: IndexRequest -> Indexer ()
+ignoreUnreadable req = logInfo $ "Not indexing unreadable file "
+                              ++ (show . reqSF $ req)
 
 -- If the source file associated with this CommandInfo has changed, what must
 -- we reindex?
@@ -214,15 +213,19 @@ invalidateCommand ci = ci { ciLastIndexed = 0
 
 analyzeCode :: CommandInfo -> Indexer ()
 analyzeCode ci = do
-    ctx <- ask
-    let sf = ciSourceFile ci
-    logInfo $ "Indexing " ++ show sf
-    time <- lift getPOSIXTime
-    writeLenChan (acDBChan ctx) (DBResetMetadata sf)
-    (_, _, _, h) <- lift $ createProcess
-                         (proc (acIndexer ctx) [show (acPort ctx), show ci])
-    code <- lift $ waitForProcess h
-    case code of
-      ExitSuccess -> updateCommand $ ci { ciLastIndexed = floor time }
-      _           -> do logInfo "Indexing process failed"
-                        updateCommand (invalidateCommand ci)
+  ctx <- ask
+  let sf = ciSourceFile ci
+  time <- floor <$> lift getPOSIXTime
+
+  -- Do the actual indexing.
+  logInfo $ "Indexing " ++ show sf
+  writeLenChan (acDBChan ctx) (DBResetMetadata sf)
+  (_, _, _, h) <- lift $ createProcess
+                       (proc (acIndexer ctx) [show (acPort ctx), show ci])
+  code <- lift $ waitForProcess h
+
+  -- Update the last indexed time.
+  case code of
+    ExitSuccess -> updateCommand $ ci { ciLastIndexed = time }
+    _           -> do logInfo "Indexing process failed"
+                      updateCommand (invalidateCommand ci)

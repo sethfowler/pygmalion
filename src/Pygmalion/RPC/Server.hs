@@ -6,6 +6,7 @@ module Pygmalion.RPC.Server
 ) where
 
 import Control.Concurrent (ThreadId, myThreadId)
+import Control.Concurrent.STM
 import Control.Exception
 import Control.Monad
 import Control.Monad.IO.Class
@@ -28,12 +29,12 @@ import Pygmalion.Index.Manager
 import Pygmalion.Log
 import Pygmalion.RPC.Request
 
-runRPCServer :: Config -> IndexChan -> DBChan -> DBChan -> IdleChan -> IO ()
-runRPCServer cf iChan dbChan dbQueryChan idleChan = do
+runRPCServer :: Config -> IndexStream -> DBChan -> DBChan -> IdleChan -> IO ()
+runRPCServer cf iStream dbChan dbQueryChan idleChan = do
     conns <- newMVar 0
     threadId <- myThreadId
     runTCPServer settings (serverApp $ RPCServerContext threadId
-                                                        iChan
+                                                        iStream
                                                         dbChan
                                                         dbQueryChan
                                                         idleChan
@@ -83,7 +84,7 @@ serverApp ctx ad = do
 
 data RPCServerContext = RPCServerContext
   { rsThread      :: !ThreadId
-  , rsIndexChan   :: !IndexChan
+  , rsIndexStream :: !IndexStream
   , rsDBChan      :: !DBChan
   , rsDBQueryChan :: !DBChan
   , rsIdleChan    :: !IdleChan
@@ -92,8 +93,8 @@ data RPCServerContext = RPCServerContext
 type RPCServer a = ReaderT RPCServerContext IO a
 
 route :: RPCRequest -> RPCServer (Maybe ByteString)
-route (RPCIndexCommand ci)          = sendIndex_ $ Index (FromBuild ci)
-route (RPCIndexFile ci)             = sendIndex_ $ Index (FromNotify ci)
+route (RPCIndexCommand ci)          = sendIndex_ $ FromBuild ci
+route (RPCIndexFile ci)             = sendIndex_ $ FromNotify ci
 route (RPCGetCommandInfo sf)        = sendQuery $ DBGetCommandInfo sf
 route (RPCGetSimilarCommandInfo sf) = sendQuery $ DBGetSimilarCommandInfo sf
 route (RPCGetDefinition sl)         = sendQuery $ DBGetDefinition sl
@@ -122,7 +123,7 @@ route (RPCStop)                     = error "Should not route RPCStop"
 sendIndex_ :: IndexRequest -> RPCServer (Maybe ByteString)
 sendIndex_ !req = do
   ctx <- ask
-  writeLenChan (rsIndexChan ctx) req
+  lift $ atomically $ addPendingIndex (rsIndexStream ctx) req
   return Nothing
 
 sendQuery :: Serialize a => (Response a -> DBRequest) -> RPCServer (Maybe ByteString)
@@ -144,12 +145,12 @@ sendInclusionUpdate_ ic = do
   existing <- callLenChan (rsDBQueryChan ctx)
                           (DBInsertFileAndCheck . ciSourceFile . icCommandInfo $ ic)
   when (not existing) $
-    writeLenChan (rsIndexChan ctx) (Index . FromBuild . icCommandInfo $ ic)
+    lift $ atomically $ addPendingIndex (rsIndexStream ctx) (FromBuild . icCommandInfo $ ic)
   return Nothing
 
 sendWait_ :: RPCServer (Maybe ByteString)
 sendWait_ = do
-  logInfo "Sending info"
+  logInfo "Sending barrier request"
   ctx <- ask
   result <- callLenChan (rsIdleChan ctx) IdleBarrier
   return . Just $! encode (RPCOK result)

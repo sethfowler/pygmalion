@@ -23,7 +23,6 @@ library
                    conduit,
                    configurator,
                    containers,
-                   cryptohash,
                    direct-sqlite >= 2.3.8,
                    directory,
                    filepath,
@@ -108,6 +107,7 @@ executable pygd
                ,  fsnotify
                ,  mtl
                ,  pygmalion
+               ,  stm
                ,  system-filepath
                ,  time
                ,  void
