@@ -176,7 +176,7 @@ analyze ci mtime = do
   others <- otherFilesToReindex ci
   forM_ others $ \f ->
     lift $ atomically $ addPendingIndex (acIndexStream ctx) (FromDepChange f mtime)
-  analyzeCode ci
+  analyzeCode ci 1
 
 ignoreUnchanged :: IndexRequest -> Time -> Indexer ()
 ignoreUnchanged req mtime = logInfo $ "Index is up-to-date for file "
@@ -211,8 +211,8 @@ invalidateCommand ci = ci { ciLastIndexed = 0
                           , ciSHA = B.empty
                           }
 
-analyzeCode :: CommandInfo -> Indexer ()
-analyzeCode ci = do
+analyzeCode :: CommandInfo -> Int -> Indexer ()
+analyzeCode ci retries = do
   ctx <- ask
   let sf = ciSourceFile ci
   time <- floor <$> lift getPOSIXTime
@@ -225,7 +225,9 @@ analyzeCode ci = do
   code <- lift $ waitForProcess h
 
   -- Update the last indexed time.
-  case code of
-    ExitSuccess -> updateCommand $ ci { ciLastIndexed = time }
-    _           -> do logInfo "Indexing process failed"
-                      updateCommand (invalidateCommand ci)
+  case (code, retries) of
+    (ExitSuccess, _) -> updateCommand $ ci { ciLastIndexed = time }
+    (_, 0)           -> do logInfo "Indexing process failed."
+                           updateCommand (invalidateCommand ci)
+    (_, _)           -> do logInfo "Indexing process failed; will retry..."
+                           analyzeCode ci (retries - 1)
