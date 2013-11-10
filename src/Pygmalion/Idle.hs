@@ -49,7 +49,7 @@ onIdle idleChan = do
 
 doIdleBarrier :: Response () -> IO ()
 doIdleBarrier v = do
-  logInfo "Responding to idle barrier"
+  logInfo "Responding to idle barrier."
   sendResponse v =<< return ()
 
 waitForAllEmpty :: MonadIO m => IndexStream -> [TVar Int] -> m ()
