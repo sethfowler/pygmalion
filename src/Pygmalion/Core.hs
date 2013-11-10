@@ -14,7 +14,6 @@ module Pygmalion.Core
 , SourceLocation (..)
 , SourceRange (..)
 , Identifier
-, USR
 , USRHash
 , SourceLine
 , SourceCol
@@ -121,10 +120,10 @@ instance Serialize Inclusion
 -- The information we collect about definitions in source code.
 data DefInfo = DefInfo
     { diIdentifier     :: !Identifier
-    , diUSR            :: !USR
+    , diUSR            :: !USRHash
     , diSourceLocation :: !SourceLocation
     , diDefKind        :: !SourceKind
-    , diContext        :: !USR
+    , diContext        :: !USRHash
     } deriving (Eq, Show, Generic)
 
 instance Serialize DefInfo
@@ -135,7 +134,7 @@ instance FromRow DefInfo where
 -- Cheaper variant of DefInfo used for database updates.
 data DefUpdate = DefUpdate
     { diuIdentifier :: !Identifier
-    , diuUSR        :: !USR
+    , diuUSR        :: !USRHash
     , diuFileHash   :: !SourceFileHash
     , diuLine       :: !SourceLine
     , diuCol        :: !SourceCol
@@ -170,7 +169,6 @@ instance FromRow SourceRange where
   fromRow = SourceRange <$> field <*> field <*> field <*> field <*> field
 
 type Identifier = B.ByteString
-type USR        = B.ByteString
 type USRHash    = Int64
 type RefHash    = Int64
 type SourceLine = Int
@@ -199,8 +197,8 @@ instance FromRow Invocation where
 data Reference = Reference
     { rfRange   :: !SourceRange
     , rfKind    :: !SourceKind
-    , rfContext :: !USR
-    , rfUSR     :: !USR
+    , rfContext :: !USRHash
+    , rfUSR     :: !USRHash
     } deriving (Eq, Show, Generic)
 
 instance Serialize Reference

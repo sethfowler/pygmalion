@@ -60,7 +60,6 @@ library
                    Pygmalion.Dot,
                    Pygmalion.Hash,
                    Pygmalion.Idle,
-                   Pygmalion.Index.Result,
                    Pygmalion.JSON,
                    Pygmalion.Log,
                    Pygmalion.RPC.Client,

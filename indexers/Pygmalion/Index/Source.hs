@@ -83,9 +83,10 @@ addFileDef conn ci = do
   -- Add a special definition for the beginning of the file. This is
   -- referenced by inclusion directives.
   let thisFile = ciSourceFile ci
+  let thisFileHash = hash thisFile
   def <- return $! DefUpdate thisFile
-                             thisFile
-                             (hash thisFile)
+                             thisFileHash
+                             thisFileHash
                              1
                              1
                              SourceFile
@@ -230,7 +231,7 @@ defsVisitor conn ci tu cursor _ = do
         ctxUSR <- XRef.getUSR ctxC >>= CS.unpackByteString
 
         def <- return $! DefUpdate name
-                                   usr
+                                   (hash usr)
                                    (hash . slFile $ loc)
                                    (slLine loc)
                                    (slCol loc)
@@ -289,7 +290,7 @@ callBaseUSRHash = return . hash
               <=< underlyingType
               <=< C.getBaseExpression
 
-refHash :: USR -> SourceLocation -> ClangApp s USRHash
+refHash :: B.ByteString -> SourceLocation -> ClangApp s USRHash
 refHash usr loc = return . hash $ (BU.fromString . show $ slLine loc) `B.append`
                                   (slFile loc) `B.append`
                                   (BU.fromString . show $ slCol loc) `B.append`

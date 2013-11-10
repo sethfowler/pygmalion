@@ -269,7 +269,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int64
 dbMajorVersion = 0
-dbMinorVersion = 22
+dbMinorVersion = 23
 
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c (mkQueryT sql)
@@ -564,7 +564,6 @@ defineDefinitionsTable c = do
     sql = T.concat [ "create table if not exists Definitions(      "
                    , "USRHash integer primary key unique not null, "
                    , "Name varchar(2048) not null,                 "
-                   , "USR varchar(2048) not null,                  "
                    , "File integer not null,                       "
                    , "Line integer not null,                       "
                    , "Col integer not null,                        "
@@ -574,16 +573,15 @@ defineDefinitionsTable c = do
     indexSQL' = "create index if not exists DefsFileIndex on Definitions(Context)"
 
 updateDef :: DBHandle -> DefUpdate -> IO ()
-updateDef h (DefUpdate n u sfHash l c k ctx) = do
-    let usrHash = hash u
+updateDef h (DefUpdate n usrHash sfHash l c k ctx) = do
     let kind = fromEnum k
-    execStatement h updateDefStmt (usrHash, n, u, sfHash, l, c, kind, ctx)
+    execStatement h updateDefStmt (usrHash, n, sfHash, l, c, kind, ctx)
 
 updateDefSQL :: T.Text
 updateDefSQL = T.concat
   [ "replace into Definitions                             "
-  , "(USRHash, Name, USR, File, Line, Col, Kind, Context) "
-  , "values (?, ?, ?, ?, ?, ?, ?, ?)" ]
+  , "(USRHash, Name, File, Line, Col, Kind, Context) "
+  , "values (?, ?, ?, ?, ?, ?, ?)" ]
 
 resetDefs :: DBHandle -> SourceFile -> IO ()
 resetDefs h sf = do
@@ -598,7 +596,7 @@ getDef h sl = go =<< getReferenced h sl
   where
     go Nothing   = return []  
     go (Just sr) = do
-      mayDef <- execSingleRowQuery h getDefStmt (Only . hash . diUSR . sdDef $ sr)
+      mayDef <- execSingleRowQuery h getDefStmt (Only . diUSR . sdDef $ sr)
       case (mayDef, sdKind sr) of
         (Nothing, _) -> return []
         (Just def, DynamicCallExpr) -> do os <- getTransitiveOverriders def
@@ -614,11 +612,11 @@ getDef h sl = go =<< getReferenced h sl
 
 getDefSQL :: T.Text
 getDefSQL = T.concat
-  [ "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind, "
-  , "  coalesce(C.USR, x'')                               "
-  , "from Definitions as D                                "
-  , "join Files as F on D.File = F.Hash                   "
-  , "left join Definitions as C on D.Context = C.USRHash  "
+  [ "select D.Name, D.USRHash, F.Name, D.Line, D.Col, D.Kind, "
+  , "       coalesce(C.USRHash, 0)                            "
+  , "from Definitions as D                                    "
+  , "join Files as F on D.File = F.Hash                       "
+  , "left join Definitions as C on D.Context = C.USRHash      "
   , "where D.USRHash = ? limit 1" ]
   
 -- Schema and operations for the Overrides table.
@@ -656,20 +654,20 @@ getOverrided h sl = do
   maySd <- getReferenced h sl
   case maySd of
     Nothing -> return []
-    Just sd -> let usrHash = hash . diUSR . sdDef $ sd in
+    Just sd -> let usrHash = diUSR . sdDef $ sd in
                execQuery h getOverridedStmt (Only usrHash)
 
-getOverrided' :: DBHandle -> USR -> IO [DefInfo]
-getOverrided' h usr = execQuery h getOverridedStmt (Only . hash $ usr)
+getOverrided' :: DBHandle -> USRHash -> IO [DefInfo]
+getOverrided' h usr = execQuery h getOverridedStmt (Only usr)
 
 getOverridedSQL :: T.Text
 getOverridedSQL = T.concat
-  [ "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind, "
-  , "  coalesce(C.USR, x'')                               "
-  , "from Overrides as O                                  "
-  , "join Definitions as D on O.Overrided = D.USRHash     "
-  , "join Files as F on D.File = F.Hash                   "
-  , "left join Definitions as C on D.Context = C.USRHash  "
+  [ "select D.Name, D.USRHash, F.Name, D.Line, D.Col, D.Kind, "
+  , "       coalesce(C.USRHash, 0)                            "
+  , "from Overrides as O                                      "
+  , "join Definitions as D on O.Overrided = D.USRHash         "
+  , "join Files as F on D.File = F.Hash                       "
+  , "left join Definitions as C on D.Context = C.USRHash      "
   , "where O.Definition = ?" ]
 
 getOverriders :: DBHandle -> SourceLocation -> IO [DefInfo]
@@ -677,20 +675,20 @@ getOverriders h sl = do
   maySd <- getReferenced h sl
   case maySd of
     Nothing -> return []
-    Just sd -> let usrHash = hash . diUSR . sdDef $ sd in
+    Just sd -> let usrHash = diUSR . sdDef $ sd in
                execQuery h getOverridersStmt (Only usrHash)
 
-getOverriders' :: DBHandle -> USR -> IO [DefInfo]
-getOverriders' h usr = execQuery h getOverridersStmt (Only . hash $ usr)
+getOverriders' :: DBHandle -> USRHash -> IO [DefInfo]
+getOverriders' h usr = execQuery h getOverridersStmt (Only usr)
 
 getOverridersSQL :: T.Text
 getOverridersSQL = T.concat
-  [ "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind, "
-  , "  coalesce(C.USR, x'')                               "
-  , "from Overrides as O                                  "
-  , "join Definitions as D on O.Definition = D.USRHash    "
-  , "join Files as F on D.File = F.Hash                   "
-  , "left join Definitions as C on D.Context = C.USRHash  "
+  [ "select D.Name, D.USRHash, F.Name, D.Line, D.Col, D.Kind, "
+  , "       coalesce(C.USRHash, 0)                            "
+  , "from Overrides as O                                      "
+  , "join Definitions as D on O.Definition = D.USRHash        "
+  , "join Files as F on D.File = F.Hash                       "
+  , "left join Definitions as C on D.Context = C.USRHash      "
   , "where O.Overrided = ?" ]
 
 getHierarchy :: DBHandle -> SourceLocation -> IO String
@@ -702,7 +700,7 @@ getHierarchy h sl = do
   where
     generateHierarchy di = do
       let usr = diUSR di
-      let usrHash = fromIntegral . hash $ usr
+      let usrHash = fromIntegral usr
       let name = diIdentifier di
       members <- getMembersForUSR h usr
       let node = mkHighlightedNode usrHash name [(map diIdentifier members)]
@@ -720,11 +718,11 @@ getHierarchy h sl = do
       
     expandHierarchy newEdgeF nextLevelF superDI g di = do
       let usr = diUSR di
-      let usrHash = fromIntegral . hash $ usr
+      let usrHash = fromIntegral usr
       let name = diIdentifier di
       members <- getMembersForUSR h usr
       let node = mkNode usrHash name [(map diIdentifier members)]
-      let edge = newEdgeF (fromIntegral . hash . diUSR $ superDI) usrHash
+      let edge = newEdgeF (fromIntegral . diUSR $ superDI) usrHash
       let g' = (addEdge edge) . (addNode node) $ g
       
       os <- nextLevelF h usr
@@ -736,18 +734,18 @@ getMembers h sl = do
   maySd <- getReferenced h sl
   case maySd of
     Nothing -> return []
-    Just sd -> let usrHash = hash . diUSR . sdDef $ sd in
+    Just sd -> let usrHash = diUSR . sdDef $ sd in
                execQuery h getMembersStmt (Only usrHash)
 
-getMembersForUSR :: DBHandle -> USR -> IO [DefInfo]
-getMembersForUSR h usr = execQuery h getMembersStmt (Only $ hash usr)
+getMembersForUSR :: DBHandle -> USRHash -> IO [DefInfo]
+getMembersForUSR h usr = execQuery h getMembersStmt (Only usr)
 
 getMembersSQL :: T.Text
 getMembersSQL = T.concat
-  [ "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind, C.USR "
-  , "from Definitions as D                                      "
-  , "join Files as F on D.File = F.Hash                         "
-  , "join Definitions as C on D.Context = C.USRHash             "
+  [ "select D.Name, D.USRHash, F.Name, D.Line, D.Col, D.Kind, C.USRHash "
+  , "from Definitions as D                                              "
+  , "join Files as F on D.File = F.Hash                                 "
+  , "join Definitions as C on D.Context = C.USRHash                     "
   , "where D.Context = ?" ]
 
 -- Schema and operations for the References table.
@@ -807,11 +805,12 @@ getDeclReferenced h sl = do
 
 getDeclReferencedSQL :: T.Text
 getDeclReferencedSQL = T.concat
-  [ "select D.Name, D.USR, RF.Name, R.Line, R.Col, R.RefKind, coalesce(C.USR, x'') "
-  , "from Refs as R                                                                "
-  , "join Definitions as D on R.Ref = D.USRHash                                    "
-  , "join Files as RF on R.File = RF.Hash                                          "
-  , "left join Definitions as C on R.RefContext = C.USRHash                        "
+  [ "select D.Name, D.USRHash, RF.Name, R.Line, R.Col, R.RefKind, "
+  , "       coalesce(C.USRHash, 0)                                "
+  , "from Refs as R                                               "
+  , "join Definitions as D on R.Ref = D.USRHash                   "
+  , "join Files as RF on R.File = RF.Hash                         "
+  , "left join Definitions as C on R.RefContext = C.USRHash       "
   , "where R.RefId = ?" ]
 
 -- Search for declarations referenced by the first file which are
@@ -821,13 +820,13 @@ getDeclsReferencedInFile h sf hf = execQuery h getDeclsReferencedInFileStmt (has
 
 getDeclsReferencedInFileSQL :: T.Text
 getDeclsReferencedInFileSQL = T.concat
-  [ "select distinct D.Name, D.USR, RF.Name, RHdr.Line, RHdr.Col, "
-  , "RHdr.RefKind, coalesce(C.USR, x'')                           "
-  , "from Refs as RSrc                                            "
-  , "join Refs as RHdr on RSrc.RefDecl = RHdr.RefId               "
-  , "join Definitions as D on RHdr.Ref = D.USRHash                "
-  , "join Files as RF on RHdr.File = RF.Hash                      "
-  , "left join Definitions as C on RHdr.RefContext = C.USRHash    "
+  [ "select distinct D.Name, D.USRHash, RF.Name, RHdr.Line, RHdr.Col, "
+  , "                RHdr.RefKind, coalesce(C.USRHash, 0)             "
+  , "from Refs as RSrc                                                "
+  , "join Refs as RHdr on RSrc.RefDecl = RHdr.RefId                   "
+  , "join Definitions as D on RHdr.Ref = D.USRHash                    "
+  , "join Files as RF on RHdr.File = RF.Hash                          "
+  , "left join Definitions as C on RHdr.RefContext = C.USRHash        "
   , "where RSrc.File = ? and RHdr.File = ?" ]
 
 getReferenced :: DBHandle -> SourceLocation -> IO (Maybe SourceReferenced)
@@ -849,17 +848,17 @@ getReferenced h (SourceLocation sf l c) = do
 -- Note below that the columns of the reference are [Col, EndCol).
 getReferencedSQL :: T.Text
 getReferencedSQL = T.concat
-  [ "select D.Name, D.USR, DF.Name, D.Line, D.Col, D.Kind,        "
-  , "  coalesce(C.USR, x''), RF.Name, R.Line, R.Col, R.EndLine,   "
-  , "  R.EndCol, R.RefKind, R.RefVia, R.RefDecl                   "
-  , "from Refs as R                                               "
-  , "join Definitions as D on R.Ref = D.USRHash                   "
-  , "join Files as DF on D.File = DF.Hash                         "
-  , "join Files as RF on R.File = RF.Hash                         "
-  , "left join Definitions as C on D.Context = C.USRHash          "
-  , "where R.File = ? and                                         "
-  , "  ((? between R.Line and R.EndLine) and                      "
-  , "   (? > R.Line or ? >= R.Col) and                            "
+  [ "select D.Name, D.USRHash, DF.Name, D.Line, D.Col, D.Kind,  "
+  , "       coalesce(C.USRHash, 0), RF.Name, R.Line, R.Col,     "
+  , "       R.EndLine, R.EndCol, R.RefKind, R.RefVia, R.RefDecl "
+  , "from Refs as R                                             "
+  , "join Definitions as D on R.Ref = D.USRHash                 "
+  , "join Files as DF on D.File = DF.Hash                       "
+  , "join Files as RF on R.File = RF.Hash                       "
+  , "left join Definitions as C on D.Context = C.USRHash        "
+  , "where R.File = ? and                                       "
+  , "  ((? between R.Line and R.EndLine) and                    "
+  , "   (? > R.Line or ? >= R.Col) and                          "
   , "   (? < R.EndLine or ? < R.EndCol))" ]
 
 
@@ -885,7 +884,7 @@ getReferences h sl = do
   maySd <- getReferenced h sl
   case maySd of
     Nothing -> return []
-    Just sd -> let usrHash = hash . diUSR . sdDef $ sd in
+    Just sd -> let usrHash = diUSR . sdDef $ sd in
                execQuery h getReferencesStmt (Only usrHash)
 
 getReferencesSQL :: T.Text
@@ -905,7 +904,7 @@ getCallers h sl = do
       Just sd -> go CallExpr DynamicCallExpr MacroExpansion (diUSR . sdDef $ sd)
   where
     go !k1 !k2 !k3 !nextUSR = do
-      is <- execQuery h getCallersStmt (fromEnum k1, fromEnum k2, fromEnum k3, hash nextUSR)
+      is <- execQuery h getCallersStmt (fromEnum k1, fromEnum k2, fromEnum k3, nextUSR)
       os <- getOverrided' h nextUSR
       foldM accumCallers is os
     accumCallers :: [Invocation] -> DefInfo -> IO [Invocation]
@@ -915,14 +914,14 @@ getCallers h sl = do
 
 getCallersSQL :: T.Text
 getCallersSQL = T.concat
-  [ "select D.Name, D.USR, F.Name, D.Line, D.Col, D.Kind, "
-  , "       coalesce(C.USR, x''), FR.Name, R.Line, R.Col  "
-  , "from Refs as R                                       "
-  , "join Files as FR on R.File = FR.Hash                 "
-  , "join Definitions as D on R.RefContext = D.USRHash    "
-  , "join Files as F on D.File = F.Hash                   "
-  , "left join Definitions as C on D.Context = C.USRHash  "
-  , "where R.Ref = ? and R.RefKind in (?, ?, ?)           "
+  [ "select D.Name, D.USRHash, F.Name, D.Line, D.Col, D.Kind, "
+  , "       coalesce(C.USRHash, 0), FR.Name, R.Line, R.Col    "
+  , "from Refs as R                                           "
+  , "join Files as FR on R.File = FR.Hash                     "
+  , "join Definitions as D on R.RefContext = D.USRHash        "
+  , "join Files as F on D.File = F.Hash                       "
+  , "left join Definitions as C on D.Context = C.USRHash      "
+  , "where R.Ref = ? and R.RefKind in (?, ?, ?)               "
   , "order by FR.Name, R.Line, R.Col" ]
 
 getCallees :: DBHandle -> SourceLocation -> IO [DefInfo]
@@ -930,18 +929,18 @@ getCallees h sl = do
   maySd <- getReferenced h sl
   case maySd of
     Nothing -> return []
-    Just sd -> let usrHash = hash . diUSR . sdDef $ sd in
+    Just sd -> let usrHash = diUSR . sdDef $ sd in
                execQuery h getCalleesStmt (fromEnum CallExpr, fromEnum MacroExpansion, usrHash)
 
 getCalleesSQL :: T.Text
 getCalleesSQL = T.concat
-  [ "select distinct D.Name, D.USR, F.Name, D.Line, D.Col, "
-  , "  D.Kind, coalesce(C.USR, x'')                        "
-  , "from Refs as R                                        "
-  , "join Definitions as D on R.Ref = D.USRHash            "
-  , "join Files as F on D.File = F.Hash                    "
-  , "left join Definitions as C on D.Context = C.USRHash   "
-  , "where R.RefContext = ? and R.RefKind in (?, ?)        "
+  [ "select distinct D.Name, D.USRHash, F.Name, D.Line, D.Col, "
+  , "                D.Kind, coalesce(C.USRHash, 0)            "
+  , "from Refs as R                                            "
+  , "join Definitions as D on R.Ref = D.USRHash                "
+  , "join Files as F on D.File = F.Hash                        "
+  , "left join Definitions as C on D.Context = C.USRHash       "
+  , "where R.RefContext = ? and R.RefKind in (?, ?)            "
   , "order by F.Name, D.Line, D.Col" ]
 
 -- Checks that the database has the correct schema and sets it up if needed.
