@@ -24,7 +24,7 @@ library
                    configurator,
                    containers,
                    cryptohash,
-                   direct-sqlite,
+                   direct-sqlite >= 2.3.8,
                    directory,
                    filepath,
                    fgl,
