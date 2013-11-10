@@ -28,8 +28,8 @@ together:
   systems.
 
 * `pygd` is the indexing daemon. It needs to be running for the other
-  tools to work; you can run it by executing `pygmalion start` at
-  the root of the project you want to index.  It will automatically
+  tools to work; you can run it by executing `pygmalion start-server`
+  at the root of the project you want to index.  It will automatically
   index files that are touched in the current directory, so you just
   need to save for Pygmalion to see your changes. `pygd` invokes
   `pygindex-clang` to do the actual indexing. In the long term,
@@ -70,8 +70,8 @@ the configuration file `pygmalion.yaml` which you can customize if
 needed. (See the next section.) For simple `make`-based projects, the
 default configuration should be enough.
 
-To actually index the project, run `pygmalion start` to start the
-indexing daemon. Pygmalion will immediately start indexing your
+To actually index the project, run `pygmalion start-server` to start
+the indexing daemon. Pygmalion will immediately start indexing your
 project. For most projects, the default compiler flags will result in
 a poor quality index, so if you didn't specify appropriate flags in
 the configuration file it's advisable to immediately run a complete

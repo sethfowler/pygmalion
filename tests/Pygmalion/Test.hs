@@ -121,7 +121,7 @@ withPygd action = bracket startPygd stopPygd (const action)
   where
     startPygd = do bg "../dist/build/pygd/pygd"
                    threadDelay 1000000
-    stopPygd _ = do void $ pygmalion ["stop"]
+    stopPygd _ = do void $ pygmalion ["stop-server"]
                     sh $ "rm -f " ++ dbFile
   
 pygmalion :: [String] -> IO [String]

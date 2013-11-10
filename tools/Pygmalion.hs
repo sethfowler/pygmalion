@@ -36,8 +36,8 @@ usage = do
   putStrLn $ "Usage: " ++ queryExecutable ++ " [command]"
   putStrLn   "where [command] is one of the following:"
   putStrLn   " help                       Prints this message."
-  putStrLn   " start                      Starts the pygmalion daemon."
-  putStrLn   " stop                       Terminates the pygmalion daemon."
+  putStrLn   " start-server               Starts the pygmalion daemon."
+  putStrLn   " stop-server                Terminates the pygmalion daemon."
   putStrLn   " init                       Initializes a pygmalion index rooted at"
   putStrLn   "                            the current directory."
   putStrLn   " index ([file]|[command])   Manually request indexing. If a single"
@@ -81,8 +81,8 @@ parseConfiglessArgs []         _ = usage
 parseConfiglessArgs _          c = c
 
 parseArgs :: Config -> FilePath -> [String] -> IO ()
-parseArgs _ _  ["start"] = start
-parseArgs c _  ["stop"] = stop c
+parseArgs _ _  ["start-server"] = startServer
+parseArgs c _  ["stop-server"] = stopServer c
 parseArgs c wd ("index" : file : []) = indexFile c (asSourceFile wd file)
 parseArgs c _  ("index" : cmd : args) = indexCommand c cmd args
 parseArgs c _  ("make" : cmd : args) = makeCommand c cmd args
@@ -116,11 +116,11 @@ parseArgs _ _ _           = usage
 asSourceFile :: FilePath -> FilePath -> SourceFile
 asSourceFile wd p = mkSourceFile $ maybe p id (absNormPath wd p)
 
-start :: IO ()
-start = void $ waitForProcess =<< runCommand "pygd"
+startServer :: IO ()
+startServer = void $ waitForProcess =<< runCommand "pygd"
 
-stop :: Config -> IO ()
-stop cf = withRPC cf $ runRPC rpcStop
+stopServer :: Config -> IO ()
+stopServer cf = withRPC cf $ runRPC rpcStop
 
 initialize :: IO ()
 initialize = do
