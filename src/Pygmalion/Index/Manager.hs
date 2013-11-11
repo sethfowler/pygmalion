@@ -28,8 +28,8 @@ import Pygmalion.Database.Manager
 import Pygmalion.Log
 
 data IndexRequest = FromBuild     CommandInfo
-                  | FromNotify    SourceFile
                   | FromDepChange CommandInfo Time
+                  | FromNotify    SourceFile
                     deriving (Show)
 
 reqSF :: IndexRequest -> SourceFile
@@ -147,20 +147,20 @@ analyzeIfDirty req = do
   case (req, mayOldCI, mayMTime) of
     (_, _, Nothing)                   -> ignoreUnreadable req
     (FromBuild ci, Just oldCI, Just mtime)
-      | commandInfoChanged ci oldCI   -> analyze ci mtime
-      | ciLastIndexed oldCI /= mtime  -> analyze ci mtime
+      | commandInfoChanged ci oldCI   -> analyze ci mtime False
+      | ciLastIndexed oldCI /= mtime  -> analyze ci mtime False
       | otherwise                     -> ignoreUnchanged req mtime
     (FromBuild ci, Nothing, Just mtime)
-                                      -> analyze ci mtime
+                                      -> analyze ci mtime True
     (FromNotify _, Just oldCI, Just mtime)
-      | ciLastIndexed oldCI /= mtime  -> analyze oldCI mtime
+      | ciLastIndexed oldCI /= mtime  -> analyze oldCI mtime False
       | otherwise                     -> ignoreUnchanged req mtime
     (FromNotify _, Nothing, _)        -> ignoreUnknown req
     (FromDepChange ci t, Just oldCI, Just mtime)
-      | ciLastIndexed oldCI < t       -> analyze ci mtime
+      | ciLastIndexed oldCI < t       -> analyze ci mtime False
       | otherwise                     -> ignoreUnchanged req (ciLastIndexed oldCI)
     (FromDepChange ci _, Nothing, Just mtime)
-                                      -> analyze ci mtime
+                                      -> analyze ci mtime False
 
 commandInfoChanged :: CommandInfo -> CommandInfo -> Bool
 commandInfoChanged a b | ciWorkingPath a /= ciWorkingPath b = True
@@ -169,12 +169,17 @@ commandInfoChanged a b | ciWorkingPath a /= ciWorkingPath b = True
                        | ciLanguage a    /= ciLanguage b    = True
                        | otherwise                          = False
 
-analyze :: CommandInfo -> Time -> Indexer ()
-analyze ci mtime = do
+analyze :: CommandInfo -> Time -> Bool -> Indexer ()
+analyze ci mtime isNew = do
   ctx <- ask
-  others <- otherFilesToReindex ci
-  forM_ others $ \f ->
-    lift $ atomically $ addPendingIndex (icIndexStream ctx) (FromDepChange f mtime)
+
+  -- If the file isn't new, we need to do some invalidation.
+  unless isNew $ do
+    others <- otherFilesToReindex ci
+    forM_ others $ \f ->
+      lift $ atomically $ addPendingIndex (icIndexStream ctx) (FromDepChange f mtime)
+    writeLenChan (icDBChan ctx) (DBResetMetadata $ ciSourceFile ci)
+
   analyzeCode ci 1
 
 ignoreUnchanged :: IndexRequest -> Time -> Indexer ()
@@ -210,7 +215,6 @@ analyzeCode ci retries = do
 
   -- Do the actual indexing.
   logInfo $ "Indexing " ++ show sf
-  writeLenChan (icDBChan ctx) (DBResetMetadata sf)
   (_, _, _, h) <- lift $ createProcess
                        (proc (icIndexer ctx) [show (icPort ctx), show ci])
   code <- lift $ waitForProcess h
