@@ -47,18 +47,18 @@ combineReqs new@(FromBuild _) _                = new
 combineReqs (FromNotify _) old                 = old
 
 data IndexContext = IndexContext
-  { acPort         :: !Port
-  , acIndexer      :: !String
-  , acIndexStream  :: !IndexStream
-  , acDBChan       :: !DBChan
-  , acDBQueryChan  :: !DBChan
+  { icPort         :: !Port
+  , icIndexer      :: !String
+  , icIndexStream  :: !IndexStream
+  , icDBChan       :: !DBChan
+  , icDBQueryChan  :: !DBChan
   }
 type Indexer a = ReaderT IndexContext IO a
 
 data IndexStream = IndexStream
-  { lsCurrent        :: TMVar (Set.Set SourceFile)
-  , lsPending        :: TMVar (Map.Map SourceFile IndexRequest)
-  , lsShouldShutdown :: TVar Bool
+  { isCurrent        :: TMVar (Set.Set SourceFile)
+  , isPending        :: TMVar (Map.Map SourceFile IndexRequest)
+  , isShouldPending :: TVar Bool
   }
 
 mkIndexStream :: IO IndexStream
@@ -69,13 +69,13 @@ mkIndexStream = do
   return $! IndexStream emptySet emptyMap shouldShutdown
 
 shutdownIndexStream :: IndexStream -> STM ()
-shutdownIndexStream is = writeTVar (lsShouldShutdown is) True
+shutdownIndexStream is = writeTVar (isShouldPending is) True
 
 addPendingIndex :: IndexStream -> IndexRequest -> STM ()
 addPendingIndex is req = do
-  curPending <- takeTMVar (lsPending is)
+  curPending <- takeTMVar (isPending is)
   let newPending = Map.insertWith combineReqs (reqSF req) req curPending
-  putTMVar (lsPending is) newPending
+  putTMVar (isPending is) newPending
 
 data IndexRequestOrShutdown = Index IndexRequest
                             | Shutdown
@@ -83,12 +83,12 @@ data IndexRequestOrShutdown = Index IndexRequest
 
 getNextFileToIndex :: IndexStream -> STM IndexRequestOrShutdown
 getNextFileToIndex is = do
-    shouldShutdown <- readTVar (lsShouldShutdown is)
+    shouldShutdown <- readTVar (isShouldPending is)
     if shouldShutdown then return Shutdown
                       else getNext
   where
     getNext = do
-      curPending <- takeTMVar (lsPending is)
+      curPending <- takeTMVar (isPending is)
 
       -- Retry if there's nothing available. This is the magic that lets
       -- us block until there's something to index.
@@ -98,22 +98,22 @@ getNextFileToIndex is = do
       let (sf, req) = Map.elemAt 0 curPending
 
       -- Make sure someone else isn't already working on it.
-      curCurrent <- takeTMVar (lsCurrent is)
+      curCurrent <- takeTMVar (isCurrent is)
       check (not $ sf `Set.member` curCurrent)
 
       -- OK, we're good to go.
       let newCurrent = sf `Set.insert` curCurrent
-      putTMVar (lsCurrent is) newCurrent
+      putTMVar (isCurrent is) newCurrent
       let newPending = Map.deleteAt 0 curPending
-      putTMVar (lsPending is) newPending
+      putTMVar (isPending is) newPending
 
       return $ Index req
 
 finishIndexingFile :: IndexStream -> IndexRequest -> STM ()
 finishIndexingFile is req = do
-  curCurrent <- takeTMVar (lsCurrent is)
+  curCurrent <- takeTMVar (isCurrent is)
   let newCurrent = (reqSF req) `Set.delete` curCurrent
-  putTMVar (lsCurrent is) newCurrent
+  putTMVar (isCurrent is) newCurrent
 
 runIndexManager :: Config -> DBChan -> DBChan -> IndexStream -> IO ()
 runIndexManager cf dbChan dbQueryChan is = go
@@ -123,7 +123,7 @@ runIndexManager cf dbChan dbQueryChan is = go
          req <- atomically $ getNextFileToIndex is
          case req of
              Index r  -> do runReaderT (analyzeIfDirty r) ctx
-                            atomically $ finishIndexingFile (acIndexStream ctx) r
+                            atomically $ finishIndexingFile (icIndexStream ctx) r
                             go
              Shutdown -> logInfo "Shutting down indexing thread"
 
@@ -141,7 +141,7 @@ analyzeIfDirty :: IndexRequest -> Indexer ()
 analyzeIfDirty req = do
   ctx <- ask
   let sf = reqSF req
-  mayOldCI <- callLenChan (acDBQueryChan ctx) $ DBGetCommandInfo sf
+  mayOldCI <- callLenChan (icDBQueryChan ctx) $ DBGetCommandInfo sf
   mayMTime <- getMTime sf
 
   case (req, mayOldCI, mayMTime) of
@@ -174,7 +174,7 @@ analyze ci mtime = do
   ctx <- ask
   others <- otherFilesToReindex ci
   forM_ others $ \f ->
-    lift $ atomically $ addPendingIndex (acIndexStream ctx) (FromDepChange f mtime)
+    lift $ atomically $ addPendingIndex (icIndexStream ctx) (FromDepChange f mtime)
   analyzeCode ci 1
 
 ignoreUnchanged :: IndexRequest -> Time -> Indexer ()
@@ -195,12 +195,12 @@ ignoreUnreadable req = logInfo $ "Not indexing unreadable file "
 otherFilesToReindex :: CommandInfo -> Indexer [CommandInfo]
 otherFilesToReindex ci = do
   ctx <- ask
-  callLenChan (acDBQueryChan ctx) $ DBGetIncluderInfo (ciSourceFile ci)
+  callLenChan (icDBQueryChan ctx) $ DBGetIncluderInfo (ciSourceFile ci)
 
 updateCommand :: CommandInfo -> Indexer ()
 updateCommand ci = do
   ctx <- ask
-  writeLenChan (acDBChan ctx) (DBUpdateCommandInfo ci)
+  writeLenChan (icDBChan ctx) (DBUpdateCommandInfo ci)
 
 analyzeCode :: CommandInfo -> Int -> Indexer ()
 analyzeCode ci retries = do
@@ -210,9 +210,9 @@ analyzeCode ci retries = do
 
   -- Do the actual indexing.
   logInfo $ "Indexing " ++ show sf
-  writeLenChan (acDBChan ctx) (DBResetMetadata sf)
+  writeLenChan (icDBChan ctx) (DBResetMetadata sf)
   (_, _, _, h) <- lift $ createProcess
-                       (proc (acIndexer ctx) [show (acPort ctx), show ci])
+                       (proc (icIndexer ctx) [show (icPort ctx), show ci])
   code <- lift $ waitForProcess h
 
   -- Update the last indexed time.

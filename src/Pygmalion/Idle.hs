@@ -55,9 +55,9 @@ doIdleBarrier v = do
 waitForAllEmpty :: MonadIO m => IndexStream -> [TVar Int] -> m ()
 waitForAllEmpty idxStream vs = liftIO $ atomically $ do
   -- Check index stream.
-  idxPending <- readTMVar (lsPending idxStream)
+  idxPending <- readTMVar (isPending idxStream)
   check (Map.null idxPending)
-  idxCurrent <- readTMVar (lsCurrent idxStream)
+  idxCurrent <- readTMVar (isCurrent idxStream)
   check (Set.null idxCurrent)
 
   -- Check the other variables.
@@ -66,9 +66,9 @@ waitForAllEmpty idxStream vs = liftIO $ atomically $ do
 
 waitForAnyNonempty :: MonadIO m => IndexStream -> [TVar Int] -> m ()
 waitForAnyNonempty idxStream vs = liftIO $ atomically $ do
-  idxPending <- readTMVar (lsPending idxStream)
+  idxPending <- readTMVar (isPending idxStream)
   when (Map.null idxPending) $ do
-    idxCurrent <- readTMVar (lsCurrent idxStream)
+    idxCurrent <- readTMVar (isCurrent idxStream)
     when (Set.null idxCurrent) $ do
       varResults <- mapM (liftM (/= 0) . readTVar) vs
       check (or varResults)
