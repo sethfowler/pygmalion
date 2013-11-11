@@ -37,9 +37,7 @@ main = do
 
   -- Launch threads.
   logDebug "Launching idle thread"
-  idleThread <- asyncBound (runIdleManager cf idleChan idxStream
-                                           [lenChanCounter dbChan,
-                                            lenChanCounter dbQueryChan])
+  idleThread <- asyncBound $ runIdleManager cf idleChan idxStream [dbChan, dbQueryChan]
   logDebug "Launching database thread"
   dbThread <- asyncBound (runDatabaseManager dbChan dbQueryChan)
   let maxThreads = case idxThreads cf of

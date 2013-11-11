@@ -9,7 +9,7 @@ module Pygmalion.Idle
 import Control.Concurrent.STM
 import Control.Concurrent.Suspend.Lifted (sDelay)
 import Control.Concurrent.Timer (oneShotTimer, stopTimer)
-import Control.Monad (forever, liftM, when)
+import Control.Monad (forever, unless, when)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import qualified Data.IntMap as Map
 import qualified Data.IntSet as Set
@@ -24,15 +24,15 @@ data IdleRequest = IdleBarrier (Response ())
 
 type IdleChan = LenChan IdleRequest
 
-runIdleManager :: Config -> IdleChan -> IndexStream -> [TVar Int] -> IO ()
-runIdleManager cf idleChan idxStream vs = forever $ do
+runIdleManager :: Config -> IdleChan -> IndexStream -> [LenChan a] -> IO ()
+runIdleManager cf idleChan idxStream cs = forever $ do
   -- Start the idle timer once activity stops.
-  waitForAllEmpty idxStream vs
+  waitForAllEmpty idxStream cs
   logDebug "Starting the idle timer..."
   timer <- oneShotTimer (onIdle idleChan idxStream) (sDelay . idleDelay $ cf)
 
   -- Wait for activity and stop the idle timer.
-  waitForAnyNonempty idxStream vs
+  waitForAnyNonempty idxStream cs
   logDebug "Stopping the idle timer..."
   stopTimer timer
   
@@ -42,33 +42,34 @@ onIdle idleChan idxStream = do
     atomically $ clearLastIndexedCache idxStream
     go
   where
-    go = do (!newCount, !req) <- readLenChan idleChan
+    go = do !req <- readLenChan idleChan
             case req of
               IdleBarrier !v -> doIdleBarrier v
-            when (newCount > 0) go
+            isEmpty <- isEmptyLenChan idleChan
+            unless isEmpty go
 
 doIdleBarrier :: Response () -> IO ()
 doIdleBarrier v = do
   logInfo "Responding to idle barrier."
   sendResponse v =<< return ()
 
-waitForAllEmpty :: MonadIO m => IndexStream -> [TVar Int] -> m ()
-waitForAllEmpty idxStream vs = liftIO $ atomically $ do
+waitForAllEmpty :: MonadIO m => IndexStream -> [LenChan a] -> m ()
+waitForAllEmpty idxStream cs = liftIO $ atomically $ do
   -- Check index stream.
   idxPending <- readTMVar (isPending idxStream)
   check (Map.null idxPending)
   idxCurrent <- readTMVar (isCurrent idxStream)
   check (Set.null idxCurrent)
 
-  -- Check the other variables.
-  varResults <- mapM (liftM (== 0) . readTVar) vs
-  check (and varResults)
+  -- Check the channels.
+  chanResults <- mapM isEmptyLenChan' cs
+  check (and chanResults)
 
-waitForAnyNonempty :: MonadIO m => IndexStream -> [TVar Int] -> m ()
-waitForAnyNonempty idxStream vs = liftIO $ atomically $ do
+waitForAnyNonempty :: MonadIO m => IndexStream -> [LenChan a] -> m ()
+waitForAnyNonempty idxStream cs = liftIO $ atomically $ do
   idxPending <- readTMVar (isPending idxStream)
   when (Map.null idxPending) $ do
     idxCurrent <- readTMVar (isCurrent idxStream)
     when (Set.null idxCurrent) $ do
-      varResults <- mapM (liftM (/= 0) . readTVar) vs
-      check (or varResults)
+      chanResults <- mapM isEmptyLenChan' cs
+      check $ not (and chanResults)
