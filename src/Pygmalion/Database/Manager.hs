@@ -61,7 +61,7 @@ runDatabaseManager chan queryChan = do
       newStart <- getCurrentTime
       go 0 newStart h
     go !n !s !h = {-# SCC "databaseThread" #-}
-           do (_, _, !req) <- readLenChanPreferFirst queryChan chan
+           do !req <- readLenChanPreferFirst queryChan chan
               case req of
                 DBShutdown -> logInfo "Shutting down DB thread"
                 _          -> route h req >> go (n+1) s h
