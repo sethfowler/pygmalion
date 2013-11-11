@@ -16,7 +16,7 @@ import qualified Data.Set as Set
 
 import Control.Concurrent.Chan.Len
 import Pygmalion.Config
-import Pygmalion.Index.Manager (IndexStream (..))
+import Pygmalion.Index.Manager (clearLastIndexedCache, IndexStream (..))
 import Pygmalion.Log
 
 data IdleRequest = IdleBarrier (Response ())
@@ -29,23 +29,23 @@ runIdleManager cf idleChan idxStream vs = forever $ do
   -- Start the idle timer once activity stops.
   waitForAllEmpty idxStream vs
   logDebug "Starting the idle timer..."
-  timer <- oneShotTimer (onIdle idleChan) (sDelay . idleDelay $ cf)
+  timer <- oneShotTimer (onIdle idleChan idxStream) (sDelay . idleDelay $ cf)
 
   -- Wait for activity and stop the idle timer.
   waitForAnyNonempty idxStream vs
   logDebug "Stopping the idle timer..."
   stopTimer timer
   
-onIdle :: IdleChan -> IO ()
-onIdle idleChan = do
+onIdle :: IdleChan -> IndexStream -> IO ()
+onIdle idleChan idxStream = do
     logInfo "Returned to idle."
+    atomically $ clearLastIndexedCache idxStream
     go
   where
     go = do (!newCount, !req) <- readLenChan idleChan
             case req of
               IdleBarrier !v -> doIdleBarrier v
-            if newCount > 0 then go
-                            else return ()
+            when (newCount > 0) go
 
 doIdleBarrier :: Response () -> IO ()
 doIdleBarrier v = do

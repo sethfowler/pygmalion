@@ -7,6 +7,7 @@ module Pygmalion.Index.Manager
 , mkIndexStream
 , shutdownIndexStream
 , addPendingIndex
+, clearLastIndexedCache
 ) where
 
 import Control.Applicative
@@ -56,20 +57,22 @@ data IndexContext = IndexContext
 type Indexer a = ReaderT IndexContext IO a
 
 data IndexStream = IndexStream
-  { isCurrent        :: TMVar (Set.Set SourceFile)
-  , isPending        :: TMVar (Map.Map SourceFile IndexRequest)
-  , isShouldPending :: TVar Bool
+  { isCurrent          :: TMVar (Set.Set SourceFile)
+  , isPending          :: TMVar (Map.Map SourceFile IndexRequest)
+  , isLastIndexedCache :: TMVar (Map.Map SourceFile Time)
+  , isShouldShutdown   :: TVar Bool
   }
 
 mkIndexStream :: IO IndexStream
 mkIndexStream = do
-  emptySet <- newTMVarIO Set.empty
-  emptyMap <- newTMVarIO Map.empty
+  emptySet  <- newTMVarIO Set.empty
+  emptyMap  <- newTMVarIO Map.empty
+  emptyMap' <- newTMVarIO Map.empty
   shouldShutdown <- newTVarIO False
-  return $! IndexStream emptySet emptyMap shouldShutdown
+  return $! IndexStream emptySet emptyMap emptyMap' shouldShutdown
 
 shutdownIndexStream :: IndexStream -> STM ()
-shutdownIndexStream is = writeTVar (isShouldPending is) True
+shutdownIndexStream is = writeTVar (isShouldShutdown is) True
 
 addPendingIndex :: IndexStream -> IndexRequest -> STM ()
 addPendingIndex is req = do
@@ -77,13 +80,13 @@ addPendingIndex is req = do
   let newPending = Map.insertWith combineReqs (reqSF req) req curPending
   putTMVar (isPending is) newPending
 
-data IndexRequestOrShutdown = Index IndexRequest
+data IndexRequestOrShutdown = Index IndexRequest (Maybe Time)
                             | Shutdown
                               deriving (Show)
 
 getNextFileToIndex :: IndexStream -> STM IndexRequestOrShutdown
 getNextFileToIndex is = do
-    shouldShutdown <- readTVar (isShouldPending is)
+    shouldShutdown <- readTVar (isShouldShutdown is)
     if shouldShutdown then return Shutdown
                       else getNext
   where
@@ -106,14 +109,27 @@ getNextFileToIndex is = do
       putTMVar (isCurrent is) newCurrent
       let newPending = Map.deleteAt 0 curPending
       putTMVar (isPending is) newPending
+      
+      -- Grab a cached last indexed time if available.
+      curCache <- readTMVar (isLastIndexedCache is)
+      let lastIndexedTime = sf `Map.lookup` curCache
 
-      return $ Index req
+      return $ Index req lastIndexedTime
 
 finishIndexingFile :: IndexStream -> IndexRequest -> STM ()
 finishIndexingFile is req = do
   curCurrent <- takeTMVar (isCurrent is)
   let newCurrent = (reqSF req) `Set.delete` curCurrent
   putTMVar (isCurrent is) newCurrent
+
+updateLastIndexedCache :: IndexStream -> SourceFile -> Time -> STM ()
+updateLastIndexedCache is sf t = do
+  curCache <- takeTMVar (isLastIndexedCache is)
+  let newCache = Map.insert sf t curCache
+  putTMVar (isLastIndexedCache is) newCache
+
+clearLastIndexedCache :: IndexStream -> STM ()
+clearLastIndexedCache is = void $ swapTMVar (isLastIndexedCache is) Map.empty
 
 runIndexManager :: Config -> DBChan -> DBChan -> IndexStream -> IO ()
 runIndexManager cf dbChan dbQueryChan is = go
@@ -122,45 +138,49 @@ runIndexManager cf dbChan dbQueryChan is = go
     go = {-# SCC "indexThread" #-} do
          req <- atomically $ getNextFileToIndex is
          case req of
-             Index r  -> do runReaderT (analyzeIfDirty r) ctx
-                            atomically $ finishIndexingFile (icIndexStream ctx) r
-                            go
-             Shutdown -> logInfo "Shutting down indexing thread"
+             Index r t -> do runReaderT (indexIfDirty r t) ctx
+                             atomically $ finishIndexingFile (icIndexStream ctx) r
+                             go
+             Shutdown  -> logInfo "Shutting down indexing thread"
 
-getMTime :: SourceFile -> Indexer (Maybe Time)
-getMTime sf = lift $ do
-  result <- try $ getModificationTime (unSourceFile sf)
-  case result of
-    Right clockTime -> return . Just . floor . utcTimeToPOSIXSeconds $ clockTime
-    Left e          -> do logInfo $ "Couldn't read mtime for file "
-                                 ++ unSourceFile sf ++ ": "
-                                 ++ show (e :: IOException)
-                          return Nothing  -- Most likely the file has been deleted.
+indexIfDirty :: IndexRequest -> Maybe Time -> Indexer ()
+indexIfDirty req lastIndexedTime =
+  -- If this is a FromDepChange request and we have a last indexed time,
+  -- we can potentially bail without even reading the file's mtime.
+  case (req, lastIndexedTime) of
+    (FromDepChange ci t, Just lastT)
+      | lastT < t -> index (ciLastMTime ci) =<< reset ci
+      | otherwise -> ignoreUnchanged req lastT True
+    _             -> indexIfDirty' req
 
-analyzeIfDirty :: IndexRequest -> Indexer ()
-analyzeIfDirty req = do
+indexIfDirty' :: IndexRequest -> Indexer ()
+indexIfDirty' req = do
+  mayMTime <- getMTime $ reqSF req
+
+  -- Bail early if we couldn't read the file.
+  case mayMTime of
+    Just mtime -> indexIfDirty'' req mtime
+    Nothing    -> ignoreUnreadable req
+
+indexIfDirty'' :: IndexRequest -> Time -> Indexer ()
+indexIfDirty'' req mtime = do
   ctx <- ask
-  let sf = reqSF req
-  mayOldCI <- callLenChan (icDBQueryChan ctx) $ DBGetCommandInfo sf
-  mayMTime <- getMTime sf
+  mayOldCI <- callLenChan (icDBQueryChan ctx) $ DBGetCommandInfo (reqSF req)
 
-  case (req, mayOldCI, mayMTime) of
-    (_, _, Nothing)                   -> ignoreUnreadable req
-    (FromBuild ci, Just oldCI, Just mtime)
-      | commandInfoChanged ci oldCI   -> analyze ci mtime False
-      | ciLastIndexed oldCI /= mtime  -> analyze ci mtime False
-      | otherwise                     -> ignoreUnchanged req mtime
-    (FromBuild ci, Nothing, Just mtime)
-                                      -> analyze ci mtime True
-    (FromNotify _, Just oldCI, Just mtime)
-      | ciLastIndexed oldCI /= mtime  -> analyze oldCI mtime False
-      | otherwise                     -> ignoreUnchanged req mtime
-    (FromNotify _, Nothing, _)        -> ignoreUnknown req
-    (FromDepChange ci t, Just oldCI, Just mtime)
-      | ciLastIndexed oldCI < t       -> analyze ci mtime False
-      | otherwise                     -> ignoreUnchanged req (ciLastIndexed oldCI)
-    (FromDepChange ci _, Nothing, Just mtime)
-                                      -> analyze ci mtime False
+  case (req, mayOldCI) of
+    (FromBuild ci, Just oldCI)
+      | commandInfoChanged ci oldCI  -> index mtime =<< reset =<< checkDeps mtime ci
+      | ciLastMTime oldCI /= mtime   -> index mtime =<< reset =<< checkDeps mtime ci
+      | otherwise                    -> ignoreUnchanged req mtime False
+    (FromBuild ci, Nothing)          -> index mtime ci
+    (FromNotify _, Just oldCI)
+      | ciLastMTime oldCI /= mtime   -> index mtime =<< reset =<< checkDeps mtime oldCI
+      | otherwise                    -> ignoreUnchanged req mtime False
+    (FromNotify _, Nothing)          -> ignoreUnknown req
+    (FromDepChange ci t, Just oldCI)
+      | ciLastIndexed oldCI < t      -> index mtime =<< reset ci
+      | otherwise                    -> ignoreUnchanged req (ciLastIndexed oldCI) False
+    (FromDepChange ci _, Nothing)    -> index mtime =<< reset ci
 
 commandInfoChanged :: CommandInfo -> CommandInfo -> Bool
 commandInfoChanged a b | ciWorkingPath a /= ciWorkingPath b = True
@@ -169,23 +189,52 @@ commandInfoChanged a b | ciWorkingPath a /= ciWorkingPath b = True
                        | ciLanguage a    /= ciLanguage b    = True
                        | otherwise                          = False
 
-analyze :: CommandInfo -> Time -> Bool -> Indexer ()
-analyze ci mtime isNew = do
+checkDeps :: Time -> CommandInfo -> Indexer CommandInfo
+checkDeps mtime ci = do
   ctx <- ask
+  others <- otherFilesToReindex ci
+  forM_ others $ \f ->
+    lift $ atomically $ addPendingIndex (icIndexStream ctx) (FromDepChange f mtime)
+  return ci
 
-  -- If the file isn't new, we need to do some invalidation.
-  unless isNew $ do
-    others <- otherFilesToReindex ci
-    forM_ others $ \f ->
-      lift $ atomically $ addPendingIndex (icIndexStream ctx) (FromDepChange f mtime)
-    writeLenChan (icDBChan ctx) (DBResetMetadata $ ciSourceFile ci)
+reset :: CommandInfo -> Indexer CommandInfo
+reset ci = do
+  ctx <- ask
+  writeLenChan (icDBChan ctx) (DBResetMetadata $ ciSourceFile ci)
+  return ci
 
-  analyzeCode ci 1
+index :: Time -> CommandInfo -> Indexer ()
+index mtime ci = go 1
+  where
+    go :: Int -> Indexer ()
+    go retries = do
+      ctx <- ask
+      let is = icIndexStream ctx
+      let sf = ciSourceFile ci
+      time <- floor <$> lift getPOSIXTime
 
-ignoreUnchanged :: IndexRequest -> Time -> Indexer ()
-ignoreUnchanged req mtime = logInfo $ "Index is up-to-date for file "
-                                   ++ (show . reqSF $ req)
-                                   ++ " (file mtime: " ++ show mtime ++ ")"
+      -- Do the actual indexing.
+      logInfo $ "Indexing " ++ show sf
+      (_, _, _, h) <- lift $ createProcess
+                           (proc (icIndexer ctx) [show (icPort ctx), show ci])
+      code <- lift $ waitForProcess h
+
+      -- Update the last indexed time.
+      case (code, retries) of
+        (ExitSuccess, _) -> do lift $ atomically $ updateLastIndexedCache is sf time 
+                               updateCommand $ ci { ciLastMTime = mtime, ciLastIndexed = time }
+        (_, 0)           -> do logInfo "Indexing process failed."
+                               -- Make sure we reindex next time.
+                               lift $ atomically $ updateLastIndexedCache is sf 0 
+                               updateCommand $ ci { ciLastMTime = 0, ciLastIndexed = 0 }
+        (_, _)           -> do logInfo "Indexing process failed; will retry..."
+                               go (retries - 1)
+
+ignoreUnchanged :: IndexRequest -> Time -> Bool -> Indexer ()
+ignoreUnchanged req mtime cached = logInfo $ "Index is up-to-date for file "
+                                          ++ (show . reqSF $ req)
+                                          ++ " (file mtime: " ++ show mtime ++ ")"
+                                          ++ (if cached then " (cached)" else "")
 
 ignoreUnknown :: IndexRequest -> Indexer ()
 ignoreUnknown req = logInfo $ "Not indexing unknown file "
@@ -207,23 +256,12 @@ updateCommand ci = do
   ctx <- ask
   writeLenChan (icDBChan ctx) (DBUpdateCommandInfo ci)
 
-analyzeCode :: CommandInfo -> Int -> Indexer ()
-analyzeCode ci retries = do
-  ctx <- ask
-  let sf = ciSourceFile ci
-  time <- floor <$> lift getPOSIXTime
-
-  -- Do the actual indexing.
-  logInfo $ "Indexing " ++ show sf
-  (_, _, _, h) <- lift $ createProcess
-                       (proc (icIndexer ctx) [show (icPort ctx), show ci])
-  code <- lift $ waitForProcess h
-
-  -- Update the last indexed time.
-  case (code, retries) of
-    (ExitSuccess, _) -> updateCommand $ ci { ciLastIndexed = time }
-    (_, 0)           -> do logInfo "Indexing process failed."
-                           -- Make sure we reindex next time.
-                           updateCommand $ ci { ciLastIndexed = 0 }
-    (_, _)           -> do logInfo "Indexing process failed; will retry..."
-                           analyzeCode ci (retries - 1)
+getMTime :: SourceFile -> Indexer (Maybe Time)
+getMTime sf = lift $ do
+  result <- try $ getModificationTime (unSourceFile sf)
+  case result of
+    Right clockTime -> return . Just . floor . utcTimeToPOSIXSeconds $ clockTime
+    Left e          -> do logInfo $ "Couldn't read mtime for file "
+                                 ++ unSourceFile sf ++ ": "
+                                 ++ show (e :: IOException)
+                          return Nothing  -- Most likely the file has been deleted.
