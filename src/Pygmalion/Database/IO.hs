@@ -412,7 +412,7 @@ getInclusionHierarchy :: DBHandle -> SourceFile -> IO String
 getInclusionHierarchy h sf = asDot <$> generateHierarchy
   where
     generateHierarchy = do
-      let nid = fromIntegral . hash $ sf
+      let nid = hashInt sf
       let node = mkHighlightedNode nid sf []
       let g = addUniqueNode node mkGraph
 
@@ -433,7 +433,7 @@ getInclusionHierarchy h sf = asDot <$> generateHierarchy
       return g''
       
     expandHierarchy newEdgeF refsF nextLevelF superNodeId g sf' = do
-      let nid = fromIntegral . hash $ sf'
+      let nid = hashInt sf'
 
       -- If this inclusion already exists in the graph, bail.
       case nid `nodeElem` g of

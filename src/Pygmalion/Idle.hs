@@ -11,8 +11,8 @@ import Control.Concurrent.Suspend.Lifted (sDelay)
 import Control.Concurrent.Timer (oneShotTimer, stopTimer)
 import Control.Monad (forever, liftM, when)
 import Control.Monad.IO.Class (liftIO, MonadIO)
-import qualified Data.Map as Map
-import qualified Data.Set as Set
+import qualified Data.IntMap as Map
+import qualified Data.IntSet as Set
 
 import Control.Concurrent.Chan.Len
 import Pygmalion.Config

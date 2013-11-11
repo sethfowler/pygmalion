@@ -15,8 +15,8 @@ import Control.Concurrent.STM
 import Control.Exception
 import Control.Monad
 import Control.Monad.Reader
-import qualified Data.Map as Map
-import qualified Data.Set as Set
+import qualified Data.IntMap.Strict as Map
+import qualified Data.IntSet as Set
 import Data.Time.Clock.POSIX
 import System.Directory
 import System.Exit
@@ -26,6 +26,7 @@ import Control.Concurrent.Chan.Len
 import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.Database.Manager
+import Pygmalion.Hash
 import Pygmalion.Log
 
 data IndexRequest = FromBuild     CommandInfo
@@ -57,9 +58,9 @@ data IndexContext = IndexContext
 type Indexer a = ReaderT IndexContext IO a
 
 data IndexStream = IndexStream
-  { isCurrent          :: TMVar (Set.Set SourceFile)
-  , isPending          :: TMVar (Map.Map SourceFile IndexRequest)
-  , isLastIndexedCache :: TMVar (Map.Map SourceFile Time)
+  { isCurrent          :: TMVar Set.IntSet
+  , isPending          :: TMVar (Map.IntMap IndexRequest)
+  , isLastIndexedCache :: TMVar (Map.IntMap Time)
   , isShouldShutdown   :: TVar Bool
   }
 
@@ -77,7 +78,8 @@ shutdownIndexStream is = writeTVar (isShouldShutdown is) True
 addPendingIndex :: IndexStream -> IndexRequest -> STM ()
 addPendingIndex is req = do
   curPending <- takeTMVar (isPending is)
-  let newPending = Map.insertWith combineReqs (reqSF req) req curPending
+  let sfHash = hashInt (reqSF req)
+  let newPending = Map.insertWith combineReqs sfHash req curPending
   putTMVar (isPending is) newPending
 
 data IndexRequestOrShutdown = Index IndexRequest (Maybe Time)
@@ -98,34 +100,35 @@ getNextFileToIndex is = do
       check (not $ Map.null curPending)
 
       -- There's something available, so grab it.
-      let (sf, req) = Map.elemAt 0 curPending
+      let (sfHash, req) = Map.findMin curPending
 
       -- Make sure someone else isn't already working on it.
       curCurrent <- takeTMVar (isCurrent is)
-      check (not $ sf `Set.member` curCurrent)
+      check (not $ sfHash `Set.member` curCurrent)
 
       -- OK, we're good to go.
-      let newCurrent = sf `Set.insert` curCurrent
+      let newCurrent = sfHash `Set.insert` curCurrent
       putTMVar (isCurrent is) newCurrent
-      let newPending = Map.deleteAt 0 curPending
+      let newPending = Map.deleteMin curPending
       putTMVar (isPending is) newPending
       
       -- Grab a cached last indexed time if available.
       curCache <- readTMVar (isLastIndexedCache is)
-      let lastIndexedTime = sf `Map.lookup` curCache
+      let lastIndexedTime = sfHash `Map.lookup` curCache
 
       return $ Index req lastIndexedTime
 
 finishIndexingFile :: IndexStream -> IndexRequest -> STM ()
 finishIndexingFile is req = do
   curCurrent <- takeTMVar (isCurrent is)
-  let newCurrent = (reqSF req) `Set.delete` curCurrent
+  let sfHash = hashInt (reqSF req)
+  let newCurrent = sfHash `Set.delete` curCurrent
   putTMVar (isCurrent is) newCurrent
 
 updateLastIndexedCache :: IndexStream -> SourceFile -> Time -> STM ()
 updateLastIndexedCache is sf t = do
   curCache <- takeTMVar (isLastIndexedCache is)
-  let newCache = Map.insert sf t curCache
+  let newCache = Map.insert (hashInt sf) t curCache
   putTMVar (isLastIndexedCache is) newCache
 
 clearLastIndexedCache :: IndexStream -> STM ()
