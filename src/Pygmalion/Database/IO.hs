@@ -274,7 +274,7 @@ dbMinorVersion = 23
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c (mkQueryT sql)
   where sql = T.concat [ "create table if not exists Metadata(              "
-                       , "Tool varchar(16) primary key not null,            "
+                       , "Tool text primary key not null,                   "
                        , "MajorVersion integer zerofill unsigned not null,  "
                        , "MinorVersion integer zerofill unsigned not null)" ]
 
@@ -302,7 +302,7 @@ defineFilesTable c = do
   where
     sql = T.concat [ "create table if not exists Files(          "
                    , "Hash integer primary key unique not null,  "
-                   , "Name varchar(2048) not null collate nocase)" ]
+                   , "Name text not null collate nocase)" ]
     indexSQL = "create index if not exists FilesNameIndex on Files(Name collate nocase)"
 
 insertFileAndCheck :: DBHandle -> SourceFile -> IO Bool
@@ -457,7 +457,7 @@ definePathsTable :: Connection -> IO ()
 definePathsTable c = execute_ c (mkQueryT sql)
   where sql =  T.concat [ "create table if not exists Paths(         "
                         , "Hash integer primary key unique not null, "
-                        , "Path varchar(2048) not null)" ]
+                        , "Path text not null)" ]
 
 insertPathSQL :: T.Text
 insertPathSQL = "insert or ignore into Paths (Path, Hash) values (?, ?)"
@@ -467,7 +467,7 @@ defineBuildCommandsTable :: Connection -> IO ()
 defineBuildCommandsTable c = execute_ c (mkQueryT sql)
   where sql = T.concat [ "create table if not exists BuildCommands( "
                        , "Hash integer primary key unique not null, "
-                       , "Command varchar(2048) not null)" ]
+                       , "Command text not null)" ]
 
 insertCommandSQL :: T.Text
 insertCommandSQL = "insert or ignore into BuildCommands (Command, Hash) values (?, ?)"
@@ -477,7 +477,7 @@ defineBuildArgsTable :: Connection -> IO ()
 defineBuildArgsTable c = execute_ c (mkQueryT sql)
   where sql = T.concat [ "create table if not exists BuildArgs(     "
                        , "Hash integer primary key unique not null, "
-                       , "Args varchar(2048) not null)" ]
+                       , "Args text not null)" ]
 
 insertArgsSQL :: T.Text
 insertArgsSQL = "insert or ignore into BuildArgs (Args, Hash) values (?, ?)"
@@ -563,7 +563,7 @@ defineDefinitionsTable c = do
   where
     sql = T.concat [ "create table if not exists Definitions(      "
                    , "USRHash integer primary key unique not null, "
-                   , "Name varchar(2048) not null,                 "
+                   , "Name text not null,                          "
                    , "File integer not null,                       "
                    , "Line integer not null,                       "
                    , "Col integer not null,                        "
