@@ -137,7 +137,7 @@ executable pygindex-clang
   hs-source-dirs: indexers
 
 test-suite pygmalion-hspec
-  ghc-options:    -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:    -O -threaded -rtsopts -with-rtsopts=-N
   type:           exitcode-stdio-1.0
   main-is:        Spec.hs
   build-depends:  base >= 4,
