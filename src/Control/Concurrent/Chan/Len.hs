@@ -24,7 +24,7 @@ data LenChan a = LenChan
     }
 
 queueLimit :: Int
-queueLimit = 10000
+queueLimit = 100000
 
 newLenChan :: MonadIO m => m (LenChan a)
 newLenChan = liftIO $ atomically $ do
