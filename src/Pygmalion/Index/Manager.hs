@@ -27,6 +27,7 @@ import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.Database.Manager
 import Pygmalion.Hash
+import Pygmalion.Index.Extension
 import Pygmalion.Log
 
 data IndexRequest = FromBuild     CommandInfo
@@ -194,10 +195,11 @@ commandInfoChanged a b | ciWorkingPath a /= ciWorkingPath b = True
 
 checkDeps :: Time -> CommandInfo -> Indexer CommandInfo
 checkDeps mtime ci = do
-  ctx <- ask
-  others <- otherFilesToReindex ci
-  forM_ others $ \f ->
-    lift $ atomically $ addPendingIndex (icIndexStream ctx) (FromDepChange f mtime)
+  when (hasHeaderExtensionBS $ ciSourceFile ci) $ do
+    ctx <- ask
+    others <- otherFilesToReindex ci
+    forM_ others $ \f ->
+      lift $ atomically $ addPendingIndex (icIndexStream ctx) (FromDepChange f mtime)
   return ci
 
 reset :: CommandInfo -> Indexer CommandInfo
