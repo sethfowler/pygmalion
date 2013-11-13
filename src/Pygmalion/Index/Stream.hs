@@ -22,7 +22,7 @@ import Pygmalion.Hash
 data IndexStream = IndexStream
   { isCurrent          :: TMVar Set.IntSet
   , isPending          :: TMVar (Map.IntMap IndexRequest)
-  , isLastIndexedCache :: TMVar (Map.IntMap Time)
+  , isLastIndexedCache :: TMVar (Map.IntMap CommandInfo)
   , isShouldShutdown   :: TVar Bool
   }
 
@@ -44,7 +44,7 @@ addPendingIndex is req = do
   let newPending = Map.insertWith combineReqs sfHash req curPending
   putTMVar (isPending is) newPending
 
-data IndexRequestOrShutdown = Index IndexRequest (Maybe Time)
+data IndexRequestOrShutdown = Index IndexRequest (Maybe CommandInfo)
                             | Shutdown
                               deriving (Show)
 
@@ -76,9 +76,9 @@ getNextFileToIndex is = do
       
       -- Grab a cached last indexed time if available.
       curCache <- readTMVar (isLastIndexedCache is)
-      let lastIndexedTime = sfHash `Map.lookup` curCache
+      let lastIndexedCI = sfHash `Map.lookup` curCache
 
-      return $ Index req lastIndexedTime
+      return $ Index req lastIndexedCI
 
 finishIndexingFile :: IndexStream -> IndexRequest -> STM ()
 finishIndexingFile is req = do
@@ -87,10 +87,10 @@ finishIndexingFile is req = do
   let newCurrent = sfHash `Set.delete` curCurrent
   putTMVar (isCurrent is) newCurrent
 
-updateLastIndexedCache :: IndexStream -> SourceFile -> Time -> STM ()
-updateLastIndexedCache is sf t = do
+updateLastIndexedCache :: IndexStream -> CommandInfo -> STM ()
+updateLastIndexedCache is ci = do
   curCache <- takeTMVar (isLastIndexedCache is)
-  let newCache = Map.insert (hashInt sf) t curCache
+  let newCache = Map.insert (hashInt $ ciSourceFile ci) ci curCache
   putTMVar (isLastIndexedCache is) newCache
 
 clearLastIndexedCache :: IndexStream -> STM ()

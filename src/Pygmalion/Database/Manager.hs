@@ -93,4 +93,4 @@ updateInclusionAndIndex :: Inclusion -> DB ()
 updateInclusionAndIndex ic = do
   ctx <- ask
   lift $ updateInclusion (dbHandle ctx) ic
-  lift $ atomically $ addPendingIndex (dbIndexStream ctx) (FromBuild . icCommandInfo $ ic)
+  lift $ atomically $ addPendingIndex (dbIndexStream ctx) $ FromBuild (icCommandInfo ic) False

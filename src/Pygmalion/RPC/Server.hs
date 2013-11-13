@@ -93,7 +93,7 @@ data RPCServerContext = RPCServerContext
 type RPCServer a = ReaderT RPCServerContext IO a
 
 route :: RPCRequest -> RPCServer (Maybe ByteString)
-route (RPCIndexCommand ci)          = sendIndex_ $ FromBuild ci
+route (RPCIndexCommand ci)          = sendIndex_ $ FromBuild ci False
 route (RPCIndexFile ci)             = sendIndex_ $ FromNotify ci
 route (RPCGetCommandInfo sf)        = sendQuery $ DBGetCommandInfo sf
 route (RPCGetSimilarCommandInfo sf) = sendQuery $ DBGetSimilarCommandInfo sf

@@ -30,9 +30,9 @@ runIndexManager cf dbChan dbQueryChan is = go
     go = {-# SCC "indexThread" #-} do
          req <- atomically $ getNextFileToIndex is
          case req of
-             Index r t -> do runReaderT (indexIfDirty r t) ctx
-                             atomically $ finishIndexingFile (icIndexStream ctx) r
-                             go
+             Index r ci -> do runReaderT (indexIfDirty r ci) ctx
+                              atomically $ finishIndexingFile (icIndexStream ctx) r
+                              go
              Shutdown  -> logInfo "Shutting down indexing thread"
 
 data IndexContext = IndexContext
@@ -44,44 +44,67 @@ data IndexContext = IndexContext
   }
 type Indexer a = ReaderT IndexContext IO a
 
-indexIfDirty :: IndexRequest -> Maybe Time -> Indexer ()
-indexIfDirty req lastIndexedTime =
-  -- If this is a FromDepChange request and we have a last indexed time,
-  -- we can potentially bail without even reading the file's mtime.
-  case (req, lastIndexedTime) of
-    (FromDepChange ci t, Just lastT)
-      | lastT < t -> index (ciLastMTime ci) =<< reset ci
-      | otherwise -> ignoreUnchanged req lastT True
-    _             -> indexIfDirty' req
+-- Trigger indexing if this file is dirty. This first version of the
+-- function makes whatever decisions we can make without hitting the
+-- disk or the database.
+indexIfDirty :: IndexRequest -> Maybe CommandInfo -> Indexer ()
+indexIfDirty req mayLastCI =
+  -- In general if we have a cached CI we make a decision here as long
+  -- as we haven't seen a FromNotify for the file.
+  case (req, mayLastCI) of
+    (FromBuild ci False, Just lastCI)
+      | commandInfoChanged ci lastCI -> index (ciLastMTime lastCI) =<<
+                                        reset =<<
+                                        checkDeps (ciLastMTime lastCI) lastCI
+      | otherwise                    -> ignoreUnchanged req (ciLastMTime lastCI) True
+    (FromDepChange ci t False, Just lastCI)
+      | ciLastIndexed lastCI < t -> index (ciLastMTime lastCI) =<< reset ci
+      | otherwise                -> ignoreUnchanged req (ciLastIndexed lastCI) True
+    _                            -> indexIfDirty' req mayLastCI
 
-indexIfDirty' :: IndexRequest -> Indexer ()
-indexIfDirty' req = do
+-- This second version of the function makes the decisions we can make
+-- where reading the mtime is required, but hitting the database isn't.
+indexIfDirty' :: IndexRequest -> Maybe CommandInfo -> Indexer ()
+indexIfDirty' req mayLastCI = do
   mayMTime <- getMTime $ reqSF req
 
-  -- Bail early if we couldn't read the file.
-  case mayMTime of
-    Just mtime -> indexIfDirty'' req mtime
-    Nothing    -> ignoreUnreadable req
+  case (req, mayLastCI, mayMTime) of
+    (_, _, Nothing)    -> ignoreUnreadable req
+    (FromBuild ci True, Just lastCI, Just mtime)
+      | commandInfoChanged ci lastCI -> index mtime =<< reset =<< checkDeps mtime ci
+      | ciLastMTime lastCI /= mtime  -> index mtime =<< reset =<< checkDeps mtime ci
+      | otherwise                    -> ignoreUnchanged req mtime True
+    (FromNotify _, Just lastCI, Just mtime)
+      | ciLastMTime lastCI /= mtime  -> index mtime =<< reset =<< checkDeps mtime lastCI
+      | otherwise                    -> ignoreUnchanged req mtime True
+    (FromDepChange ci t True, Just lastCI, Just mtime)
+      | ciLastIndexed lastCI < t     -> index mtime =<< reset ci
+      | ciLastMTime lastCI /= mtime  -> index mtime =<< reset ci
+      | otherwise                    -> ignoreUnchanged req (ciLastIndexed lastCI) True
+    (_, _, Just mtime)               -> indexIfDirty'' req mtime
 
+-- This final version of the function is used only if we don't get a
+-- cache hit. We're forced to hit the database to make a final decision.
 indexIfDirty'' :: IndexRequest -> Time -> Indexer ()
 indexIfDirty'' req mtime = do
   ctx <- ask
   mayOldCI <- callLenChan (icDBQueryChan ctx) $ DBGetCommandInfo (reqSF req)
 
   case (req, mayOldCI) of
-    (FromBuild ci, Just oldCI)
+    (FromBuild ci _, Just oldCI)
       | commandInfoChanged ci oldCI  -> index mtime =<< reset =<< checkDeps mtime ci
       | ciLastMTime oldCI /= mtime   -> index mtime =<< reset =<< checkDeps mtime ci
       | otherwise                    -> ignoreUnchanged req mtime False
-    (FromBuild ci, Nothing)          -> index mtime ci
+    (FromBuild ci _, Nothing)        -> index mtime ci
     (FromNotify _, Just oldCI)
       | ciLastMTime oldCI /= mtime   -> index mtime =<< reset =<< checkDeps mtime oldCI
       | otherwise                    -> ignoreUnchanged req mtime False
     (FromNotify _, Nothing)          -> ignoreUnknown req
-    (FromDepChange ci t, Just oldCI)
+    (FromDepChange ci t _, Just oldCI)
       | ciLastIndexed oldCI < t      -> index mtime =<< reset ci
+      | ciLastMTime oldCI /= mtime   -> index mtime =<< reset ci
       | otherwise                    -> ignoreUnchanged req (ciLastIndexed oldCI) False
-    (FromDepChange ci _, Nothing)    -> index mtime =<< reset ci
+    (FromDepChange ci _ _, Nothing)  -> index mtime =<< reset ci
 
 commandInfoChanged :: CommandInfo -> CommandInfo -> Bool
 commandInfoChanged a b | ciWorkingPath a /= ciWorkingPath b = True
@@ -96,7 +119,7 @@ checkDeps mtime ci = do
     ctx <- ask
     others <- otherFilesToReindex ci
     forM_ others $ \f ->
-      lift $ atomically $ addPendingIndex (icIndexStream ctx) (FromDepChange f mtime)
+      lift $ atomically $ addPendingIndex (icIndexStream ctx) (FromDepChange f mtime False)
   return ci
 
 reset :: CommandInfo -> Indexer CommandInfo
@@ -123,12 +146,14 @@ index mtime ci = go 1
 
       -- Update the last indexed time.
       case (code, retries) of
-        (ExitSuccess, _) -> do lift $ atomically $ updateLastIndexedCache is sf time 
-                               updateCommand $ ci { ciLastMTime = mtime, ciLastIndexed = time }
+        (ExitSuccess, _) -> do let newCI = ci { ciLastMTime = mtime, ciLastIndexed = time }
+                               lift $ atomically $ updateLastIndexedCache is newCI
+                               updateCommand newCI
         (_, 0)           -> do logInfo "Indexing process failed."
                                -- Make sure we reindex next time.
-                               lift $ atomically $ updateLastIndexedCache is sf 0 
-                               updateCommand $ ci { ciLastMTime = 0, ciLastIndexed = 0 }
+                               let newCI = ci { ciLastMTime = 0, ciLastIndexed = 0 }
+                               lift $ atomically $ updateLastIndexedCache is newCI
+                               updateCommand newCI
         (_, _)           -> do logInfo "Indexing process failed; will retry..."
                                go (retries - 1)
 
