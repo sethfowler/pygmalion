@@ -12,7 +12,6 @@ module Pygmalion.Database.IO
 , getIncluders
 , getIncluderInfo
 , getInclusionHierarchy
-, insertFileAndCheck
 , updateSourceFile
 , getAllSourceFiles
 , getCommandInfo
@@ -43,7 +42,6 @@ import Data.List (minimumBy)
 import Data.Ord (comparing)
 import Data.String
 import qualified Data.Text as T
-import qualified Database.SQLite3.Direct as Direct
 import Database.SQLite.Simple
 import System.FilePath.Posix
 
@@ -304,12 +302,6 @@ defineFilesTable c = do
                    , "Hash integer primary key unique not null,  "
                    , "Name text not null collate nocase)" ]
     indexSQL = "create index if not exists FilesNameIndex on Files(Name collate nocase)"
-
-insertFileAndCheck :: DBHandle -> SourceFile -> IO Bool
-insertFileAndCheck h sf = do
-  let sfHash = hash sf
-  execStatement h insertFileStmt (sf, sfHash)
-  (== 0) <$> Direct.changes (connectionHandle . conn $ h)
 
 insertFileSQL :: T.Text
 insertFileSQL = "insert or ignore into Files (Name, Hash) values (?, ?)"

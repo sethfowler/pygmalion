@@ -142,10 +142,7 @@ sendInclusionUpdate_ :: Inclusion -> RPCServer (Maybe ByteString)
 sendInclusionUpdate_ ic = do
   ctx <- ask
   writeLenChan (rsDBChan ctx) (DBUpdateInclusion ic)
-  existing <- callLenChan (rsDBQueryChan ctx)
-                          (DBInsertFileAndCheck . ciSourceFile . icCommandInfo $ ic)
-  when (not existing) $
-    lift $ atomically $ addPendingIndex (rsIndexStream ctx) (FromBuild . icCommandInfo $ ic)
+  lift $ atomically $ addPendingIndex (rsIndexStream ctx) (FromBuild . icCommandInfo $ ic)
   return Nothing
 
 sendWait_ :: RPCServer (Maybe ByteString)

@@ -21,7 +21,6 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBUpdateOverride Override
                | DBUpdateRef ReferenceUpdate
                | DBUpdateInclusion Inclusion
-               | DBInsertFileAndCheck SourceFile (Response Bool)
                | DBResetMetadata SourceFile
                | DBGetCommandInfo SourceFile (Response (Maybe CommandInfo))
                | DBGetSimilarCommandInfo SourceFile (Response (Maybe CommandInfo))
@@ -65,7 +64,6 @@ route h (DBUpdateCommandInfo !ci)        = update "command info" updateSourceFil
 route h (DBUpdateDef !di)                = update "definition" updateDef h di
 route h (DBUpdateOverride !ov)           = update "override" updateOverride h ov
 route h (DBUpdateRef !rf)                = update "reference" updateReference h rf
-route h (DBInsertFileAndCheck !sf !v)    = query "file and inserting" insertFileAndCheck h sf v
 route h (DBUpdateInclusion !ic)          = update "inclusion" updateInclusion h ic
 route h (DBResetMetadata !sf)            = update "resetted metadata" resetMetadata h sf
 route h (DBGetCommandInfo !f !v)         = query "command info" getCommandInfo h f v
