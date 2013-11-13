@@ -40,7 +40,7 @@ runRPCServer cf iStream dbChan dbQueryChan idleChan = do
                                                         idleChan
                                                         conns)
   where
-    settings = (serverSettings port addr) :: ServerSettings IO
+    settings = serverSettings port addr :: ServerSettings IO
     port = ifPort cf
     addr = fromString $ ifAddr cf
 
@@ -51,7 +51,7 @@ serverApp ctx ad = do
   where
     getCI = {-# SCC "serverget" #-} get :: Get RPCRequest
 
-    conduit = (appSource ad) $= conduitGet getCI =$= process $$ (appSink ad)
+    conduit = appSource ad $= conduitGet getCI =$= process $$ appSink ad
 
     open = liftIO $ modifyMVar_ (rsConnections ctx) (\c -> return (c + 1))
     close = liftIO $ terminate' 1
@@ -66,7 +66,7 @@ serverApp ctx ad = do
       conns <- takeMVar (rsConnections ctx)
       let newConns = conns - v
       putMVar (rsConnections ctx) newConns
-      when (newConns < 0) $ do
+      when (newConns < 0) $
         throwTo (rsThread ctx) RPCServerExit -- Terminate the server.
 
     process = do
