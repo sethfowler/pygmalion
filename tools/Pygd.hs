@@ -16,9 +16,12 @@ import System.Path.NameManip
 import Control.Concurrent.Chan.Len
 import Pygmalion.Index.Extension
 import Pygmalion.Index.Manager
+import Pygmalion.Index.Request
+import Pygmalion.Index.Stream
 import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.Database.Manager
+import Pygmalion.Database.Request
 import Pygmalion.Log
 import Pygmalion.Idle
 import Pygmalion.RPC.Server
@@ -39,7 +42,7 @@ main = do
   logDebug "Launching idle thread"
   idleThread <- asyncBound $ runIdleManager cf idleChan idxStream [dbChan, dbQueryChan]
   logDebug "Launching database thread"
-  dbThread <- asyncBound (runDatabaseManager dbChan dbQueryChan)
+  dbThread <- asyncBound (runDatabaseManager dbChan dbQueryChan idxStream)
   let maxThreads = case idxThreads cf of
                      0 -> numCapabilities
                      n -> n

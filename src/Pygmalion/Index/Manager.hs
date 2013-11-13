@@ -2,12 +2,6 @@
 
 module Pygmalion.Index.Manager
 ( runIndexManager
-, IndexRequest (..)
-, IndexStream (..)
-, mkIndexStream
-, shutdownIndexStream
-, addPendingIndex
-, clearLastIndexedCache
 ) where
 
 import Control.Applicative
@@ -15,8 +9,6 @@ import Control.Concurrent.STM
 import Control.Exception
 import Control.Monad
 import Control.Monad.Reader
-import qualified Data.IntMap.Strict as Map
-import qualified Data.IntSet as Set
 import Data.Time.Clock.POSIX
 import System.Directory
 import System.Exit
@@ -25,115 +17,11 @@ import System.Process
 import Control.Concurrent.Chan.Len
 import Pygmalion.Config
 import Pygmalion.Core
-import Pygmalion.Database.Manager
-import Pygmalion.Hash
+import Pygmalion.Database.Request
 import Pygmalion.Index.Extension
+import Pygmalion.Index.Request
+import Pygmalion.Index.Stream
 import Pygmalion.Log
-
-data IndexRequest = FromBuild     CommandInfo
-                  | FromDepChange CommandInfo Time
-                  | FromNotify    SourceFile
-                    deriving (Show)
-
-reqSF :: IndexRequest -> SourceFile
-reqSF (FromBuild  ci)      = ciSourceFile ci
-reqSF (FromNotify sf)      = sf
-reqSF (FromDepChange ci _) = ciSourceFile ci
-
--- Combines two IndexRequests. Assumes that the first argument is 'new'
--- and the second argument is 'old'.
-combineReqs :: IndexRequest -> IndexRequest -> IndexRequest
-combineReqs (FromDepChange _ t) (FromBuild ci) = FromDepChange ci t
-combineReqs new@(FromDepChange _ _) _          = new
-combineReqs (FromBuild ci) (FromDepChange _ t) = FromDepChange ci t
-combineReqs new@(FromBuild _) _                = new
-combineReqs (FromNotify _) old                 = old
-
-data IndexContext = IndexContext
-  { icPort         :: !Port
-  , icIndexer      :: !String
-  , icIndexStream  :: !IndexStream
-  , icDBChan       :: !DBChan
-  , icDBQueryChan  :: !DBChan
-  }
-type Indexer a = ReaderT IndexContext IO a
-
-data IndexStream = IndexStream
-  { isCurrent          :: TMVar Set.IntSet
-  , isPending          :: TMVar (Map.IntMap IndexRequest)
-  , isLastIndexedCache :: TMVar (Map.IntMap Time)
-  , isShouldShutdown   :: TVar Bool
-  }
-
-mkIndexStream :: IO IndexStream
-mkIndexStream = do
-  emptySet  <- newTMVarIO Set.empty
-  emptyMap  <- newTMVarIO Map.empty
-  emptyMap' <- newTMVarIO Map.empty
-  shouldShutdown <- newTVarIO False
-  return $! IndexStream emptySet emptyMap emptyMap' shouldShutdown
-
-shutdownIndexStream :: IndexStream -> STM ()
-shutdownIndexStream is = writeTVar (isShouldShutdown is) True
-
-addPendingIndex :: IndexStream -> IndexRequest -> STM ()
-addPendingIndex is req = do
-  curPending <- takeTMVar (isPending is)
-  let sfHash = hashInt (reqSF req)
-  let newPending = Map.insertWith combineReqs sfHash req curPending
-  putTMVar (isPending is) newPending
-
-data IndexRequestOrShutdown = Index IndexRequest (Maybe Time)
-                            | Shutdown
-                              deriving (Show)
-
-getNextFileToIndex :: IndexStream -> STM IndexRequestOrShutdown
-getNextFileToIndex is = do
-    shouldShutdown <- readTVar (isShouldShutdown is)
-    if shouldShutdown then return Shutdown
-                      else getNext
-  where
-    getNext = do
-      curPending <- takeTMVar (isPending is)
-
-      -- Retry if there's nothing available. This is the magic that lets
-      -- us block until there's something to index.
-      check (not $ Map.null curPending)
-
-      -- There's something available, so grab it.
-      let (sfHash, req) = Map.findMin curPending
-
-      -- Make sure someone else isn't already working on it.
-      curCurrent <- takeTMVar (isCurrent is)
-      check (not $ sfHash `Set.member` curCurrent)
-
-      -- OK, we're good to go.
-      let newCurrent = sfHash `Set.insert` curCurrent
-      putTMVar (isCurrent is) newCurrent
-      let newPending = Map.deleteMin curPending
-      putTMVar (isPending is) newPending
-      
-      -- Grab a cached last indexed time if available.
-      curCache <- readTMVar (isLastIndexedCache is)
-      let lastIndexedTime = sfHash `Map.lookup` curCache
-
-      return $ Index req lastIndexedTime
-
-finishIndexingFile :: IndexStream -> IndexRequest -> STM ()
-finishIndexingFile is req = do
-  curCurrent <- takeTMVar (isCurrent is)
-  let sfHash = hashInt (reqSF req)
-  let newCurrent = sfHash `Set.delete` curCurrent
-  putTMVar (isCurrent is) newCurrent
-
-updateLastIndexedCache :: IndexStream -> SourceFile -> Time -> STM ()
-updateLastIndexedCache is sf t = do
-  curCache <- takeTMVar (isLastIndexedCache is)
-  let newCache = Map.insert (hashInt sf) t curCache
-  putTMVar (isLastIndexedCache is) newCache
-
-clearLastIndexedCache :: IndexStream -> STM ()
-clearLastIndexedCache is = void $ swapTMVar (isLastIndexedCache is) Map.empty
 
 runIndexManager :: Config -> DBChan -> DBChan -> IndexStream -> IO ()
 runIndexManager cf dbChan dbQueryChan is = go
@@ -146,6 +34,15 @@ runIndexManager cf dbChan dbQueryChan is = go
                              atomically $ finishIndexingFile (icIndexStream ctx) r
                              go
              Shutdown  -> logInfo "Shutting down indexing thread"
+
+data IndexContext = IndexContext
+  { icPort         :: !Port
+  , icIndexer      :: !String
+  , icIndexStream  :: !IndexStream
+  , icDBChan       :: !DBChan
+  , icDBQueryChan  :: !DBChan
+  }
+type Indexer a = ReaderT IndexContext IO a
 
 indexIfDirty :: IndexRequest -> Maybe Time -> Indexer ()
 indexIfDirty req lastIndexedTime =

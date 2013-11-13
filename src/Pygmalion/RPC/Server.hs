@@ -22,10 +22,10 @@ import Data.Typeable
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan.Len
 import Pygmalion.Config
-import Pygmalion.Core
-import Pygmalion.Database.Manager
+import Pygmalion.Database.Request
 import Pygmalion.Idle
-import Pygmalion.Index.Manager
+import Pygmalion.Index.Request
+import Pygmalion.Index.Stream
 import Pygmalion.Log
 import Pygmalion.RPC.Request
 
@@ -113,7 +113,7 @@ route (RPCGetInclusionHierarchy sf) = sendQuery $ DBGetInclusionHierarchy sf
 route (RPCFoundDef df)              = sendUpdate_ $ DBUpdateDef df
 route (RPCFoundOverride ov)         = sendUpdate_ $ DBUpdateOverride ov
 route (RPCFoundRef ru)              = sendUpdate_ $ DBUpdateRef ru
-route (RPCFoundInclusion ic)        = sendInclusionUpdate_ ic
+route (RPCFoundInclusion ic)        = sendUpdate_ $ DBUpdateInclusion ic
 route (RPCWait)                     = sendWait_
 route (RPCLog s)                    = logInfo s >> return Nothing
 route (RPCPing)                     = return . Just $! encode (RPCOK ())
@@ -136,13 +136,6 @@ sendUpdate_ :: DBRequest -> RPCServer (Maybe ByteString)
 sendUpdate_ !req = do
   ctx <- ask
   writeLenChan (rsDBChan ctx) req
-  return Nothing
-
-sendInclusionUpdate_ :: Inclusion -> RPCServer (Maybe ByteString)
-sendInclusionUpdate_ ic = do
-  ctx <- ask
-  writeLenChan (rsDBChan ctx) (DBUpdateInclusion ic)
-  lift $ atomically $ addPendingIndex (rsIndexStream ctx) (FromBuild . icCommandInfo $ ic)
   return Nothing
 
 sendWait_ :: RPCServer (Maybe ByteString)

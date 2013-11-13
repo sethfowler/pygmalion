@@ -16,7 +16,7 @@ import qualified Data.IntSet as Set
 
 import Control.Concurrent.Chan.Len
 import Pygmalion.Config
-import Pygmalion.Index.Manager (clearLastIndexedCache, IndexStream (..))
+import Pygmalion.Index.Stream (clearLastIndexedCache, IndexStream (..))
 import Pygmalion.Log
 
 data IdleRequest = IdleBarrier (Response ())

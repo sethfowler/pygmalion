@@ -3,101 +3,94 @@
 module Pygmalion.Database.Manager
 ( runDatabaseManager
 , ensureDB
-, DBRequest (..)
-, DBChan
 ) where
 
 import Control.Applicative
+import Control.Concurrent.STM
 import Control.Monad
+import Control.Monad.Reader
 import Data.Time.Clock
 
 import Control.Concurrent.Chan.Len
 import Pygmalion.Core
 import Pygmalion.Database.IO
+import Pygmalion.Database.Request
+import Pygmalion.Index.Request
+import Pygmalion.Index.Stream
 import Pygmalion.Log
 
-data DBRequest = DBUpdateCommandInfo CommandInfo
-               | DBUpdateDef DefUpdate
-               | DBUpdateOverride Override
-               | DBUpdateRef ReferenceUpdate
-               | DBUpdateInclusion Inclusion
-               | DBResetMetadata SourceFile
-               | DBGetCommandInfo SourceFile (Response (Maybe CommandInfo))
-               | DBGetSimilarCommandInfo SourceFile (Response (Maybe CommandInfo))
-               | DBGetDefinition SourceLocation (Response [DefInfo])
-               | DBGetInclusions SourceFile (Response [SourceFile])
-               | DBGetIncluders SourceFile (Response [SourceFile])
-               | DBGetIncluderInfo SourceFile (Response [CommandInfo])
-               | DBGetInclusionHierarchy SourceFile (Response String)
-               | DBGetCallers SourceLocation (Response [Invocation])
-               | DBGetCallees SourceLocation (Response [DefInfo])
-               | DBGetBases SourceLocation (Response [DefInfo])
-               | DBGetOverrides SourceLocation (Response [DefInfo])
-               | DBGetMembers SourceLocation (Response [DefInfo])
-               | DBGetRefs SourceLocation (Response [SourceReference])
-               | DBGetReferenced SourceLocation (Response (Maybe SourceReferenced))
-               | DBGetDeclReferenced SourceLocation (Response [DefInfo])
-               | DBGetHierarchy SourceLocation (Response String)
-               | DBShutdown
-               deriving (Show)
-type DBChan = LenChan DBRequest
-
-runDatabaseManager :: DBChan -> DBChan -> IO ()
-runDatabaseManager chan queryChan = do
+runDatabaseManager :: DBChan -> DBChan -> IndexStream -> IO ()
+runDatabaseManager chan queryChan iStream = do
     start <- getCurrentTime
-    withDB (go 0 start)
+    withDB $ \h -> do
+      let ctx = DBContext h iStream
+      go ctx 0 start
   where
-    go :: Int -> UTCTime -> DBHandle -> IO ()
-    go 1000 !start !h = do 
+    go :: DBContext -> Int -> UTCTime -> IO ()
+    go !ctx 1000 !start = do 
       stop <- getCurrentTime
       logInfo $ "Handled 1000 records in " ++ show (stop `diffUTCTime` start)
       newStart <- getCurrentTime
-      go 0 newStart h
-    go !n !s !h = {-# SCC "databaseThread" #-}
+      go ctx 0 newStart
+    go !ctx !n !s = {-# SCC "databaseThread" #-}
            do !req <- readLenChanPreferFirst queryChan chan
               case req of
                 DBShutdown -> logInfo "Shutting down DB thread"
-                _          -> route h req >> go (n+1) s h
+                _          -> runReaderT (route req) ctx >> go ctx (n+1) s
                 
-route :: DBHandle -> DBRequest -> IO ()
-route h (DBUpdateCommandInfo !ci)        = update "command info" updateSourceFile h ci
-route h (DBUpdateDef !di)                = update "definition" updateDef h di
-route h (DBUpdateOverride !ov)           = update "override" updateOverride h ov
-route h (DBUpdateRef !rf)                = update "reference" updateReference h rf
-route h (DBUpdateInclusion !ic)          = update "inclusion" updateInclusion h ic
-route h (DBResetMetadata !sf)            = update "resetted metadata" resetMetadata h sf
-route h (DBGetCommandInfo !f !v)         = query "command info" getCommandInfo h f v
-route h (DBGetSimilarCommandInfo !f !v)  = getSimilarCommandInfoQuery h f v
-route h (DBGetDefinition !sl !v)         = query "definition" getDef h sl v
-route h (DBGetInclusions !sf !v)         = query "inclusions" getInclusions h sf v
-route h (DBGetIncluders !sf !v)          = query "includers" getIncluders h sf v
-route h (DBGetIncluderInfo !sf !v)       = query "includer info" getIncluderInfo h sf v
-route h (DBGetInclusionHierarchy !sf !v) = query "inclusion hierarchy"
-                                                 getInclusionHierarchy h sf v
-route h (DBGetCallers !sl !v)            = query "callers" getCallers h sl v
-route h (DBGetCallees !usr !v)           = query "callees" getCallees h usr v
-route h (DBGetBases !usr !v)             = query "bases" getOverrided h usr v
-route h (DBGetOverrides !usr !v)         = query "overrides" getOverriders h usr v
-route h (DBGetMembers !usr !v)           = query "members" getMembers h usr v
-route h (DBGetRefs !usr !v)              = query "references" getReferences h usr v
-route h (DBGetReferenced !sl !v)         = query "referenced" getReferenced h sl v
-route h (DBGetDeclReferenced !sl !v)     = query "decl referenced" getDeclReferenced h sl v
-route h (DBGetHierarchy !sl !v)          = query "hierarchy" getHierarchy h sl v
-route _ (DBShutdown)                     = error "Should not route DBShutdown"
+data DBContext = DBContext
+  { dbHandle      :: !DBHandle
+  , dbIndexStream :: !IndexStream
+  }
+type DB a = ReaderT DBContext IO a
 
-update :: Show a => String -> (DBHandle -> a -> IO ()) -> DBHandle -> a -> IO ()
-update item f h x = do
-  logDebug $ "Updating index with " ++ item ++ ": " ++ (show x)
-  f h x
+route :: DBRequest -> DB ()
+route (DBUpdateCommandInfo !ci)        = update "command info" updateSourceFile ci
+route (DBUpdateDef !di)                = update "definition" updateDef di
+route (DBUpdateOverride !ov)           = update "override" updateOverride ov
+route (DBUpdateRef !rf)                = update "reference" updateReference rf
+route (DBUpdateInclusion !ic)          = updateInclusionAndIndex ic
+route (DBResetMetadata !sf)            = update "resetted metadata" resetMetadata sf
+route (DBGetCommandInfo !f !v)         = query "command info" getCommandInfo f v
+route (DBGetSimilarCommandInfo !f !v)  = getSimilarCommandInfoQuery f v
+route (DBGetDefinition !sl !v)         = query "definition" getDef sl v
+route (DBGetInclusions !sf !v)         = query "inclusions" getInclusions sf v
+route (DBGetIncluders !sf !v)          = query "includers" getIncluders sf v
+route (DBGetIncluderInfo !sf !v)       = query "includer info" getIncluderInfo sf v
+route (DBGetInclusionHierarchy !sf !v) = query "inclusion hierarchy"
+                                               getInclusionHierarchy sf v
+route (DBGetCallers !sl !v)            = query "callers" getCallers sl v
+route (DBGetCallees !usr !v)           = query "callees" getCallees usr v
+route (DBGetBases !usr !v)             = query "bases" getOverrided usr v
+route (DBGetOverrides !usr !v)         = query "overrides" getOverriders usr v
+route (DBGetMembers !usr !v)           = query "members" getMembers usr v
+route (DBGetRefs !usr !v)              = query "references" getReferences usr v
+route (DBGetReferenced !sl !v)         = query "referenced" getReferenced sl v
+route (DBGetDeclReferenced !sl !v)     = query "decl referenced" getDeclReferenced sl v
+route (DBGetHierarchy !sl !v)          = query "hierarchy" getHierarchy sl v
+route (DBShutdown)                     = error "Should not route DBShutdown"
 
-query :: Show a => String -> (DBHandle -> a -> IO b) -> DBHandle -> a -> Response b -> IO ()
-query item f h x r = do
-  logDebug $ "Getting " ++ item ++ " for " ++ (show x)
-  sendResponse r =<< f h x
+update :: Show a => String -> (DBHandle -> a -> IO ()) -> a -> DB ()
+update item f x = do
+  h <- dbHandle <$> ask
+  logDebug $ "Updating index with " ++ item ++ ": " ++ show x
+  lift $ f h x
 
--- TODO: Remove this special case.
-getSimilarCommandInfoQuery :: DBHandle -> SourceFile -> Response (Maybe CommandInfo) -> IO ()
-getSimilarCommandInfoQuery h f v = do
-  logDebug $ "Getting similar CommandInfo for " ++ (show f)
-  ci <- liftM2 (<|>) (getCommandInfo h f) (getSimilarCommandInfo h f)
+query :: Show a => String -> (DBHandle -> a -> IO b) -> a -> Response b -> DB ()
+query item f x r = do
+  h <- dbHandle <$> ask
+  logDebug $ "Getting " ++ item ++ " for " ++ show x
+  sendResponse r =<< (lift $ f h x)
+
+getSimilarCommandInfoQuery :: SourceFile -> Response (Maybe CommandInfo) -> DB ()
+getSimilarCommandInfoQuery f v = do
+  h <- dbHandle <$> ask
+  logDebug $ "Getting similar CommandInfo for " ++ show f
+  ci <- liftM2 (<|>) (lift $ getCommandInfo h f) (lift $ getSimilarCommandInfo h f)
   sendResponse v ci
+
+updateInclusionAndIndex :: Inclusion -> DB ()
+updateInclusionAndIndex ic = do
+  ctx <- ask
+  lift $ updateInclusion (dbHandle ctx) ic
+  lift $ atomically $ addPendingIndex (dbIndexStream ctx) (FromBuild . icCommandInfo $ ic)
