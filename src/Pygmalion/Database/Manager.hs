@@ -15,6 +15,7 @@ import Control.Concurrent.Chan.Len
 import Pygmalion.Core
 import Pygmalion.Database.IO
 import Pygmalion.Database.Request
+import Pygmalion.Index.Extension
 import Pygmalion.Index.Request
 import Pygmalion.Index.Stream
 import Pygmalion.Log
@@ -93,4 +94,8 @@ updateInclusionAndIndex :: Inclusion -> DB ()
 updateInclusionAndIndex ic = do
   ctx <- ask
   lift $ updateInclusion (dbHandle ctx) ic
-  lift $ atomically $ addPendingIndex (dbIndexStream ctx) $ FromBuild (icCommandInfo ic) False
+  -- Only request indexing for an inclusion if a source file included
+  -- it. It doesn't make sense to do it otherwise since source files
+  -- request indexing for all of their transitive inclusions at once.
+  when (hasSourceExtensionBS $ icSourceFile ic) $ do
+    lift $ atomically $ addPendingIndex (dbIndexStream ctx) $ FromBuild (icCommandInfo ic) False
