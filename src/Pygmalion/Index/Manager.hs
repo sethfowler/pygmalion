@@ -30,10 +30,11 @@ runIndexManager cf dbChan dbQueryChan is = go
     go = {-# SCC "indexThread" #-} do
          req <- atomically $ getNextFileToIndex is
          case req of
-             Index r ci -> do runReaderT (indexIfDirty r ci) ctx
-                              atomically $ finishIndexingFile (icIndexStream ctx) r
-                              go
-             Shutdown  -> logInfo "Shutting down indexing thread"
+             Index r  -> do ci <- atomically $ getLastIndexedCache is r
+                            runReaderT (indexIfDirty r ci) ctx
+                            atomically $ finishIndexingFile (icIndexStream ctx) r
+                            go
+             Shutdown -> logInfo "Shutting down indexing thread"
 
 data IndexContext = IndexContext
   { icPort         :: !Port

@@ -6,6 +6,7 @@ module Pygmalion.Index.Stream
 , addPendingIndex
 , getNextFileToIndex
 , finishIndexingFile
+, getLastIndexedCache
 , updateLastIndexedCache
 , clearLastIndexedCache
 ) where
@@ -44,7 +45,7 @@ addPendingIndex is req = do
   let newPending = Map.insertWith combineReqs sfHash req curPending
   putTMVar (isPending is) newPending
 
-data IndexRequestOrShutdown = Index IndexRequest (Maybe CommandInfo)
+data IndexRequestOrShutdown = Index IndexRequest
                             | Shutdown
                               deriving (Show)
 
@@ -74,11 +75,7 @@ getNextFileToIndex is = do
       let newPending = Map.deleteMin curPending
       putTMVar (isPending is) newPending
       
-      -- Grab a cached last indexed time if available.
-      curCache <- readTMVar (isLastIndexedCache is)
-      let lastIndexedCI = sfHash `Map.lookup` curCache
-
-      return $ Index req lastIndexedCI
+      return $ Index req
 
 finishIndexingFile :: IndexStream -> IndexRequest -> STM ()
 finishIndexingFile is req = do
@@ -87,6 +84,12 @@ finishIndexingFile is req = do
   let newCurrent = sfHash `Set.delete` curCurrent
   putTMVar (isCurrent is) newCurrent
 
+getLastIndexedCache :: IndexStream -> IndexRequest -> STM (Maybe CommandInfo)
+getLastIndexedCache is req = do
+  let sfHash = hashInt (reqSF req)
+  curCache <- readTMVar (isLastIndexedCache is)
+  return $ sfHash `Map.lookup` curCache
+  
 updateLastIndexedCache :: IndexStream -> CommandInfo -> STM ()
 updateLastIndexedCache is ci = do
   curCache <- takeTMVar (isLastIndexedCache is)
