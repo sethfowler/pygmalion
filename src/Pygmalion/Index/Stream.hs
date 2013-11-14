@@ -40,10 +40,11 @@ shutdownIndexStream is = writeTVar (isShouldShutdown is) True
 
 addPendingIndex :: IndexStream -> IndexRequest -> STM ()
 addPendingIndex is req = do
-  curPending <- takeTMVar (isPending is)
-  let sfHash = hashInt (reqSF req)
-  let newPending = Map.insertWith combineReqs sfHash req curPending
-  putTMVar (isPending is) newPending
+    curPending <- takeTMVar (isPending is)
+    let newPending = Map.insertWith combineReqs sfHash req curPending
+    putTMVar (isPending is) newPending
+  where
+    sfHash = hashInt (reqSF req)
 
 data IndexRequestOrShutdown = Index IndexRequest
                             | Shutdown
@@ -79,22 +80,26 @@ getNextFileToIndex is = do
 
 finishIndexingFile :: IndexStream -> IndexRequest -> STM ()
 finishIndexingFile is req = do
-  curCurrent <- takeTMVar (isCurrent is)
-  let sfHash = hashInt (reqSF req)
-  let newCurrent = sfHash `Set.delete` curCurrent
-  putTMVar (isCurrent is) newCurrent
+    curCurrent <- takeTMVar (isCurrent is)
+    let newCurrent = sfHash `Set.delete` curCurrent
+    putTMVar (isCurrent is) newCurrent
+  where
+    sfHash = hashInt (reqSF req)
 
 getLastIndexedCache :: IndexStream -> IndexRequest -> STM (Maybe CommandInfo)
 getLastIndexedCache is req = do
-  let sfHash = hashInt (reqSF req)
-  curCache <- readTMVar (isLastIndexedCache is)
-  return $ sfHash `Map.lookup` curCache
+    curCache <- readTMVar (isLastIndexedCache is)
+    return $ sfHash `Map.lookup` curCache
+  where
+    sfHash = hashInt (reqSF req)
   
 updateLastIndexedCache :: IndexStream -> CommandInfo -> STM ()
 updateLastIndexedCache is ci = do
-  curCache <- takeTMVar (isLastIndexedCache is)
-  let newCache = Map.insert (hashInt $ ciSourceFile ci) ci curCache
-  putTMVar (isLastIndexedCache is) newCache
+    curCache <- takeTMVar (isLastIndexedCache is)
+    let newCache = Map.insert sfHash ci curCache
+    putTMVar (isLastIndexedCache is) newCache
+  where
+    sfHash = hashInt (ciSourceFile ci)
 
 clearLastIndexedCache :: IndexStream -> STM ()
 clearLastIndexedCache is = void $ swapTMVar (isLastIndexedCache is) Map.empty
