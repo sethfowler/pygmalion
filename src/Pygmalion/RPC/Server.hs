@@ -89,9 +89,7 @@ serverApp ctx ad = do
                                            close
 
 sendUpdates :: RPCServerContext -> [DBUpdate] -> IO ()
-sendUpdates ctx ups = do
-  logInfo "Sending update group..."
-  writeLenChan (rsDBUpdateChan ctx) ups
+sendUpdates ctx ups = writeLenChan (rsDBUpdateChan ctx) ups
 
 data RPCServerContext = RPCServerContext
   { rsThread       :: !ThreadId
