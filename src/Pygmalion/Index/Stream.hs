@@ -46,7 +46,7 @@ addPendingIndex is req = do
   where
     sfHash = hashInt (reqSF req)
 
-data IndexRequestOrShutdown = Index IndexRequest
+data IndexRequestOrShutdown = Index !IndexRequest
                             | Shutdown
                               deriving (Show)
 

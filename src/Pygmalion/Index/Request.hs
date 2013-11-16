@@ -8,9 +8,9 @@ import Pygmalion.Core
 
 -- The boolean argument indicates whether we've seen a FromNotify
 -- about this file.
-data IndexRequest = FromBuild     CommandInfo Bool
-                  | FromDepChange CommandInfo Time Bool
-                  | FromNotify    SourceFile
+data IndexRequest = FromBuild     !CommandInfo !Bool
+                  | FromDepChange !CommandInfo !Time !Bool
+                  | FromNotify    !SourceFile
                     deriving (Show)
 
 reqSF :: IndexRequest -> SourceFile
