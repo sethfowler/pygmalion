@@ -7,6 +7,10 @@ module Pygmalion.Index.Extension
 , hasHeaderExtensionBS
 , hasCExtension
 , hasCPPExtension
+, sourceExtensions
+, sourceExtensionsBS
+, headerExtensions
+, headerExtensionsBS
 ) where
 
 import qualified Data.ByteString as B
@@ -22,11 +26,11 @@ headerExtensionsBS = [".h", ".hh", ".hpp", ".H", ".inc"]
 
 hasSourceExtension, hasHeaderExtension :: String -> Bool
 hasSourceExtension f = any (`isSuffixOf` f) sourceExtensions
-hasHeaderExtension f = any (`isSuffixOf` f) headerExtensions
+hasHeaderExtension f = not (hasSourceExtension f) --any (`isSuffixOf` f) headerExtensions
 
 hasSourceExtensionBS, hasHeaderExtensionBS :: B.ByteString -> Bool
 hasSourceExtensionBS f = any (`B.isSuffixOf` f) sourceExtensionsBS
-hasHeaderExtensionBS f = any (`B.isSuffixOf` f) headerExtensionsBS
+hasHeaderExtensionBS f = not (hasSourceExtensionBS f) -- any (`B.isSuffixOf` f) headerExtensionsBS
 
 cExtensions, cppExtensions :: [String]
 cExtensions   = [".c", ".h"]
