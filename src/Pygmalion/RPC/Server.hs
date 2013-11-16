@@ -89,6 +89,7 @@ serverApp ctx ad = do
                                            close
 
 sendUpdates :: RPCServerContext -> [DBUpdate] -> IO ()
+sendUpdates ctx []  = return ()
 sendUpdates ctx ups = writeLenChan (rsDBUpdateChan ctx) ups
 
 data RPCServerContext = RPCServerContext
