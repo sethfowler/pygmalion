@@ -93,22 +93,23 @@ indexIfDirty'' req mtime = do
 
   case (req, mayOldCI) of
     (FromBuild ci _, Just oldCI)
-      | commandInfoChanged ci oldCI  -> index mtime =<< reset =<< checkDeps mtime ci
-      | ciLastMTime oldCI /= mtime   -> index mtime =<< reset =<< checkDeps mtime ci
+      | commandInfoChanged ci oldCI  -> index "iid'' FromBuild ci" mtime =<< reset =<< checkDeps mtime ci
+      | ciLastMTime oldCI /= mtime   -> index "iid'' FromBuild mt" mtime =<< reset =<< checkDeps mtime ci
       | otherwise                    -> ignoreUnchanged req mtime False
-    (FromBuild ci _, Nothing)        -> index mtime ci
+    (FromBuild ci _, Nothing)        -> index "iid'' FromBuild new" mtime ci
     (FromNotify _, Just oldCI)
-      | ciLastMTime oldCI /= mtime   -> index mtime =<< reset =<< checkDeps mtime oldCI
+      | ciLastMTime oldCI /= mtime   -> index "iid'' FromNotify mt" mtime =<< reset =<< checkDeps mtime oldCI
       | otherwise                    -> ignoreUnchanged req mtime False
     (FromNotify _, Nothing)          -> ignoreUnknown req
     (FromDepChange ci t _, Just oldCI)
-      | ciLastIndexed oldCI < t      -> index mtime =<< reset ci
-      | ciLastMTime oldCI /= mtime   -> index mtime =<< reset ci
+      | ciLastIndexed oldCI < t      -> index "iid'' FromDepChange li" mtime =<< reset ci
+      | ciLastMTime oldCI /= mtime   -> index "iid'' FromDepChange mt" mtime =<< reset ci
       | otherwise                    -> ignoreUnchanged req (ciLastIndexed oldCI) False
-    (FromDepChange ci _ _, Nothing)  -> index mtime =<< reset ci
+    (FromDepChange ci _ _, Nothing)  -> index "iid'' FromDepChange new" mtime =<< reset ci
 
 commandInfoChanged :: CommandInfo -> CommandInfo -> Bool
-commandInfoChanged a b | ciWorkingPath a /= ciWorkingPath b = True
+commandInfoChanged a b | hasHeaderExtensionBS (ciSourceFile a) = False  -- Hack until we modify how inclusions work.
+                       | ciWorkingPath a /= ciWorkingPath b = True
                        | ciCommand a     /= ciCommand b     = True
                        | ciArgs a        /= ciArgs b        = True
                        | ciLanguage a    /= ciLanguage b    = True
