@@ -115,9 +115,10 @@ handleSource idxStream f = do
     atomically $ addPendingIndex idxStream (FromNotify . mkSourceFile $ file)
 
 isSource :: FilePath -> Bool
-isSource f = (hasSourceExtension f || hasHeaderExtension f) &&
-             null (slice_path f `intersect` illegalPaths) &&
-             not ("." `isPrefixOf` takeFileName f)
+isSource f = case extensionKind f of
+               UnknownExtension -> False
+               _                -> null (slice_path f `intersect` illegalPaths) &&
+                                   not ("." `isPrefixOf` takeFileName f)
 
 illegalPaths :: [FilePath]
 illegalPaths = [".git", ".hg", ".svn", "_darcs"]

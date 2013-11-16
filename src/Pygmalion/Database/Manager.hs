@@ -97,5 +97,5 @@ updateInclusionAndIndex ic = do
   -- Only request indexing for an inclusion if a source file included
   -- it. It doesn't make sense to do it otherwise since source files
   -- request indexing for all of their transitive inclusions at once.
-  when (hasSourceExtensionBS $ icSourceFile ic) $ do
+  when (hasSourceExtension $ icSourceFile ic) $ do
     lift $ atomically $ addPendingIndex (dbIndexStream ctx) $ FromBuild (icCommandInfo ic) False

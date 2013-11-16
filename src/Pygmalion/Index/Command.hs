@@ -29,7 +29,7 @@ getCommandInfo cmd args = do
 
 inferLang :: [String] -> String -> Language
 inferLang as f = fromMaybe UnknownLanguage $ inferLangFromArgs as <|>
-                                             inferLangFromFile f
+                                             (Just . extensionLanguage) f
 
 inferLangFromArgs :: [String] -> Maybe Language
 inferLangFromArgs ("-x" : "c" : _)              = Just CLanguage
@@ -40,11 +40,6 @@ inferLangFromArgs ("-x" : "c++-header" : _)     = Just CPPLanguage
 inferLangFromArgs ("-x" : "c++-cpp-output" : _) = Just CPPLanguage
 inferLangFromArgs (_ : as)                      = inferLangFromArgs as
 inferLangFromArgs []                            = Nothing
-
-inferLangFromFile :: String -> Maybe Language
-inferLangFromFile f | hasCExtension f   = Just CLanguage
-                    | hasCPPExtension f = Just CPPLanguage
-inferLangFromFile _                     = Nothing
 
 -- We need to filter arguments that cause dependency files to be generated,
 -- as they'll gum up the works when we use libclang to analyze files later.

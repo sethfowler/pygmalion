@@ -108,7 +108,7 @@ indexIfDirty'' req mtime = do
     (FromDepChange ci _ _, Nothing)  -> index "iid'' FromDepChange new" mtime =<< reset ci
 
 commandInfoChanged :: CommandInfo -> CommandInfo -> Bool
-commandInfoChanged a b | hasHeaderExtensionBS (ciSourceFile a) = False  -- Hack until we modify how inclusions work.
+commandInfoChanged a b | not (hasSourceExtension $ ciSourceFile a) = False  -- Hack until we modify how inclusions work.
                        | ciWorkingPath a /= ciWorkingPath b = True
                        | ciCommand a     /= ciCommand b     = True
                        | ciArgs a        /= ciArgs b        = True
@@ -117,7 +117,7 @@ commandInfoChanged a b | hasHeaderExtensionBS (ciSourceFile a) = False  -- Hack 
 
 checkDeps :: Time -> CommandInfo -> Indexer CommandInfo
 checkDeps mtime ci = do
-  when (hasHeaderExtensionBS $ ciSourceFile ci) $ do
+  unless (hasSourceExtension $ ciSourceFile ci) $ do
     ctx <- ask
     others <- otherFilesToReindex ci
     forM_ others $ \f -> do
