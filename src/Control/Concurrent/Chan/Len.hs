@@ -18,33 +18,29 @@ import Control.Concurrent.MVar
 import Control.Concurrent.STM
 import Control.Monad.IO.Class
 
-data LenChan a = LenChan { queue :: TBQueue a}
+type LenChan a = TBQueue a
 
 queueLimit :: Int
 queueLimit = 100000
 
 newLenChan :: MonadIO m => m (LenChan a)
-newLenChan = liftIO $ atomically $ do
-  ch    <- newTBQueue queueLimit
-  return $! LenChan ch
+newLenChan = liftIO $ atomically $ newTBQueue queueLimit
 
 writeLenChan :: MonadIO m => LenChan a -> a -> m ()
-writeLenChan c v = liftIO $ atomically $ writeTBQueue (queue c) $! v
+writeLenChan c v = liftIO $ atomically $ writeTBQueue c $! v
 
 readLenChan :: MonadIO m => LenChan a -> m a
-readLenChan c = liftIO $ atomically $ readTBQueue (queue c)
+readLenChan c = liftIO $ atomically $ readTBQueue c
 
 readLenChanPreferFirst :: MonadIO m => LenChan a -> LenChan a -> m a
 readLenChanPreferFirst c1 c2 = liftIO $ atomically $
-    (rdQueue c1) `orElse` (rdQueue c2)
-  where
-   rdQueue LenChan {..} = readTBQueue queue
+    readTBQueue c1 `orElse` readTBQueue c2
 
 isEmptyLenChan :: MonadIO m => LenChan a -> m Bool
-isEmptyLenChan LenChan {..} = liftIO $ atomically $ isEmptyTBQueue queue
+isEmptyLenChan = liftIO . atomically . isEmptyTBQueue
 
 isEmptyLenChan' :: LenChan a -> STM Bool
-isEmptyLenChan' LenChan {..} = isEmptyTBQueue queue
+isEmptyLenChan' = isEmptyTBQueue
 
 callLenChan :: MonadIO m => LenChan a -> (Response b -> a) -> m b
 callLenChan c cmd = do

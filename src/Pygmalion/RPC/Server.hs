@@ -29,13 +29,13 @@ import Pygmalion.Index.Stream
 import Pygmalion.Log
 import Pygmalion.RPC.Request
 
-runRPCServer :: Config -> IndexStream -> DBChan -> DBChan -> IdleChan -> IO ()
-runRPCServer cf iStream dbChan dbQueryChan idleChan = do
+runRPCServer :: Config -> IndexStream -> DBUpdateChan -> DBQueryChan -> IdleChan -> IO ()
+runRPCServer cf iStream dbUpdateChan dbQueryChan idleChan = do
     conns <- newMVar 0
     threadId <- myThreadId
     runTCPServer settings (serverApp $ RPCServerContext threadId
                                                         iStream
-                                                        dbChan
+                                                        dbUpdateChan
                                                         dbQueryChan
                                                         idleChan
                                                         conns)
@@ -51,7 +51,7 @@ serverApp ctx ad = do
   where
     getCI = {-# SCC "serverget" #-} get :: Get RPCRequest
 
-    conduit = appSource ad $= conduitGet getCI =$= process $$ appSink ad
+    conduit = appSource ad $= conduitGet getCI =$= process [] $$ appSink ad
 
     open = liftIO $ modifyMVar_ (rsConnections ctx) (\c -> return (c + 1))
     close = liftIO $ terminate' 1
@@ -69,26 +69,37 @@ serverApp ctx ad = do
       when (newConns < 0) $
         throwTo (rsThread ctx) RPCServerExit -- Terminate the server.
 
-    process = do
+    process ups = do
       result <- await
       case result of
-        Just RPCDone -> close
-        Just RPCStop -> terminate
-        Just req     -> do res <- liftIO $ runReaderT (route req) ctx
-                           case res of
-                              Just res' -> yield res' >> process
-                              Nothing   -> process
-        _            -> do logError "RPC server got bad request"
-                           yield . encode $ (RPCError :: RPCResponse ())
-                           close
+        Just RPCDone                 -> liftIO (sendUpdates ctx ups) >> close
+        Just RPCStop                 -> liftIO (sendUpdates ctx ups) >> terminate
+        Just (RPCFoundDef !df)       -> process (DBUpdateDef df : ups)
+        Just (RPCFoundRef !ru)       -> process (DBUpdateRef ru : ups)
+        Just (RPCFoundOverride !ov)  -> process (DBUpdateOverride ov : ups)
+        Just (RPCFoundInclusion !ic) -> process (DBUpdateInclusion ic : ups)
+        Just req                     -> do liftIO (sendUpdates ctx ups)
+                                           res <- liftIO $ runReaderT (route req) ctx
+                                           case res of
+                                              Just res' -> yield res' >> process ups
+                                              Nothing   -> process ups
+        _                            -> do logError "RPC server got bad request"
+                                           yield . encode $ (RPCError :: RPCResponse ())
+                                           liftIO (sendUpdates ctx ups)
+                                           close
+
+sendUpdates :: RPCServerContext -> [DBUpdate] -> IO ()
+sendUpdates ctx ups = do
+  logInfo "Sending update group..."
+  writeLenChan (rsDBUpdateChan ctx) ups
 
 data RPCServerContext = RPCServerContext
-  { rsThread      :: !ThreadId
-  , rsIndexStream :: !IndexStream
-  , rsDBChan      :: !DBChan
-  , rsDBQueryChan :: !DBChan
-  , rsIdleChan    :: !IdleChan
-  , rsConnections :: !(MVar Int)
+  { rsThread       :: !ThreadId
+  , rsIndexStream  :: !IndexStream
+  , rsDBUpdateChan :: !DBUpdateChan
+  , rsDBQueryChan  :: !DBQueryChan
+  , rsIdleChan     :: !IdleChan
+  , rsConnections  :: !(MVar Int)
   }
 type RPCServer a = ReaderT RPCServerContext IO a
 
@@ -110,13 +121,13 @@ route (RPCGetHierarchy sl)          = sendQuery $ DBGetHierarchy sl
 route (RPCGetInclusions sf)         = sendQuery $ DBGetInclusions sf
 route (RPCGetIncluders sf)          = sendQuery $ DBGetIncluders sf
 route (RPCGetInclusionHierarchy sf) = sendQuery $ DBGetInclusionHierarchy sf
-route (RPCFoundDef df)              = sendUpdate_ $ DBUpdateDef df
-route (RPCFoundOverride ov)         = sendUpdate_ $ DBUpdateOverride ov
-route (RPCFoundRef ru)              = sendUpdate_ $ DBUpdateRef ru
-route (RPCFoundInclusion ic)        = sendUpdate_ $ DBUpdateInclusion ic
 route (RPCWait)                     = sendWait_
 route (RPCLog s)                    = logInfo s >> return Nothing
 route (RPCPing)                     = return . Just $! encode (RPCOK ())
+route (RPCFoundDef _)               = error "Should not route RPCFoundDef"
+route (RPCFoundRef _)               = error "Should not route RPCFoundRef"
+route (RPCFoundOverride _)          = error "Should not route RPCFoundOverride"
+route (RPCFoundInclusion _)         = error "Should not route RPCFoundInclusion"
 route (RPCDone)                     = error "Should not route RPCDone"
 route (RPCStop)                     = error "Should not route RPCStop"
 
@@ -131,12 +142,6 @@ sendQuery !req = do
   ctx <- ask
   result <- callLenChan (rsDBQueryChan ctx) req
   return . Just $! encode (RPCOK result)
-
-sendUpdate_ :: DBRequest -> RPCServer (Maybe ByteString)
-sendUpdate_ !req = do
-  ctx <- ask
-  writeLenChan (rsDBChan ctx) req
-  return Nothing
 
 sendWait_ :: RPCServer (Maybe ByteString)
 sendWait_ = do

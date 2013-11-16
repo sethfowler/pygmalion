@@ -23,10 +23,10 @@ import Pygmalion.Index.Request
 import Pygmalion.Index.Stream
 import Pygmalion.Log
 
-runIndexManager :: Config -> DBChan -> DBChan -> IndexStream -> IO ()
-runIndexManager cf dbChan dbQueryChan is = go
+runIndexManager :: Config -> DBUpdateChan -> DBQueryChan -> IndexStream -> IO ()
+runIndexManager cf dbUpdateChan dbQueryChan is = go
   where
-    ctx = IndexContext (ifPort cf) (idxCmd cf) is dbChan dbQueryChan
+    ctx = IndexContext (ifPort cf) (idxCmd cf) is dbUpdateChan dbQueryChan
     go = {-# SCC "indexThread" #-} do
          req <- atomically $ getNextFileToIndex is
          case req of
@@ -40,8 +40,8 @@ data IndexContext = IndexContext
   { icPort         :: !Port
   , icIndexer      :: !String
   , icIndexStream  :: !IndexStream
-  , icDBChan       :: !DBChan
-  , icDBQueryChan  :: !DBChan
+  , icDBUpdateChan :: !DBUpdateChan
+  , icDBQueryChan  :: !DBQueryChan
   }
 type Indexer a = ReaderT IndexContext IO a
 
@@ -138,7 +138,7 @@ indexDep sf t = do
 reset :: CommandInfo -> Indexer CommandInfo
 reset ci = do
   ctx <- ask
-  writeLenChan (icDBChan ctx) (DBResetMetadata $ ciSourceFile ci)
+  writeLenChan (icDBUpdateChan ctx) [DBResetMetadata $ ciSourceFile ci]
   return ci
 
 index :: String -> Time -> CommandInfo -> Indexer ()
@@ -195,7 +195,7 @@ otherFilesToReindex ci = do
 updateCommand :: CommandInfo -> Indexer ()
 updateCommand ci = do
   ctx <- ask
-  writeLenChan (icDBChan ctx) (DBUpdateCommandInfo ci)
+  writeLenChan (icDBUpdateChan ctx) [DBUpdateCommandInfo ci]
 
 getMTime :: SourceFile -> Indexer (Maybe Time)
 getMTime sf = lift $ do

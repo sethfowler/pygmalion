@@ -20,8 +20,8 @@ import Pygmalion.Index.Request
 import Pygmalion.Index.Stream
 import Pygmalion.Log
 
-runDatabaseManager :: DBChan -> DBChan -> IndexStream -> IO ()
-runDatabaseManager chan queryChan iStream = do
+runDatabaseManager :: DBUpdateChan -> DBQueryChan -> IndexStream -> IO ()
+runDatabaseManager updateChan queryChan iStream = do
     start <- getCurrentTime
     withDB $ \h -> do
       let ctx = DBContext h iStream
@@ -30,28 +30,39 @@ runDatabaseManager chan queryChan iStream = do
     go :: DBContext -> Int -> UTCTime -> IO ()
     go !ctx 1000 !start = do 
       stop <- getCurrentTime
-      logInfo $ "Handled 1000 records in " ++ show (stop `diffUTCTime` start)
+      logInfo $ "Handled 1000 updates in " ++ show (stop `diffUTCTime` start)
       newStart <- getCurrentTime
       go ctx 0 newStart
     go !ctx !n !s = {-# SCC "databaseThread" #-}
-           do !req <- readLenChanPreferFirst queryChan chan
-              case req of
-                DBShutdown -> logInfo "Shutting down DB thread"
-                _          -> runReaderT (route req) ctx >> go ctx (n+1) s
+           do !item <- atomically $ readFromChannels updateChan queryChan
+              case item of
+                Left ups         -> runReaderT (routeUpdates ups) ctx >> go ctx (n+1) s
+                Right DBShutdown -> logInfo "Shutting down DB thread"
+                Right req        -> runReaderT (route req) ctx >> go ctx (n+1) s
                 
+readFromChannels :: DBUpdateChan -> DBQueryChan -> STM (Either [DBUpdate] DBRequest)
+readFromChannels updateChan queryChan = readQueryChan `orElse` readUpdateChan
+  where
+    readQueryChan  = Right <$> readTBQueue queryChan
+    readUpdateChan = Left <$> readTBQueue updateChan
+
 data DBContext = DBContext
   { dbHandle      :: !DBHandle
   , dbIndexStream :: !IndexStream
   }
 type DB a = ReaderT DBContext IO a
 
+routeUpdates :: [DBUpdate] -> DB ()
+routeUpdates ups = mapM_ routeUpdate ups
+  where
+    routeUpdate (DBUpdateDef !di)         = update "definition" updateDef di
+    routeUpdate (DBUpdateRef !rf)         = update "reference" updateReference rf
+    routeUpdate (DBUpdateOverride !ov)    = update "override" updateOverride ov
+    routeUpdate (DBUpdateInclusion !ic)   = updateInclusionAndIndex ic
+    routeUpdate (DBUpdateCommandInfo !ci) = update "command info" updateSourceFile ci
+    routeUpdate (DBResetMetadata !sf)     = update "resetted metadata" resetMetadata sf
+    
 route :: DBRequest -> DB ()
-route (DBUpdateCommandInfo !ci)        = update "command info" updateSourceFile ci
-route (DBUpdateDef !di)                = update "definition" updateDef di
-route (DBUpdateOverride !ov)           = update "override" updateOverride ov
-route (DBUpdateRef !rf)                = update "reference" updateReference rf
-route (DBUpdateInclusion !ic)          = updateInclusionAndIndex ic
-route (DBResetMetadata !sf)            = update "resetted metadata" resetMetadata sf
 route (DBGetCommandInfo !f !v)         = query "command info" getCommandInfo f v
 route (DBGetSimilarCommandInfo !f !v)  = getSimilarCommandInfoQuery f v
 route (DBGetDefinition !sl !v)         = query "definition" getDef sl v

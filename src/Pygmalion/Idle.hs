@@ -16,6 +16,7 @@ import qualified Data.IntSet as Set
 
 import Control.Concurrent.Chan.Len
 import Pygmalion.Config
+import Pygmalion.Database.Request
 import Pygmalion.Index.Stream (clearLastIndexedCache, IndexStream (..))
 import Pygmalion.Log
 
@@ -24,15 +25,15 @@ data IdleRequest = IdleBarrier (Response ())
 
 type IdleChan = LenChan IdleRequest
 
-runIdleManager :: Config -> IdleChan -> IndexStream -> [LenChan a] -> IO ()
-runIdleManager cf idleChan idxStream cs = forever $ do
+runIdleManager :: Config -> IdleChan -> IndexStream -> DBUpdateChan -> DBQueryChan -> IO ()
+runIdleManager cf idleChan idxStream dbUpdateChan dbQueryChan = forever $ do
   -- Start the idle timer once activity stops.
-  waitForAllEmpty idxStream cs
+  waitForAllEmpty idxStream dbUpdateChan dbQueryChan
   logDebug "Starting the idle timer..."
   timer <- oneShotTimer (onIdle idleChan idxStream) (sDelay . idleDelay $ cf)
 
   -- Wait for activity and stop the idle timer.
-  waitForAnyNonempty idxStream cs
+  waitForAnyNonempty idxStream dbUpdateChan dbQueryChan
   logDebug "Stopping the idle timer..."
   stopTimer timer
   
@@ -53,8 +54,8 @@ doIdleBarrier v = do
   logInfo "Responding to idle barrier."
   sendResponse v =<< return ()
 
-waitForAllEmpty :: MonadIO m => IndexStream -> [LenChan a] -> m ()
-waitForAllEmpty idxStream cs = liftIO $ atomically $ do
+waitForAllEmpty :: MonadIO m => IndexStream -> DBUpdateChan -> DBQueryChan -> m ()
+waitForAllEmpty idxStream dbUpdateChan dbQueryChan = liftIO $ atomically $ do
   -- Check index stream.
   idxPending <- readTMVar (isPending idxStream)
   check (Map.null idxPending)
@@ -62,14 +63,16 @@ waitForAllEmpty idxStream cs = liftIO $ atomically $ do
   check (Set.null idxCurrent)
 
   -- Check the channels.
-  chanResults <- mapM isEmptyLenChan' cs
-  check (and chanResults)
+  isUpdateChanEmpty <- isEmptyLenChan' dbUpdateChan
+  isQueryChanEmpty <- isEmptyLenChan' dbQueryChan
+  check (isUpdateChanEmpty && isQueryChanEmpty)
 
-waitForAnyNonempty :: MonadIO m => IndexStream -> [LenChan a] -> m ()
-waitForAnyNonempty idxStream cs = liftIO $ atomically $ do
+waitForAnyNonempty :: MonadIO m => IndexStream -> DBUpdateChan -> DBQueryChan -> m ()
+waitForAnyNonempty idxStream dbUpdateChan dbQueryChan = liftIO $ atomically $ do
   idxPending <- readTMVar (isPending idxStream)
   when (Map.null idxPending) $ do
     idxCurrent <- readTMVar (isCurrent idxStream)
     when (Set.null idxCurrent) $ do
-      chanResults <- mapM isEmptyLenChan' cs
-      check $ not (and chanResults)
+      isUpdateChanEmpty <- isEmptyLenChan' dbUpdateChan
+      isQueryChanEmpty <- isEmptyLenChan' dbQueryChan
+      check $ not (isUpdateChanEmpty && isQueryChanEmpty)

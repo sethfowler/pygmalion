@@ -33,23 +33,23 @@ main = do
   initLogger (logLevel cf)
   ensureDB
   stopWatching <- newEmptyMVar
-  dbChan <- newLenChan
+  dbUpdateChan <- newLenChan
   dbQueryChan <- newLenChan
   idleChan <- newLenChan
   idxStream <- mkIndexStream
 
   -- Launch threads.
   logDebug "Launching idle thread"
-  idleThread <- asyncBound $ runIdleManager cf idleChan idxStream [dbChan, dbQueryChan]
+  idleThread <- asyncBound $ runIdleManager cf idleChan idxStream dbUpdateChan dbQueryChan
   logDebug "Launching database thread"
-  dbThread <- asyncBound (runDatabaseManager dbChan dbQueryChan idxStream)
+  dbThread <- asyncBound (runDatabaseManager dbUpdateChan dbQueryChan idxStream)
   let maxThreads = case idxThreads cf of
                      0 -> numCapabilities
                      n -> n
   indexThreads <- forM [1..maxThreads] $ \i -> do
     logDebug $ "Launching indexing thread #" ++ show i
-    asyncBound (runIndexManager cf dbChan dbQueryChan idxStream)
-  rpcThread <- async (runRPCServer cf idxStream dbChan dbQueryChan idleChan)
+    asyncBound (runIndexManager cf dbUpdateChan dbQueryChan idxStream)
+  rpcThread <- async (runRPCServer cf idxStream dbUpdateChan dbQueryChan idleChan)
   watchThread <- async (doWatch idxStream stopWatching)
 
   -- Wait for something to terminate.
@@ -77,7 +77,7 @@ main = do
   forM_ (zip indexThreads [1..numCapabilities]) $ \(thread, i) -> do
     ensureNoException =<< waitCatch thread
     logDebug $ "Termination of thread #" ++ show i
-  writeLenChan dbChan DBShutdown  -- Terminate the database thread.
+  writeLenChan dbQueryChan DBShutdown  -- Terminate the database thread.
   ensureNoException =<< waitCatch dbThread
   logDebug "Termination of database thread"
 

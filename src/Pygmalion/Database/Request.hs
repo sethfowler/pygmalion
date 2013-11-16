@@ -1,18 +1,22 @@
 module Pygmalion.Database.Request
-( DBRequest (..)
-, DBChan
+( DBUpdate (..)
+, DBRequest (..)
+, DBUpdateChan
+, DBQueryChan
 ) where
 
 import Control.Concurrent.Chan.Len
 import Pygmalion.Core
 
-data DBRequest = DBUpdateCommandInfo CommandInfo
-               | DBUpdateDef DefUpdate
-               | DBUpdateOverride Override
-               | DBUpdateRef ReferenceUpdate
-               | DBUpdateInclusion Inclusion
-               | DBResetMetadata SourceFile
-               | DBGetCommandInfo SourceFile (Response (Maybe CommandInfo))
+data DBUpdate = DBUpdateDef DefUpdate
+              | DBUpdateOverride Override
+              | DBUpdateRef ReferenceUpdate
+              | DBUpdateInclusion Inclusion
+              | DBUpdateCommandInfo CommandInfo
+              | DBResetMetadata SourceFile
+                deriving (Show)
+                         
+data DBRequest = DBGetCommandInfo SourceFile (Response (Maybe CommandInfo))
                | DBGetSimilarCommandInfo SourceFile (Response (Maybe CommandInfo))
                | DBGetDefinition SourceLocation (Response [DefInfo])
                | DBGetInclusions SourceFile (Response [SourceFile])
@@ -31,4 +35,5 @@ data DBRequest = DBUpdateCommandInfo CommandInfo
                | DBShutdown
                  deriving (Show)
 
-type DBChan = LenChan DBRequest
+type DBUpdateChan = LenChan [DBUpdate]
+type DBQueryChan = LenChan DBRequest
