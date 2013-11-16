@@ -30,9 +30,9 @@ runIndexManager cf dbChan dbQueryChan is = go
     go = {-# SCC "indexThread" #-} do
          req <- atomically $ getNextFileToIndex is
          case req of
-             Index r  -> do ci <- atomically $ getLastIndexedCache is r
+             Index r  -> do ci <- atomically $ getLastIndexedCache is (reqSF r)
                             runReaderT (indexIfDirty r ci) ctx
-                            atomically $ finishIndexingFile (icIndexStream ctx) r
+                            atomically $ finishIndexingFile (icIndexStream ctx) (reqSF r)
                             go
              Shutdown -> logInfo "Shutting down indexing thread"
 
@@ -120,9 +120,20 @@ checkDeps mtime ci = do
   when (hasHeaderExtensionBS $ ciSourceFile ci) $ do
     ctx <- ask
     others <- otherFilesToReindex ci
-    forM_ others $ \f ->
-      lift $ atomically $ addPendingIndex (icIndexStream ctx) (FromDepChange f mtime False)
+    forM_ others $ \f -> do
+      -- Don't even request indexing if the cache says the file isn't dirty.
+      mayLastCI <- lift $ atomically $ getLastIndexedCache (icIndexStream ctx) (ciSourceFile ci)
+      case mayLastCI of
+        Just lastCI
+          | ciLastIndexed lastCI < mtime -> indexDep f mtime
+          | otherwise                    -> return ()
+        Nothing                          -> indexDep f mtime
   return ci
+
+indexDep :: CommandInfo -> Time -> Indexer ()
+indexDep sf t = do
+  ctx <- ask
+  lift $ atomically $ addPendingIndex (icIndexStream ctx) (FromDepChange sf t False)
 
 reset :: CommandInfo -> Indexer CommandInfo
 reset ci = do

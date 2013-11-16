@@ -78,20 +78,20 @@ getNextFileToIndex is = do
       
       return $ Index req
 
-finishIndexingFile :: IndexStream -> IndexRequest -> STM ()
-finishIndexingFile is req = do
+finishIndexingFile :: IndexStream -> SourceFile -> STM ()
+finishIndexingFile is sf = do
     curCurrent <- takeTMVar (isCurrent is)
     let newCurrent = sfHash `Set.delete` curCurrent
     putTMVar (isCurrent is) newCurrent
   where
-    sfHash = hashInt (reqSF req)
+    sfHash = hashInt sf
 
-getLastIndexedCache :: IndexStream -> IndexRequest -> STM (Maybe CommandInfo)
-getLastIndexedCache is req = do
+getLastIndexedCache :: IndexStream -> SourceFile -> STM (Maybe CommandInfo)
+getLastIndexedCache is sf = do
     curCache <- readTMVar (isLastIndexedCache is)
     return $ sfHash `Map.lookup` curCache
   where
-    sfHash = hashInt (reqSF req)
+    sfHash = hashInt sf
   
 updateLastIndexedCache :: IndexStream -> CommandInfo -> STM ()
 updateLastIndexedCache is ci = do
