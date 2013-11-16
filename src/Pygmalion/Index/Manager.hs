@@ -54,12 +54,12 @@ indexIfDirty req mayLastCI =
   -- as we haven't seen a FromNotify for the file.
   case (req, mayLastCI) of
     (FromBuild ci False, Just lastCI)
-      | commandInfoChanged ci lastCI -> index (ciLastMTime lastCI) =<<
+      | commandInfoChanged ci lastCI -> index "iid FromBuild ci" (ciLastMTime lastCI) =<<
                                         reset =<<
                                         checkDeps (ciLastMTime lastCI) lastCI
       | otherwise                    -> ignoreUnchanged req (ciLastMTime lastCI) True
     (FromDepChange ci t False, Just lastCI)
-      | ciLastIndexed lastCI < t -> index (ciLastMTime lastCI) =<< reset ci
+      | ciLastIndexed lastCI < t -> index "iid FromDepChange li" (ciLastMTime lastCI) =<< reset ci
       | otherwise                -> ignoreUnchanged req (ciLastIndexed lastCI) True
     _                            -> indexIfDirty' req mayLastCI
 
@@ -71,16 +71,16 @@ indexIfDirty' req mayLastCI = do
 
   case (req, mayLastCI, mayMTime) of
     (_, _, Nothing)    -> ignoreUnreadable req
-    (FromBuild ci True, Just lastCI, Just mtime)
-      | commandInfoChanged ci lastCI -> index mtime =<< reset =<< checkDeps mtime ci
-      | ciLastMTime lastCI /= mtime  -> index mtime =<< reset =<< checkDeps mtime ci
+    (FromBuild ci True, Just lastCI, Just mtime)  -- Replace True with _
+      | commandInfoChanged ci lastCI -> index "iid' FromBuild ci" mtime =<< reset =<< checkDeps mtime ci
+      | ciLastMTime lastCI /= mtime  -> index "iid' FromBuild mt" mtime =<< reset =<< checkDeps mtime ci
       | otherwise                    -> ignoreUnchanged req mtime True
     (FromNotify _, Just lastCI, Just mtime)
-      | ciLastMTime lastCI /= mtime  -> index mtime =<< reset =<< checkDeps mtime lastCI
+      | ciLastMTime lastCI /= mtime  -> index "iid' FromNotify mt" mtime =<< reset =<< checkDeps mtime lastCI
       | otherwise                    -> ignoreUnchanged req mtime True
     (FromDepChange ci t True, Just lastCI, Just mtime)
-      | ciLastIndexed lastCI < t     -> index mtime =<< reset ci
-      | ciLastMTime lastCI /= mtime  -> index mtime =<< reset ci
+      | ciLastIndexed lastCI < t     -> index "iid' FromDepChange li" mtime =<< reset ci
+      | ciLastMTime lastCI /= mtime  -> index "iid' FromDepChange mt" mtime =<< reset ci
       | otherwise                    -> ignoreUnchanged req (ciLastIndexed lastCI) True
     (_, _, Just mtime)               -> indexIfDirty'' req mtime
 
@@ -130,8 +130,8 @@ reset ci = do
   writeLenChan (icDBChan ctx) (DBResetMetadata $ ciSourceFile ci)
   return ci
 
-index :: Time -> CommandInfo -> Indexer ()
-index mtime ci = go 1
+index :: String -> Time -> CommandInfo -> Indexer ()
+index why mtime ci = go 1
   where
     go :: Int -> Indexer ()
     go retries = do
@@ -141,7 +141,7 @@ index mtime ci = go 1
       time <- floor <$> lift getPOSIXTime
 
       -- Do the actual indexing.
-      logInfo $ "Indexing " ++ show sf
+      logInfo $ "Indexing " ++ show sf ++ " " ++ why
       (_, _, _, h) <- lift $ createProcess
                            (proc (icIndexer ctx) [show (icPort ctx), show ci])
       code <- lift $ waitForProcess h
@@ -160,10 +160,11 @@ index mtime ci = go 1
                                go (retries - 1)
 
 ignoreUnchanged :: IndexRequest -> Time -> Bool -> Indexer ()
-ignoreUnchanged req mtime cached = logInfo $ "Index is up-to-date for file "
-                                          ++ (show . reqSF $ req)
-                                          ++ " (file mtime: " ++ show mtime ++ ")"
-                                          ++ (if cached then " (cached)" else "")
+--ignoreUnchanged req mtime cached = logInfo $ "Index is up-to-date for file "
+--                                          ++ (show . reqSF $ req)
+--                                          ++ " (file mtime: " ++ show mtime ++ ")"
+--                                          ++ (if cached then " (cached)" else "")
+ignoreUnchanged _ _ _ = return ()
 
 ignoreUnknown :: IndexRequest -> Indexer ()
 ignoreUnknown req = logInfo $ "Not indexing unknown file "
