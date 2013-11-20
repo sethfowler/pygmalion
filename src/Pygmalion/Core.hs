@@ -82,7 +82,7 @@ instance FromRow CommandInfo where
                         <*> field               -- ciLastIndexed
 
 type SourceFile = B.ByteString
-type SourceFileHash = Int64
+type SourceFileHash = Int
 
 mkSourceFile :: FilePath -> SourceFile
 mkSourceFile = B.fromString
@@ -171,8 +171,8 @@ instance FromRow SourceRange where
   fromRow = SourceRange <$> field <*> field <*> field <*> field <*> field
 
 type Identifier = B.ByteString
-type USRHash    = Int64
-type RefHash    = Int64
+type USRHash    = Int
+type RefHash    = Int
 type SourceLine = Int
 type SourceCol  = Int
 

@@ -21,14 +21,13 @@ import Control.Monad
 import Control.Monad.IO.Class
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as BU
-import Data.Int (Int64)
+import Data.Hashable
 import qualified Data.IntMap.Strict as Map
 import Data.Typeable
 import qualified Data.Vector.Storable as DVS
 
 import Data.Bool.Predicate
 import Pygmalion.Core
-import Pygmalion.Hash
 import Pygmalion.Log
 import Pygmalion.RPC.Client
 
@@ -277,11 +276,11 @@ classVisitor conn thisClassC cursor = do
       liftIO $ runRPC (rpcFoundOverride override) conn
     _ -> return ()
 
-type FileCache = Map.IntMap (Bool, Int64)
+type FileCache = Map.IntMap (Bool, Int)
 
 data TULocation = TULocation
   { tlShouldIndex :: Bool
-  , tlFileHash    :: Int64
+  , tlFileHash    :: Int
   , tlLine        :: SourceLine
   , tlCol         :: SourceCol
   } deriving (Eq, Show)
@@ -294,11 +293,6 @@ getCursorLocation fileCache ci cursor = do
     Just f' -> do (shouldIndex, filenameHash, newCache) <- lookupFile fileCache ci f'
                   return (TULocation shouldIndex filenameHash ln col, newCache)
     Nothing -> return (TULocation False 0 ln col, fileCache)
-  {-
-  file <- case f of Just f' -> File.getName f' >>= CS.unpackByteString
-                    Nothing -> return ""
-  return (shouldIndex, filenameHash, ln, col)
-  -}
 
 getCursorLocation' :: C.Cursor -> ClangApp s SourceLocation
 getCursorLocation' cursor = do
@@ -308,7 +302,7 @@ getCursorLocation' cursor = do
                     Nothing -> return ""
   return $ SourceLocation file ln col
   
-lookupFile :: FileCache -> CommandInfo -> File.File -> ClangApp s (Bool, Int64, FileCache)
+lookupFile :: FileCache -> CommandInfo -> File.File -> ClangApp s (Bool, Int, FileCache)
 lookupFile fileCache ci file = do
   fileHash <- File.hashFile file  -- This is a hash of the file _object_, not the name.
   case Map.lookup fileHash fileCache of
@@ -342,12 +336,13 @@ callBaseUSRHash = return . hash
               <=< underlyingType
               <=< C.getBaseExpression
 
-refHash :: Int64 -> TULocation -> ClangApp s USRHash
--- TODO: Replace our hash implementation with one that supports combining hashes.
-refHash usrHash loc = return . hash $ (BU.fromString . show $ tlLine loc) `B.append`
-                                      (BU.fromString . show $ tlFileHash loc) `B.append`
-                                      (BU.fromString . show $ tlCol loc) `B.append`
-                                      (BU.fromString . show $ usrHash)
+refHash :: Int -> TULocation -> ClangApp s USRHash
+refHash usrHash loc = return refHash'
+  where
+    refHash' = usrHash `hashWithSalt` tlFileHash loc
+                       `hashWithSalt` tlLine loc
+                       `hashWithSalt` tlCol loc
+                      
 
 isDef :: C.Cursor -> C.CursorKind -> ClangApp s Bool
 isDef c k = do

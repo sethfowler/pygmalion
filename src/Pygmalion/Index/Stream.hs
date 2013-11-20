@@ -13,12 +13,12 @@ module Pygmalion.Index.Stream
 
 import Control.Monad
 import Control.Concurrent.STM
+import Data.Hashable
 import qualified Data.IntMap.Strict as Map
 import qualified Data.IntSet as Set
 
 import Pygmalion.Core
 import Pygmalion.Index.Request
-import Pygmalion.Hash
 
 data IndexStream = IndexStream
   { isCurrent          :: TMVar Set.IntSet
@@ -44,7 +44,7 @@ addPendingIndex is req = do
     let newPending = Map.insertWith combineReqs sfHash req curPending
     putTMVar (isPending is) newPending
   where
-    sfHash = hashInt (reqSF req)
+    sfHash = hash (reqSF req)
 
 data IndexRequestOrShutdown = Index !IndexRequest
                             | Shutdown
@@ -84,14 +84,14 @@ finishIndexingFile is sf = do
     let newCurrent = sfHash `Set.delete` curCurrent
     putTMVar (isCurrent is) newCurrent
   where
-    sfHash = hashInt sf
+    sfHash = hash sf
 
 getLastIndexedCache :: IndexStream -> SourceFile -> STM (Maybe CommandInfo)
 getLastIndexedCache is sf = do
     curCache <- readTMVar (isLastIndexedCache is)
     return $ sfHash `Map.lookup` curCache
   where
-    sfHash = hashInt sf
+    sfHash = hash sf
   
 updateLastIndexedCache :: IndexStream -> CommandInfo -> STM ()
 updateLastIndexedCache is ci = do
@@ -99,7 +99,7 @@ updateLastIndexedCache is ci = do
     let newCache = Map.insert sfHash ci curCache
     putTMVar (isLastIndexedCache is) newCache
   where
-    sfHash = hashInt (ciSourceFile ci)
+    sfHash = hash (ciSourceFile ci)
 
 clearLastIndexedCache :: IndexStream -> STM ()
 clearLastIndexedCache is = void $ swapTMVar (isLastIndexedCache is) Map.empty

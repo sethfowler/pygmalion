@@ -37,7 +37,7 @@ import Control.Applicative
 import Control.Exception (bracket)
 import Control.Monad
 import qualified Data.ByteString as B
-import Data.Int
+import Data.Hashable
 import Data.List (minimumBy)
 import Data.Ord (comparing)
 import Data.String
@@ -49,7 +49,6 @@ import Control.Exception.Labeled
 import Pygmalion.Core
 import Pygmalion.Database.Orphans ()
 import Pygmalion.Dot
-import Pygmalion.Hash
 import Pygmalion.Log
 
 {-
@@ -225,7 +224,7 @@ beginTransactionSQL = "begin transaction"
 endTransactionSQL :: T.Text
 endTransactionSQL = "end transaction"
 
-voidNextRow :: Statement -> IO (Maybe (Only Int64))
+voidNextRow :: Statement -> IO (Maybe (Only Int))
 voidNextRow = nextRow
 
 execStatement :: ToRow a => DBHandle -> (DBHandle -> Statement) -> a -> IO ()
@@ -265,7 +264,7 @@ mkQueryT = mkQuery . T.unpack
 dbToolName :: String
 dbToolName = "pygmalion"
 
-dbMajorVersion, dbMinorVersion :: Int64
+dbMajorVersion, dbMinorVersion :: Int
 dbMajorVersion = 0
 dbMinorVersion = 24
 
@@ -276,7 +275,7 @@ defineMetadataTable c = execute_ c (mkQueryT sql)
                        , "MajorVersion integer zerofill unsigned not null,  "
                        , "MinorVersion integer zerofill unsigned not null)" ]
 
-getDBVersion :: Connection -> IO (Maybe (Int64, Int64))
+getDBVersion :: Connection -> IO (Maybe (Int, Int))
 getDBVersion c = do
     row <- query c (mkQueryT sql) params
     return $ case row of
@@ -404,7 +403,7 @@ getInclusionHierarchy :: DBHandle -> SourceFile -> IO String
 getInclusionHierarchy h sf = asDot <$> generateHierarchy
   where
     generateHierarchy = do
-      let nid = hashInt sf
+      let nid = hash sf
       let node = mkHighlightedNode nid sf []
       let g = addUniqueNode node mkGraph
 
@@ -425,7 +424,7 @@ getInclusionHierarchy h sf = asDot <$> generateHierarchy
       return g''
       
     expandHierarchy newEdgeF refsF nextLevelF superNodeId g sf' = do
-      let nid = hashInt sf'
+      let nid = hash sf'
 
       -- If this inclusion already exists in the graph, bail.
       case nid `nodeElem` g of
@@ -961,7 +960,7 @@ ensureVersion c = getDBVersion c >>= checkVersion
                  | otherwise = throwDBVersionError major minor
     checkVersion _ = setDBVersion c
 
-throwDBVersionError :: Int64 -> Int64 -> IO ()
+throwDBVersionError :: Int -> Int -> IO ()
 throwDBVersionError major minor  =  error $ "Database version "
                                  ++ (show major) ++ "." ++ (show minor)
                                  ++ " is different than required version "

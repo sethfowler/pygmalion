@@ -19,7 +19,6 @@ library
                    bytestring,
                    cereal,
                    cereal-conduit,
-                   cityhash,
                    conduit,
                    configurator,
                    containers,
@@ -62,7 +61,6 @@ library
                    Pygmalion.Database.Manager,
                    Pygmalion.Database.Request,
                    Pygmalion.Dot,
-                   Pygmalion.Hash,
                    Pygmalion.Idle,
                    Pygmalion.JSON,
                    Pygmalion.Log,
@@ -130,6 +128,7 @@ executable pygindex-clang
                  ,  bytestring
                  ,  containers
                  ,  directory
+                 ,  hashable
                  ,  LibClang >= 0.2
                  ,  MissingH
                  ,  pygmalion
