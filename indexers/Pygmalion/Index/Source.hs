@@ -1,4 +1,4 @@
-{-# LANGUAGE Haskell2010, DeriveDataTypeable, OverloadedStrings, RankNTypes #-}
+{-# LANGUAGE Haskell2010, BangPatterns, DeriveDataTypeable, OverloadedStrings, RankNTypes #-}
 
 module Pygmalion.Index.Source
 ( runSourceAnalyses
@@ -21,6 +21,8 @@ import Control.Monad
 import Control.Monad.IO.Class
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as BU
+import Data.Int (Int64)
+import qualified Data.IntMap.Strict as Map
 import Data.Typeable
 import qualified Data.Vector.Storable as DVS
 
@@ -98,15 +100,15 @@ defsAnalysis :: RPCConnection -> CommandInfo -> TranslationUnit -> ClangApp s ()
 defsAnalysis conn ci tu = do
     cursor <- getCursor tu
     kids <- getChildren cursor
-    DVS.mapM_ (defsVisitor conn ci tu) kids
+    void $ DVS.foldM' (defsVisitor conn ci tu) Map.empty kids
 
-defsVisitor :: RPCConnection -> CommandInfo -> TranslationUnit -> C.Cursor -> ClangApp s ()
-defsVisitor conn ci tu cursor = do
-  let thisFile = ciSourceFile ci
-  loc <- getCursorLocation cursor
+defsVisitor :: RPCConnection -> CommandInfo -> TranslationUnit -> FileCache -> C.Cursor
+            -> ClangApp s FileCache
+defsVisitor conn ci tu fileCache cursor = do
+  (loc, fileCache') <- getCursorLocation fileCache ci cursor
   -- TODO: What to do about inclusions that aren't normal inclusions?
   -- Ones that are intended to be multiply included, etc?
-  if thisFile == slFile loc then do
+  if tlShouldIndex loc then do
     cKind <- C.getKind cursor
     defC <- C.getDefinition cursor
     defIsNull <- C.isNullCursor defC
@@ -119,32 +121,36 @@ defsVisitor conn ci tu cursor = do
                                                  else return False
 
     -- Record inclusion directives.
-    when (cKind == C.Cursor_InclusionDirective) $ do
-        includedFile <- C.getIncludedFile cursor >>= File.getName >>= CS.unpackByteString
+    fileCache'' <- if cKind == C.Cursor_InclusionDirective then do
+                     incFile <- C.getIncludedFile cursor
+                     (_, incFileHash, fileCache'') <- lookupFile fileCache' ci incFile
 
-        -- Determine the end of the extent of this cursor.
-        extent <- C.getExtent cursor
-        endLoc <- Source.getEnd extent
-        (_, endLn, endCol, _) <- Source.getSpellingLocation endLoc
+                     -- Determine the end of the extent of this cursor.
+                     extent <- C.getExtent cursor
+                     endLoc <- Source.getEnd extent
+                     (_, endLn, endCol, _) <- Source.getSpellingLocation endLoc
 
-        -- Determine the context.
-        ctxC <- getContext tu cursor
-        ctxUSR <- XRef.getUSR ctxC >>= CS.unpackByteString
+                     -- Determine the context.
+                     ctxC <- getContext tu cursor
+                     ctxUSR <- XRef.getUSR ctxC >>= CS.unpackByteString
 
-        -- Record.
-        refId <- refHash includedFile loc
-        reference <- return $! ReferenceUpdate refId
-                                               (hash . slFile $ loc)
-                                               (slLine loc)
-                                               (slCol loc)
-                                               endLn
-                                               endCol
-                                               (toSourceKind cKind)
-                                               0
-                                               0
-                                               (hash ctxUSR)
-                                               (hash includedFile)
-        liftIO $ runRPC (rpcFoundRef reference) conn
+                     -- Record.
+                     refId <- refHash incFileHash loc
+                     reference <- return $! ReferenceUpdate refId
+                                                            (tlFileHash loc)
+                                                            (tlLine loc)
+                                                            (tlCol loc)
+                                                            endLn
+                                                            endCol
+                                                            (toSourceKind cKind)
+                                                            0
+                                                            0
+                                                            (hash ctxUSR)
+                                                            (incFileHash)
+                     liftIO $ runRPC (rpcFoundRef reference) conn
+                     return fileCache''
+                   else
+                     return fileCache'
       
     -- Record references.
     -- TODO: Ignore CallExpr children that start at the same
@@ -163,7 +169,7 @@ defsVisitor conn ci tu cursor = do
                                || cursorIsDef
                                || cursorIsRef
                                || cursorIsDecl
-    when (goodRef && not (defIsNull && refIsNull)) $ do
+    fileCache''' <- if goodRef && not (defIsNull && refIsNull) then do
         -- Prefer definitions to references when available.
         let referToC = if defIsNull then refC else defC
         referToUSR <- XRef.getUSR referToC >>= CS.unpackByteString
@@ -184,15 +190,19 @@ defsVisitor conn ci tu cursor = do
                                                     else return 0
 
         -- Record location of reference for declaration lookups.
-        declHash <- if refIsNull then return 0
-                                 else refHash referToUSR =<< getCursorLocation refC
+        let referToUSRHash = hash referToUSR
+        (declHash, newCache) <- if refIsNull
+                                then return (0, fileCache'')
+                                else do (tl, nc) <- getCursorLocation fileCache'' ci refC
+                                        rh <- refHash referToUSRHash tl
+                                        return (rh, nc)
 
         -- Record.
-        refId <- refHash referToUSR loc
+        refId <- refHash referToUSRHash loc
         reference <- return $! ReferenceUpdate refId
-                                               (hash . slFile $ loc)
-                                               (slLine loc)
-                                               (slCol loc)
+                                               (tlFileHash loc)
+                                               (tlLine loc)
+                                               (tlCol loc)
                                                endLn
                                                endCol
                                                refKind
@@ -201,6 +211,9 @@ defsVisitor conn ci tu cursor = do
                                                (hash ctxUSR)
                                                (hash referToUSR)
         liftIO $ runRPC (rpcFoundRef reference) conn
+        return newCache
+      else
+        return fileCache''
     
     -- Record method overrides.
     -- TODO: I seem to recall that in C++11 you can override
@@ -235,22 +248,22 @@ defsVisitor conn ci tu cursor = do
 
         def <- return $! DefUpdate name
                                    (hash usr)
-                                   (hash . slFile $ loc)
-                                   (slLine loc)
-                                   (slCol loc)
+                                   (tlFileHash loc)
+                                   (tlLine loc)
+                                   (tlCol loc)
                                    kind
                                    (hash ctxUSR)
         liftIO $ runRPC (rpcFoundDef def) conn
 
     -- Recurse (most of the time).
     case cKind of
-      C.Cursor_MacroDefinition -> return ()
+      C.Cursor_MacroDefinition -> return fileCache'
       _                        -> do kids <- getChildren cursor
-                                     DVS.mapM_ (defsVisitor conn ci tu) kids
+                                     DVS.foldM' (defsVisitor conn ci tu) fileCache''' kids
 
-  else do
+  else
     -- Don't recurse into out-of-project header files.
-    return ()
+    return fileCache'
 
 classVisitor :: RPCConnection -> C.Cursor -> C.Cursor -> ClangApp s ()
 classVisitor conn thisClassC cursor = do
@@ -264,14 +277,50 @@ classVisitor conn thisClassC cursor = do
       liftIO $ runRPC (rpcFoundOverride override) conn
     _ -> return ()
 
-getCursorLocation :: C.Cursor -> ClangApp s SourceLocation
-getCursorLocation cursor = do
+type FileCache = Map.IntMap (Bool, Int64)
+
+data TULocation = TULocation
+  { tlShouldIndex :: Bool
+  , tlFileHash    :: Int64
+  , tlLine        :: SourceLine
+  , tlCol         :: SourceCol
+  } deriving (Eq, Show)
+
+getCursorLocation :: FileCache -> CommandInfo -> C.Cursor -> ClangApp s (TULocation, FileCache)
+getCursorLocation fileCache ci cursor = do
+  loc <- C.getLocation cursor
+  (f, ln, col, _) <- Source.getSpellingLocation loc
+  case f of
+    Just f' -> do (shouldIndex, filenameHash, newCache) <- lookupFile fileCache ci f'
+                  return (TULocation shouldIndex filenameHash ln col, newCache)
+    Nothing -> return (TULocation False 0 ln col, fileCache)
+  {-
+  file <- case f of Just f' -> File.getName f' >>= CS.unpackByteString
+                    Nothing -> return ""
+  return (shouldIndex, filenameHash, ln, col)
+  -}
+
+getCursorLocation' :: C.Cursor -> ClangApp s SourceLocation
+getCursorLocation' cursor = do
   loc <- C.getLocation cursor
   (f, ln, col, _) <- Source.getSpellingLocation loc
   file <- case f of Just f' -> File.getName f' >>= CS.unpackByteString
                     Nothing -> return ""
-  return $! SourceLocation file ln col
-
+  return $ SourceLocation file ln col
+  
+lookupFile :: FileCache -> CommandInfo -> File.File -> ClangApp s (Bool, Int64, FileCache)
+lookupFile fileCache ci file = do
+  fileHash <- File.hashFile file  -- This is a hash of the file _object_, not the name.
+  case Map.lookup fileHash fileCache of
+    Just (shouldIndex, filenameHash) ->
+      return (shouldIndex, filenameHash, fileCache)
+    Nothing -> do
+      filename <- CS.unpackByteString =<< File.getName file
+      let !shouldIndex = ciSourceFile ci == filename
+      let !filenameHash = hash filename
+      let !newCache = Map.insert fileHash (shouldIndex, filenameHash) fileCache
+      return (shouldIndex, filenameHash, newCache)
+  
 analyzeCall :: C.Cursor -> ClangApp s SourceKind
 analyzeCall c = do
   isDynamicCall <- C.isDynamicCall c
@@ -293,11 +342,12 @@ callBaseUSRHash = return . hash
               <=< underlyingType
               <=< C.getBaseExpression
 
-refHash :: B.ByteString -> SourceLocation -> ClangApp s USRHash
-refHash usr loc = return . hash $ (BU.fromString . show $ slLine loc) `B.append`
-                                  (slFile loc) `B.append`
-                                  (BU.fromString . show $ slCol loc) `B.append`
-                                  usr
+refHash :: Int64 -> TULocation -> ClangApp s USRHash
+-- TODO: Replace our hash implementation with one that supports combining hashes.
+refHash usrHash loc = return . hash $ (BU.fromString . show $ tlLine loc) `B.append`
+                                      (BU.fromString . show $ tlFileHash loc) `B.append`
+                                      (BU.fromString . show $ tlCol loc) `B.append`
+                                      (BU.fromString . show $ usrHash)
 
 isDef :: C.Cursor -> C.CursorKind -> ClangApp s Bool
 isDef c k = do
@@ -394,7 +444,7 @@ dumpSubtree cursor = do
           refCursor <- C.getReferenced c
           refName <- C.getDisplayName refCursor >>= CS.unpack
           refUSR <- XRef.getUSR refCursor >>= CS.unpack
-          refLoc <- getCursorLocation refCursor
+          refLoc <- getCursorLocation' refCursor
           let refFile = BU.toString $ slFile refLoc
 
           -- Get type.

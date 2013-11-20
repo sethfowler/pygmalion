@@ -29,6 +29,7 @@ library
                    fgl,
                    ghc-prim,
                    graphviz,
+                   hashable,
                    hslogger,
                    json,
                    mtl,
@@ -127,6 +128,7 @@ executable pygindex-clang
     buildable:      True
     build-depends:  base >= 4
                  ,  bytestring
+                 ,  containers
                  ,  directory
                  ,  LibClang >= 0.2
                  ,  MissingH
