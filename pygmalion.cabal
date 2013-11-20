@@ -134,6 +134,7 @@ executable pygindex-clang
                  ,  transformers
                  ,  unix
                  ,  utf8-string
+                 ,  vector
     other-modules:  Pygmalion.Index.Source
   else
     buildable:      False

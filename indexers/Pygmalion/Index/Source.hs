@@ -22,6 +22,7 @@ import Control.Monad.IO.Class
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as BU
 import Data.Typeable
+import qualified Data.Vector.Storable as DVS
 
 import Data.Bool.Predicate
 import Pygmalion.Core
@@ -96,10 +97,11 @@ addFileDef conn ci = do
 defsAnalysis :: RPCConnection -> CommandInfo -> TranslationUnit -> ClangApp s ()
 defsAnalysis conn ci tu = do
     cursor <- getCursor tu
-    void $ visitChildren cursor (defsVisitor conn ci tu)
+    kids <- getChildren cursor
+    DVS.mapM_ (defsVisitor conn ci tu) kids
 
-defsVisitor :: RPCConnection -> CommandInfo -> TranslationUnit -> ChildVisitor s
-defsVisitor conn ci tu cursor _ = do
+defsVisitor :: RPCConnection -> CommandInfo -> TranslationUnit -> C.Cursor -> ClangApp s ()
+defsVisitor conn ci tu cursor = do
   let thisFile = ciSourceFile ci
   loc <- getCursorLocation cursor
   -- TODO: What to do about inclusions that aren't normal inclusions?
@@ -212,8 +214,9 @@ defsVisitor conn ci tu cursor _ = do
         liftIO $ runRPC (rpcFoundOverride override) conn
 
     -- Record class inheritance ("overrides").
-    when (cKind == C.Cursor_ClassDecl) $
-      void $ visitChildren cursor (classVisitor conn cursor)
+    when (cKind == C.Cursor_ClassDecl) $ do
+      kids <- getChildren cursor
+      DVS.mapM_ (classVisitor conn cursor) kids
 
     -- Record definitions.
     -- TODO: Support labels.
@@ -241,15 +244,16 @@ defsVisitor conn ci tu cursor _ = do
 
     -- Recurse (most of the time).
     case cKind of
-      C.Cursor_MacroDefinition -> return ChildVisit_Continue
-      _                        -> return ChildVisit_Recurse
+      C.Cursor_MacroDefinition -> return ()
+      _                        -> do kids <- getChildren cursor
+                                     DVS.mapM_ (defsVisitor conn ci tu) kids
 
-  else
+  else do
     -- Don't recurse into out-of-project header files.
-    return ChildVisit_Continue
+    return ()
 
-classVisitor :: RPCConnection -> C.Cursor -> ChildVisitor s
-classVisitor conn thisClassC cursor _ = do
+classVisitor :: RPCConnection -> C.Cursor -> C.Cursor -> ClangApp s ()
+classVisitor conn thisClassC cursor = do
   cKind <- C.getKind cursor
   case cKind of
     C.Cursor_CXXBaseSpecifier -> do
@@ -258,8 +262,7 @@ classVisitor conn thisClassC cursor _ = do
       baseUSR <- XRef.getUSR defC >>= CS.unpackByteString
       override <- return $! Override (hash thisClassUSR) (hash baseUSR)
       liftIO $ runRPC (rpcFoundOverride override) conn
-      return ChildVisit_Break
-    _ -> return ChildVisit_Continue
+    _ -> return ()
 
 getCursorLocation :: C.Cursor -> ClangApp s SourceLocation
 getCursorLocation cursor = do
@@ -361,13 +364,12 @@ doDisplayAST tu = getCursor tu >>= dumpSubtree
 
 dumpSubtree :: C.Cursor -> ClangApp s ()
 dumpSubtree cursor = do
-    dump 0 cursor
-    void $ visitChildren cursor (dumpVisitor 0)
-    liftIO $ putStrLn "Finished recursing"
-  where dumpVisitor :: Int -> ChildVisitor s
-        dumpVisitor i c _ = do dump i c
-                               void $ visitChildren c (dumpVisitor $ i + 1)
-                               return ChildVisit_Continue
+    dumpVisitor 0 cursor
+    liftIO $ putStrLn "Finished recursing!"
+  where dumpVisitor :: Int -> C.Cursor -> ClangApp s ()
+        dumpVisitor i c = do dump i c
+                             kids <- getChildren c
+                             DVS.mapM_ (dumpVisitor $ i + 1) kids
         dump :: Int -> C.Cursor -> ClangApp s ()
         dump i c = do
           -- Get location.
