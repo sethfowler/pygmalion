@@ -47,16 +47,18 @@ runRPCServer cf iStream dbUpdateChan dbQueryChan idleChan = do
 serverApp :: RPCServerContext -> Application IO
 serverApp ctx ad = do
     open
-    conduit `onException` closeIO
+    conduit `onException` closeException
   where
     getCI = {-# SCC "serverget" #-} get :: Get RPCRequest
 
-    conduit = appSource ad $= conduitGet getCI =$= process [] $$ appSink ad
+    conduit = appSource ad $= conduitGet getCI =$= process [] 0 $$ appSink ad
 
     open = liftIO $ modifyMVar_ (rsConnections ctx) (\c -> return (c + 1))
-    close = liftIO $ terminate' 1
-    closeIO = terminate' 1
-    terminate = liftIO $ terminate' 2
+    close ups = liftIO $ do sendUpdates ctx ups 
+                            terminate' 1
+    closeException = terminate' 1
+    terminate ups = liftIO $ do sendUpdates ctx ups
+                                terminate' 2
 
     terminate' v = do
       -- If v == 1, this balances the increment to rsConnections that
@@ -69,24 +71,30 @@ serverApp ctx ad = do
       when (newConns < 0) $
         throwTo (rsThread ctx) RPCServerExit -- Terminate the server.
 
-    process ups = do
+    process :: [DBUpdate] -> Int -> ConduitM RPCRequest ByteString IO ()
+    process !ups 100000 = do
+      -- Go ahead and send our updates. This puts a cap on how many
+      -- requests the database will process at once.
+      liftIO $ sendUpdates ctx ups
+      process [] 0
+      
+    process !ups !upn = do
       result <- await
       case result of
-        Just RPCDone                 -> liftIO (sendUpdates ctx ups) >> close
-        Just RPCStop                 -> liftIO (sendUpdates ctx ups) >> terminate
-        Just (RPCFoundDef !df)       -> process (DBUpdateDef df : ups)
-        Just (RPCFoundRef !ru)       -> process (DBUpdateRef ru : ups)
-        Just (RPCFoundOverride !ov)  -> process (DBUpdateOverride ov : ups)
-        Just (RPCFoundInclusion !ic) -> process (DBUpdateInclusion ic : ups)
-        Just req                     -> do liftIO (sendUpdates ctx ups)
+        Just RPCDone                 -> close ups
+        Just RPCStop                 -> terminate ups
+        Just (RPCFoundDef !df)       -> process (DBUpdateDef df : ups) (upn + 1)
+        Just (RPCFoundRef !ru)       -> process (DBUpdateRef ru : ups) (upn + 1)
+        Just (RPCFoundOverride !ov)  -> process (DBUpdateOverride ov : ups) (upn + 1)
+        Just (RPCFoundInclusion !ic) -> process (DBUpdateInclusion ic : ups) (upn + 1)
+        Just req                     -> do liftIO $ sendUpdates ctx ups
                                            res <- liftIO $ runReaderT (route req) ctx
                                            case res of
-                                              Just res' -> yield res' >> process ups
-                                              Nothing   -> process ups
+                                              Just res' -> yield res' >> process [] 0
+                                              Nothing   -> process [] 0
         _                            -> do logError "RPC server got bad request"
                                            yield . encode $ (RPCError :: RPCResponse ())
-                                           liftIO (sendUpdates ctx ups)
-                                           close
+                                           close ups
 
 sendUpdates :: RPCServerContext -> [DBUpdate] -> IO ()
 sendUpdates _ []    = return ()
