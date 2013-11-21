@@ -70,7 +70,7 @@ inclusionsAnalysis conn ci tu = do
 
 inclusionsVisitor :: RPCConnection -> CommandInfo -> SourceFile -> InclusionVisitor s
 inclusionsVisitor conn ci clangIncSF file iStack = do
-    ic <- File.getName file >>= CS.unpackByteString
+    ic <- File.getName file >>= CS.unsafeUnpackByteString
     when (not $ clangIncSF `B.isPrefixOf` ic) $ do
       let mkInclusion' = mkInclusion ic
       case iStack of
@@ -131,7 +131,7 @@ defsVisitor conn ci tu fileCache cursor = do
 
                      -- Determine the context.
                      ctxC <- getContext tu cursor
-                     ctxUSR <- XRef.getUSR ctxC >>= CS.unpackByteString
+                     ctxUSR <- XRef.getUSR ctxC >>= CS.unsafeUnpackByteString
 
                      -- Record.
                      refId <- refHash incFileHash loc
@@ -171,7 +171,7 @@ defsVisitor conn ci tu fileCache cursor = do
     fileCache''' <- if goodRef && not (defIsNull && refIsNull) then do
         -- Prefer definitions to references when available.
         let referToC = if defIsNull then refC else defC
-        referToUSR <- XRef.getUSR referToC >>= CS.unpackByteString
+        referToUSR <- XRef.getUSR referToC >>= CS.unsafeUnpackByteString
 
         -- Determine the end of the extent of this cursor.
         extent <- C.getExtent cursor
@@ -180,7 +180,7 @@ defsVisitor conn ci tu fileCache cursor = do
 
         -- Determine the context.
         ctxC <- getContext tu cursor
-        ctxUSR <- XRef.getUSR ctxC >>= CS.unpackByteString
+        ctxUSR <- XRef.getUSR ctxC >>= CS.unsafeUnpackByteString
 
         -- Special analysis for CallExprs.
         refKind <- if cKind == C.Cursor_CallExpr then analyzeCall cursor
@@ -219,8 +219,8 @@ defsVisitor conn ci tu fileCache cursor = do
     -- constructors. Add support for that if so.
     when (cKind `elem` [C.Cursor_CXXMethod, C.Cursor_Destructor]) $ do
       overrides <- C.getOverriddenCursors cursor
-      overrideUSRs <- mapM (CS.unpackByteString <=< XRef.getUSR) overrides
-      usr <- XRef.getUSR cursor >>= CS.unpackByteString
+      overrideUSRs <- mapM (CS.unsafeUnpackByteString <=< XRef.getUSR) overrides
+      usr <- XRef.getUSR cursor >>= CS.unsafeUnpackByteString
       forM_ overrideUSRs $ \oUSR -> do
         override <- return $! Override (hash usr) (hash oUSR)
         liftIO $ runRPC (rpcFoundOverride override) conn
@@ -237,13 +237,13 @@ defsVisitor conn ci tu fileCache cursor = do
                                || cursorIsDef
                                || cursorIsPV
     when goodDef $ do
-        usr <- XRef.getUSR cursor >>= CS.unpackByteString
+        usr <- XRef.getUSR cursor >>= CS.unsafeUnpackByteString
         name <- fqn cursor
         let kind = toSourceKind cKind
 
         -- Determine the context.
         ctxC <- getContext' tu cursor
-        ctxUSR <- XRef.getUSR ctxC >>= CS.unpackByteString
+        ctxUSR <- XRef.getUSR ctxC >>= CS.unsafeUnpackByteString
 
         def <- return $! DefUpdate name
                                    (hash usr)
@@ -269,9 +269,9 @@ classVisitor conn thisClassC cursor = do
   cKind <- C.getKind cursor
   case cKind of
     C.Cursor_CXXBaseSpecifier -> do
-      thisClassUSR <- XRef.getUSR thisClassC >>= CS.unpackByteString
+      thisClassUSR <- XRef.getUSR thisClassC >>= CS.unsafeUnpackByteString
       defC <- C.getDefinition cursor
-      baseUSR <- XRef.getUSR defC >>= CS.unpackByteString
+      baseUSR <- XRef.getUSR defC >>= CS.unsafeUnpackByteString
       override <- return $! Override (hash thisClassUSR) (hash baseUSR)
       liftIO $ runRPC (rpcFoundOverride override) conn
     _ -> return ()
@@ -298,7 +298,7 @@ getCursorLocation' :: C.Cursor -> ClangApp s SourceLocation
 getCursorLocation' cursor = do
   loc <- C.getLocation cursor
   (f, ln, col, _) <- Source.getSpellingLocation loc
-  file <- case f of Just f' -> File.getName f' >>= CS.unpackByteString
+  file <- case f of Just f' -> File.getName f' >>= CS.unsafeUnpackByteString
                     Nothing -> return ""
   return $ SourceLocation file ln col
   
@@ -309,7 +309,7 @@ lookupFile fileCache ci file = do
     Just (shouldIndex, filenameHash) ->
       return (shouldIndex, filenameHash, fileCache)
     Nothing -> do
-      filename <- CS.unpackByteString =<< File.getName file
+      filename <- CS.unsafeUnpackByteString =<< File.getName file
       let !shouldIndex = ciSourceFile ci == filename
       let !filenameHash = hash filename
       let !newCache = Map.insert fileHash (shouldIndex, filenameHash) fileCache
@@ -330,7 +330,7 @@ analyzeCall c = do
 callBaseUSRHash :: C.Cursor -> ClangApp s USRHash
 callBaseUSRHash = return . hash
               -- <=< (\x -> (liftIO . putStrLn $ "Got base USR: " ++ (show x)) >> return x)
-              <=< CS.unpackByteString
+              <=< CS.unsafeUnpackByteString
               <=< XRef.getUSR
               <=< C.getTypeDeclaration
               <=< underlyingType
@@ -388,7 +388,7 @@ getContext' tu cursor = do
     (False, _)                        -> C.getSemanticParent cursor >>= getContext tu
 
 cursorName :: C.Cursor -> ClangApp s Identifier
-cursorName c = C.getDisplayName c >>= CS.unpackByteString >>= anonymize
+cursorName c = C.getDisplayName c >>= CS.unsafeUnpackByteString >>= anonymize
   where anonymize s | B.null s  = return "<anonymous>"
                     | otherwise = return s
 
