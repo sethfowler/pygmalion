@@ -266,7 +266,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int
 dbMajorVersion = 0
-dbMinorVersion = 24
+dbMinorVersion = 25
 
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c (mkQueryT sql)
