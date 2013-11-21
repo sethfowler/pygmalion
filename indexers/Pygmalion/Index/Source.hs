@@ -13,7 +13,7 @@ import Clang.Monad
 import qualified Clang.Source as Source
 import qualified Clang.String as CS
 import Clang.TranslationUnit
-import Clang.Traversal
+import qualified Clang.Traversal as TV
 import qualified Clang.Type as T
 import Control.Applicative
 import Control.Exception
@@ -52,9 +52,10 @@ displayAST ci = do
 inclusionsAnalysis :: RPCConnection -> CommandInfo -> TranslationUnit
                    -> ClangApp s ()
 inclusionsAnalysis conn ci tu = do
-  clangIncPath <- liftIO $ libclangIncludePath
-  let clangIncSF = mkSourceFile clangIncPath
-  void $ getInclusions tu (inclusionsVisitor conn templateCI clangIncSF)
+    clangIncPath <- liftIO libclangIncludePath
+    let clangIncSF = mkSourceFile clangIncPath
+    incs <- TV.getInclusions tu
+    DVS.mapM_ (inclusionsVisitor conn templateCI clangIncSF) incs
   where
     templateCI = ci { ciArgs = withIncArgs (ciArgs ci) (ciLanguage ci)
                     , ciLastIndexed = 0 }
@@ -68,15 +69,11 @@ inclusionsAnalysis conn ci tu = do
     withIncArgs xs@("-x":_) _      = xs
     withIncArgs (x:xs) lang        = x : withIncArgs xs lang
 
-inclusionsVisitor :: RPCConnection -> CommandInfo -> SourceFile -> InclusionVisitor s
-inclusionsVisitor conn ci clangIncSF file iStack = do
+inclusionsVisitor :: RPCConnection -> CommandInfo -> SourceFile -> TV.Inclusion -> ClangApp s ()
+inclusionsVisitor conn ci clangIncSF (TV.Inclusion file _ isDirect)  = do
     ic <- File.getName file >>= CS.unsafeUnpackByteString
-    when (not $ clangIncSF `B.isPrefixOf` ic) $ do
-      let mkInclusion' = mkInclusion ic
-      case iStack of
-        []       -> return () -- The source file itself.
-        (_ : []) -> liftIO $ runRPC (rpcFoundInclusion (mkInclusion' True)) conn
-        (_ : _)  -> liftIO $ runRPC (rpcFoundInclusion (mkInclusion' False)) conn
+    unless (clangIncSF `B.isPrefixOf` ic) $
+      liftIO $ runRPC (rpcFoundInclusion $ mkInclusion ic isDirect) conn
   where
     mkInclusion ic = Inclusion (ci { ciSourceFile = ic }) (ciSourceFile ci)
 
@@ -98,7 +95,7 @@ addFileDef conn ci = do
 defsAnalysis :: RPCConnection -> CommandInfo -> TranslationUnit -> ClangApp s ()
 defsAnalysis conn ci tu = do
     cursor <- getCursor tu
-    kids <- getChildren cursor
+    kids <- TV.getChildren cursor
     void $ DVS.foldM' (defsVisitor conn ci tu) Map.empty kids
 
 defsVisitor :: RPCConnection -> CommandInfo -> TranslationUnit -> FileCache -> C.Cursor
@@ -227,7 +224,7 @@ defsVisitor conn ci tu fileCache cursor = do
 
     -- Record class inheritance ("overrides").
     when (cKind == C.Cursor_ClassDecl) $ do
-      kids <- getChildren cursor
+      kids <- TV.getChildren cursor
       DVS.mapM_ (classVisitor conn cursor) kids
 
     -- Record definitions.
@@ -257,7 +254,7 @@ defsVisitor conn ci tu fileCache cursor = do
     -- Recurse (most of the time).
     case cKind of
       C.Cursor_MacroDefinition -> return fileCache'
-      _                        -> do kids <- getChildren cursor
+      _                        -> do kids <- TV.getChildren cursor
                                      DVS.foldM' (defsVisitor conn ci tu) fileCache''' kids
 
   else
@@ -413,7 +410,7 @@ dumpSubtree cursor = do
     liftIO $ putStrLn "Finished recursing!"
   where dumpVisitor :: Int -> C.Cursor -> ClangApp s ()
         dumpVisitor i c = do dump i c
-                             kids <- getChildren c
+                             kids <- TV.getChildren c
                              DVS.mapM_ (dumpVisitor $ i + 1) kids
         dump :: Int -> C.Cursor -> ClangApp s ()
         dump i c = do
