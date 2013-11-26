@@ -30,18 +30,18 @@ data RPCRequest = RPCIndexCommand CommandInfo
                 | RPCFoundDef DefUpdate
                 | RPCFoundOverride Override
                 | RPCFoundRef ReferenceUpdate
-                | RPCFoundInclusion Inclusion
+                | RPCUpdateAndFindDirtyInclusions SourceFileHash [Inclusion]
                 | RPCWait
                 | RPCPing
                 | RPCLog String
                 | RPCDone
                 | RPCStop
-                deriving (Eq, Show, Generic)
+                  deriving (Eq, Show, Generic)
 
 instance Serialize RPCRequest
 
 data RPCResponse a = RPCOK a
                    | RPCError
-                   deriving (Eq, Show, Generic)
+                     deriving (Eq, Show, Generic)
 
 instance Serialize a => Serialize (RPCResponse a)

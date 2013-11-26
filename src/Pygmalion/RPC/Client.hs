@@ -32,7 +32,7 @@ module Pygmalion.RPC.Client
 , rpcFoundDef
 , rpcFoundOverride
 , rpcFoundRef
-, rpcFoundInclusion
+, rpcUpdateAndFindDirtyInclusions
 ) where
 
 import Control.Applicative
@@ -148,8 +148,9 @@ rpcFoundOverride ov = callRPC_ (RPCFoundOverride ov) =<< Reader.ask
 rpcFoundRef :: ReferenceUpdate -> RPC ()
 rpcFoundRef rf = callRPC_ (RPCFoundRef rf) =<< Reader.ask
 
-rpcFoundInclusion :: Inclusion -> RPC ()
-rpcFoundInclusion ic = callRPC_ (RPCFoundInclusion ic) =<< Reader.ask
+rpcUpdateAndFindDirtyInclusions :: SourceFileHash -> [Inclusion] -> RPC [SourceFileHash]
+rpcUpdateAndFindDirtyInclusions sfHash ics =
+  callRPC (RPCUpdateAndFindDirtyInclusions sfHash ics) =<< Reader.ask
 
 callRPC :: Serialize a => RPCRequest -> RPCConnection -> RPC a
 callRPC req conn = liftIO $ do

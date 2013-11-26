@@ -23,6 +23,7 @@ import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as BU
 import Data.Hashable
 import qualified Data.IntMap.Strict as Map
+import qualified Data.IntSet as Set
 import Data.Typeable
 import qualified Data.Vector.Storable as DVS
 
@@ -34,10 +35,11 @@ import Pygmalion.RPC.Client
 runSourceAnalyses :: CommandInfo -> RPCConnection -> IO ()
 runSourceAnalyses ci conn = do
   result <- try $ withTranslationUnit ci $ \tu -> do
+                    let sfHash = hash $ ciSourceFile ci
                     logDiagnostics tu
-                    inclusionsAnalysis conn ci tu
-                    addFileDef conn ci
-                    defsAnalysis conn ci tu
+                    dirtyFiles <- inclusionsAnalysis conn sfHash tu
+                    --addFileDefs conn ci dirtyFiles
+                    defsAnalysis conn dirtyFiles tu
   case result of
     Right _ -> return ()
     Left (ClangException e) -> void $ logWarn ("Clang exception: " ++ e)
@@ -49,59 +51,54 @@ displayAST ci = do
     Right _                 -> return ()
     Left (ClangException e) -> logWarn ("Clang exception: " ++ e )
 
-inclusionsAnalysis :: RPCConnection -> CommandInfo -> TranslationUnit
-                   -> ClangApp s ()
-inclusionsAnalysis conn ci tu = do
-    clangIncPath <- liftIO libclangIncludePath
-    let clangIncSF = mkSourceFile clangIncPath
-    incs <- TV.getInclusions tu
-    DVS.mapM_ (inclusionsVisitor conn templateCI clangIncSF) incs
+inclusionsAnalysis :: RPCConnection -> SourceFileHash -> TranslationUnit
+                   -> ClangApp s Set.IntSet
+inclusionsAnalysis conn sfHash tu = do
+    clangIncPath <- mkSourceFile <$> liftIO libclangIncludePath
+    incs <- DVS.filterM (prefixIsNot clangIncPath)
+        =<< TV.getInclusions tu
+    incs' <- mapM toInclusion $ DVS.toList incs
+    dirtyIncs <- liftIO $ runRPC (rpcUpdateAndFindDirtyInclusions sfHash incs') conn
+    -- We include the source file itself in the list of dirty files.
+    -- TODO: What we should do here is construct the 'dirtyFiles'
+    -- cache here instead of lazily. Then we can pass it around with
+    -- ReaderT instead of explicitly. This will remove significant
+    -- complexity from defsAnalysis.
+    return $ sfHash `Set.insert` Set.fromList dirtyIncs
+
   where
-    templateCI = ci { ciArgs = withIncArgs (ciArgs ci) (ciLanguage ci)
-                    , ciLastIndexed = 0 }
 
-    -- Header files often have the wrong extension for the language
-    -- they contain, so we have to explicitly specify the language if
-    -- the given arguments don't do so already.
-    withIncArgs [] CLanguage       = ["-x", "c"]
-    withIncArgs [] CPPLanguage     = ["-x", "c++"]
-    withIncArgs [] UnknownLanguage = []
-    withIncArgs xs@("-x":_) _      = xs
-    withIncArgs (x:xs) lang        = x : withIncArgs xs lang
+    toInclusion (TV.Inclusion file loc _) = do
+      inc <- CS.unsafeUnpackByteString =<< File.getName file
+      (f, _, _, _) <- Source.getSpellingLocation loc
+      filename <- case f of Just f' -> File.getName f' >>= CS.unsafeUnpackByteString
+                            Nothing -> return ""
+      liftIO $ putStrLn $ "Got inclusion " ++ show inc ++ " included by " ++ show filename
+      return $ Inclusion inc (hash filename)
 
-inclusionsVisitor :: RPCConnection -> CommandInfo -> SourceFile -> TV.Inclusion -> ClangApp s ()
-inclusionsVisitor conn ci clangIncSF (TV.Inclusion file _ isDirect)  = do
-    ic <- File.getName file >>= CS.unsafeUnpackByteString
-    unless (clangIncSF `B.isPrefixOf` ic) $
-      liftIO $ runRPC (rpcFoundInclusion $ mkInclusion ic isDirect) conn
-  where
-    mkInclusion ic = Inclusion (ci { ciSourceFile = ic }) (ciSourceFile ci)
+    prefixIsNot clangIncSF (TV.Inclusion file _ _) =
+      (not . B.isPrefixOf clangIncSF) <$> (CS.unsafeUnpackByteString =<< File.getName file)
 
-addFileDef :: RPCConnection -> CommandInfo -> ClangApp s ()
-addFileDef conn ci = do
-  -- Add a special definition for the beginning of the file. This is
+{-
+addFileDefs :: RPCConnection -> CommandInfo -> Set.IntSet -> ClangApp s ()
+addFileDefs conn ci dirtyFiles = do
+  -- Add a special definition for the beginning of each file we're indexing. This is
   -- referenced by inclusion directives.
-  let thisFile = ciSourceFile ci
-  let thisFileHash = hash thisFile
-  def <- return $! DefUpdate thisFile
-                             thisFileHash
-                             thisFileHash
-                             1
-                             1
-                             SourceFile
-                             0
-  liftIO $ runRPC (rpcFoundDef def) conn
+  forM_ (Set.elems dirtyFiles) $ \sfHash ->
+    let def = DefUpdate (ciSourceFile ci) sfHash sfHash 1 1 SourceFile 0
+    liftIO $ runRPC (rpcFoundDef def) conn
+-}
   
-defsAnalysis :: RPCConnection -> CommandInfo -> TranslationUnit -> ClangApp s ()
-defsAnalysis conn ci tu = do
-    cursor <- getCursor tu
-    kids <- TV.getChildren cursor
-    void $ DVS.foldM' (defsVisitor conn ci tu) Map.empty kids
+defsAnalysis :: RPCConnection -> Set.IntSet -> TranslationUnit -> ClangApp s ()
+defsAnalysis conn dirtyFiles tu = do
+  cursor <- getCursor tu
+  kids <- TV.getChildren cursor
+  void $ DVS.foldM' (defsVisitor conn dirtyFiles tu) Map.empty kids
 
-defsVisitor :: RPCConnection -> CommandInfo -> TranslationUnit -> FileCache -> C.Cursor
-            -> ClangApp s FileCache
-defsVisitor conn ci tu fileCache cursor = do
-  (loc, fileCache') <- getCursorLocation fileCache ci cursor
+defsVisitor :: RPCConnection -> Set.IntSet -> TranslationUnit -> FileCache
+            -> C.Cursor -> ClangApp s FileCache
+defsVisitor conn dirtyFiles tu fileCache cursor = do
+  (loc, fileCache') <- getCursorLocation fileCache dirtyFiles cursor
   -- TODO: What to do about inclusions that aren't normal inclusions?
   -- Ones that are intended to be multiply included, etc?
   if tlShouldIndex loc then do
@@ -119,7 +116,7 @@ defsVisitor conn ci tu fileCache cursor = do
     -- Record inclusion directives.
     fileCache'' <- if cKind == C.Cursor_InclusionDirective then do
                      incFile <- C.getIncludedFile cursor
-                     (_, incFileHash, fileCache'') <- lookupFile fileCache' ci incFile
+                     (_, incFileHash, fileCache'') <- lookupFile fileCache' dirtyFiles incFile
 
                      -- Determine the end of the extent of this cursor.
                      extent <- C.getExtent cursor
@@ -189,9 +186,10 @@ defsVisitor conn ci tu fileCache cursor = do
         let referToUSRHash = hash referToUSR
         (declHash, newCache) <- if refIsNull
                                 then return (0, fileCache'')
-                                else do (tl, nc) <- getCursorLocation fileCache'' ci refC
-                                        rh <- refHash referToUSRHash tl
-                                        return (rh, nc)
+                                else do
+                                  (tl, nc) <- getCursorLocation fileCache'' dirtyFiles refC
+                                  rh <- refHash referToUSRHash tl
+                                  return (rh, nc)
 
         -- Record.
         refId <- refHash referToUSRHash loc
@@ -255,7 +253,8 @@ defsVisitor conn ci tu fileCache cursor = do
     case cKind of
       C.Cursor_MacroDefinition -> return fileCache'
       _                        -> do kids <- TV.getChildren cursor
-                                     DVS.foldM' (defsVisitor conn ci tu) fileCache''' kids
+                                     DVS.foldM' (defsVisitor conn dirtyFiles tu)
+                                                fileCache''' kids
 
   else
     -- Don't recurse into out-of-project header files.
@@ -277,17 +276,17 @@ type FileCache = Map.IntMap (Bool, Int)
 
 data TULocation = TULocation
   { tlShouldIndex :: Bool
-  , tlFileHash    :: Int
+  , tlFileHash    :: SourceFileHash
   , tlLine        :: SourceLine
   , tlCol         :: SourceCol
   } deriving (Eq, Show)
 
-getCursorLocation :: FileCache -> CommandInfo -> C.Cursor -> ClangApp s (TULocation, FileCache)
-getCursorLocation fileCache ci cursor = do
+getCursorLocation :: FileCache -> Set.IntSet -> C.Cursor -> ClangApp s (TULocation, FileCache)
+getCursorLocation fileCache dirtyFiles cursor = do
   loc <- C.getLocation cursor
   (f, ln, col, _) <- Source.getSpellingLocation loc
   case f of
-    Just f' -> do (shouldIndex, filenameHash, newCache) <- lookupFile fileCache ci f'
+    Just f' -> do (shouldIndex, filenameHash, newCache) <- lookupFile fileCache dirtyFiles f'
                   return (TULocation shouldIndex filenameHash ln col, newCache)
     Nothing -> return (TULocation False 0 ln col, fileCache)
 
@@ -299,17 +298,17 @@ getCursorLocation' cursor = do
                     Nothing -> return ""
   return $ SourceLocation file ln col
   
-lookupFile :: FileCache -> CommandInfo -> File.File -> ClangApp s (Bool, Int, FileCache)
-lookupFile fileCache ci file = do
-  fileHash <- File.hashFile file  -- This is a hash of the file _object_, not the name.
-  case Map.lookup fileHash fileCache of
+lookupFile :: FileCache -> Set.IntSet -> File.File
+           -> ClangApp s (Bool, SourceFileHash, FileCache)
+lookupFile fileCache dirtyFiles file = do
+  fileObjHash <- File.hashFile file  -- This is a hash of the file _object_, not the name.
+  case Map.lookup fileObjHash fileCache of
     Just (shouldIndex, filenameHash) ->
       return (shouldIndex, filenameHash, fileCache)
     Nothing -> do
-      filename <- CS.unsafeUnpackByteString =<< File.getName file
-      let !shouldIndex = ciSourceFile ci == filename
-      let !filenameHash = hash filename
-      let !newCache = Map.insert fileHash (shouldIndex, filenameHash) fileCache
+      !filenameHash <- hash <$> (CS.unsafeUnpackByteString =<< File.getName file)
+      let !shouldIndex = filenameHash `Set.member` dirtyFiles
+      let !newCache = Map.insert fileObjHash (shouldIndex, filenameHash) fileCache
       return (shouldIndex, filenameHash, newCache)
   
 analyzeCall :: C.Cursor -> ClangApp s SourceKind

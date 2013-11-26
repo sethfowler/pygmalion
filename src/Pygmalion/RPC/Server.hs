@@ -86,7 +86,6 @@ serverApp ctx ad = do
         Just (RPCFoundDef !df)       -> process (DBUpdateDef df : ups) (upn + 1)
         Just (RPCFoundRef !ru)       -> process (DBUpdateRef ru : ups) (upn + 1)
         Just (RPCFoundOverride !ov)  -> process (DBUpdateOverride ov : ups) (upn + 1)
-        Just (RPCFoundInclusion !ic) -> process (DBUpdateInclusion ic : ups) (upn + 1)
         Just req                     -> do liftIO $ sendUpdates ctx ups
                                            res <- liftIO $ runReaderT (route req) ctx
                                            case res of
@@ -111,32 +110,32 @@ data RPCServerContext = RPCServerContext
 type RPCServer a = ReaderT RPCServerContext IO a
 
 route :: RPCRequest -> RPCServer (Maybe ByteString)
-route (RPCIndexCommand ci)          = sendIndex_ $ FromBuild ci False
-route (RPCIndexFile ci)             = sendIndex_ $ FromNotify ci
-route (RPCGetCommandInfo sf)        = sendQuery $ DBGetCommandInfo sf
-route (RPCGetSimilarCommandInfo sf) = sendQuery $ DBGetSimilarCommandInfo sf
-route (RPCGetDefinition sl)         = sendQuery $ DBGetDefinition sl
-route (RPCGetCallers sl)            = sendQuery $ DBGetCallers sl
-route (RPCGetCallees sl)            = sendQuery $ DBGetCallees sl
-route (RPCGetBases sl)              = sendQuery $ DBGetBases sl
-route (RPCGetOverrides sl)          = sendQuery $ DBGetOverrides sl
-route (RPCGetMembers sl)            = sendQuery $ DBGetMembers sl
-route (RPCGetRefs sl)               = sendQuery $ DBGetRefs sl
-route (RPCGetReferenced sl)         = sendQuery $ DBGetReferenced sl
-route (RPCGetDeclReferenced sl)     = sendQuery $ DBGetDeclReferenced sl
-route (RPCGetHierarchy sl)          = sendQuery $ DBGetHierarchy sl
-route (RPCGetInclusions sf)         = sendQuery $ DBGetInclusions sf
-route (RPCGetIncluders sf)          = sendQuery $ DBGetIncluders sf
-route (RPCGetInclusionHierarchy sf) = sendQuery $ DBGetInclusionHierarchy sf
-route (RPCWait)                     = sendWait_
-route (RPCLog s)                    = logInfo s >> return Nothing
-route (RPCPing)                     = return . Just $! encode (RPCOK ())
-route (RPCFoundDef _)               = error "Should not route RPCFoundDef"
-route (RPCFoundRef _)               = error "Should not route RPCFoundRef"
-route (RPCFoundOverride _)          = error "Should not route RPCFoundOverride"
-route (RPCFoundInclusion _)         = error "Should not route RPCFoundInclusion"
-route (RPCDone)                     = error "Should not route RPCDone"
-route (RPCStop)                     = error "Should not route RPCStop"
+route (RPCIndexCommand ci)                   = sendIndex_ $ FromBuild ci False
+route (RPCIndexFile ci)                      = sendIndex_ $ FromNotify ci
+route (RPCGetCommandInfo sf)                 = sendQuery $ DBGetCommandInfo sf
+route (RPCGetSimilarCommandInfo sf)          = sendQuery $ DBGetSimilarCommandInfo sf
+route (RPCGetDefinition sl)                  = sendQuery $ DBGetDefinition sl
+route (RPCGetCallers sl)                     = sendQuery $ DBGetCallers sl
+route (RPCGetCallees sl)                     = sendQuery $ DBGetCallees sl
+route (RPCGetBases sl)                       = sendQuery $ DBGetBases sl
+route (RPCGetOverrides sl)                   = sendQuery $ DBGetOverrides sl
+route (RPCGetMembers sl)                     = sendQuery $ DBGetMembers sl
+route (RPCGetRefs sl)                        = sendQuery $ DBGetRefs sl
+route (RPCGetReferenced sl)                  = sendQuery $ DBGetReferenced sl
+route (RPCGetDeclReferenced sl)              = sendQuery $ DBGetDeclReferenced sl
+route (RPCGetHierarchy sl)                   = sendQuery $ DBGetHierarchy sl
+route (RPCGetInclusions sf)                  = sendQuery $ DBGetInclusions sf
+route (RPCGetIncluders sf)                   = sendQuery $ DBGetIncluders sf
+route (RPCGetInclusionHierarchy sf)          = sendQuery $ DBGetInclusionHierarchy sf
+route (RPCUpdateAndFindDirtyInclusions s is) = sendQuery $ DBUpdateAndFindDirtyInclusions s is
+route (RPCWait)                              = sendWait_
+route (RPCLog s)                             = logInfo s >> return Nothing
+route (RPCPing)                              = return . Just $! encode (RPCOK ())
+route (RPCFoundDef _)                        = error "Should not route RPCFoundDef"
+route (RPCFoundRef _)                        = error "Should not route RPCFoundRef"
+route (RPCFoundOverride _)                   = error "Should not route RPCFoundOverride"
+route (RPCDone)                              = error "Should not route RPCDone"
+route (RPCStop)                              = error "Should not route RPCStop"
 
 sendIndex_ :: IndexRequest -> RPCServer (Maybe ByteString)
 sendIndex_ !req = do

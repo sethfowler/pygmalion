@@ -7,10 +7,11 @@ module Pygmalion.Database.IO
 , beginTransaction
 , endTransaction
 , resetMetadata
+, updateFile
 , updateInclusion
 , getInclusions
 , getIncluders
-, getIncluderInfo
+--, getIncluderInfo
 , getInclusionHierarchy
 , updateSourceFile
 , getAllSourceFiles
@@ -66,39 +67,42 @@ import Pygmalion.Log
 -- underlying database implementation that also verify that the database is
 -- configured according to the correct schema and enable foreign keys.
 data DBHandle = DBHandle
-    { conn                         :: Connection
-    , beginTransactionStmt         :: Statement
-    , endTransactionStmt           :: Statement
-    , updateInclusionStmt          :: Statement
-    , resetInclusionsStmt          :: Statement
-    , getInclusionsStmt            :: Statement
-    , getDirectInclusionsStmt      :: Statement
-    , getIncludersStmt             :: Statement
-    , getIncluderInfoStmt          :: Statement
-    , getDirectIncludersStmt       :: Statement
-    , updateSourceFileStmt         :: Statement
-    , getCommandInfoStmt           :: Statement
-    , getSimilarCommandInfoStmt    :: Statement
-    , updateDefStmt                :: Statement
-    , resetDefsStmt                :: Statement
-    , getDefStmt                   :: Statement
-    , updateOverrideStmt           :: Statement
-    , resetOverridesStmt           :: Statement
-    , getOverridedStmt             :: Statement
-    , getOverridersStmt            :: Statement
-    , getMembersStmt               :: Statement
-    , getCallersStmt               :: Statement
-    , getCalleesStmt               :: Statement
-    , updateReferenceStmt          :: Statement
-    , resetReferencesStmt          :: Statement
-    , getDeclReferencedStmt        :: Statement
-    , getDeclsReferencedInFileStmt :: Statement
-    , getReferencedStmt            :: Statement
-    , getReferencesStmt            :: Statement
-    , insertFileStmt               :: Statement
-    , insertPathStmt               :: Statement
-    , insertCommandStmt            :: Statement
-    , insertArgsStmt               :: Statement
+    { conn                            :: Connection
+    , beginTransactionStmt            :: Statement
+    , endTransactionStmt              :: Statement
+    , updateInclusionStmt             :: Statement
+    , updateInclusionsClosureStmt     :: Statement
+    , postUpdateInclusionsClosureStmt :: Statement
+    , resetInclusionsStmt             :: Statement
+    , postResetInclusionsStmt         :: Statement
+    , getInclusionsStmt               :: Statement
+    , getDirectInclusionsStmt         :: Statement
+    , getIncludersStmt                :: Statement
+    --, getIncluderInfoStmt             :: Statement
+    , getDirectIncludersStmt          :: Statement
+    , updateSourceFileStmt            :: Statement
+    , getCommandInfoStmt              :: Statement
+    , getSimilarCommandInfoStmt       :: Statement
+    , updateDefStmt                   :: Statement
+    , resetDefsStmt                   :: Statement
+    , getDefStmt                      :: Statement
+    , updateOverrideStmt              :: Statement
+    , resetOverridesStmt              :: Statement
+    , getOverridedStmt                :: Statement
+    , getOverridersStmt               :: Statement
+    , getMembersStmt                  :: Statement
+    , getCallersStmt                  :: Statement
+    , getCalleesStmt                  :: Statement
+    , updateReferenceStmt             :: Statement
+    , resetReferencesStmt             :: Statement
+    , getDeclReferencedStmt           :: Statement
+    , getDeclsReferencedInFileStmt    :: Statement
+    , getReferencedStmt               :: Statement
+    , getReferencesStmt               :: Statement
+    , updateFileStmt                  :: Statement
+    , insertPathStmt                  :: Statement
+    , insertCommandStmt               :: Statement
+    , insertArgsStmt                  :: Statement
     }
 
 ensureDB :: IO ()
@@ -132,50 +136,55 @@ openDB db = labeledCatch "openDB" $ do
   c <- open db
   tuneDB c
   ensureSchema c
-  h <- DBHandle c <$> openStatement c (mkQueryT beginTransactionSQL)
-                  <*> openStatement c (mkQueryT endTransactionSQL)
-                  <*> openStatement c (mkQueryT updateInclusionSQL)
-                  <*> openStatement c (mkQueryT resetInclusionsSQL)
-                  <*> openStatement c (mkQueryT getInclusionsSQL)
-                  <*> openStatement c (mkQueryT getDirectInclusionsSQL)
-                  <*> openStatement c (mkQueryT getIncludersSQL)
-                  <*> openStatement c (mkQueryT getIncluderInfoSQL)
-                  <*> openStatement c (mkQueryT getDirectIncludersSQL)
-                  <*> openStatement c (mkQueryT updateSourceFileSQL)
-                  <*> openStatement c (mkQueryT getCommandInfoSQL)
-                  <*> openStatement c (mkQueryT getSimilarCommandInfoSQL)
-                  <*> openStatement c (mkQueryT updateDefSQL)
-                  <*> openStatement c (mkQueryT resetDefsSQL)
-                  <*> openStatement c (mkQueryT getDefSQL)
-                  <*> openStatement c (mkQueryT updateOverrideSQL)
-                  <*> openStatement c (mkQueryT resetOverridesSQL)
-                  <*> openStatement c (mkQueryT getOverridedSQL)
-                  <*> openStatement c (mkQueryT getOverridersSQL)
-                  <*> openStatement c (mkQueryT getMembersSQL)
-                  <*> openStatement c (mkQueryT getCallersSQL)
-                  <*> openStatement c (mkQueryT getCalleesSQL)
-                  <*> openStatement c (mkQueryT updateReferenceSQL)
-                  <*> openStatement c (mkQueryT resetReferencesSQL)
-                  <*> openStatement c (mkQueryT getDeclReferencedSQL)
-                  <*> openStatement c (mkQueryT getDeclsReferencedInFileSQL)
-                  <*> openStatement c (mkQueryT getReferencedSQL)
-                  <*> openStatement c (mkQueryT getReferencesSQL)
-                  <*> openStatement c (mkQueryT insertFileSQL)
-                  <*> openStatement c (mkQueryT insertPathSQL)
-                  <*> openStatement c (mkQueryT insertCommandSQL)
-                  <*> openStatement c (mkQueryT insertArgsSQL)
-  return h
+  DBHandle c <$> openStatement c (mkQueryT beginTransactionSQL)
+             <*> openStatement c (mkQueryT endTransactionSQL)
+             <*> openStatement c (mkQueryT updateInclusionSQL)
+             <*> openStatement c (mkQueryT updateInclusionsClosureSQL)
+             <*> openStatement c (mkQueryT postUpdateInclusionsClosureSQL)
+             <*> openStatement c (mkQueryT resetInclusionsSQL)
+             <*> openStatement c (mkQueryT postResetInclusionsSQL)
+             <*> openStatement c (mkQueryT getInclusionsSQL)
+             <*> openStatement c (mkQueryT getDirectInclusionsSQL)
+             <*> openStatement c (mkQueryT getIncludersSQL)
+             -- <*> openStatement c (mkQueryT getIncluderInfoSQL)
+             <*> openStatement c (mkQueryT getDirectIncludersSQL)
+             <*> openStatement c (mkQueryT updateSourceFileSQL)
+             <*> openStatement c (mkQueryT getCommandInfoSQL)
+             <*> openStatement c (mkQueryT getSimilarCommandInfoSQL)
+             <*> openStatement c (mkQueryT updateDefSQL)
+             <*> openStatement c (mkQueryT resetDefsSQL)
+             <*> openStatement c (mkQueryT getDefSQL)
+             <*> openStatement c (mkQueryT updateOverrideSQL)
+             <*> openStatement c (mkQueryT resetOverridesSQL)
+             <*> openStatement c (mkQueryT getOverridedSQL)
+             <*> openStatement c (mkQueryT getOverridersSQL)
+             <*> openStatement c (mkQueryT getMembersSQL)
+             <*> openStatement c (mkQueryT getCallersSQL)
+             <*> openStatement c (mkQueryT getCalleesSQL)
+             <*> openStatement c (mkQueryT updateReferenceSQL)
+             <*> openStatement c (mkQueryT resetReferencesSQL)
+             <*> openStatement c (mkQueryT getDeclReferencedSQL)
+             <*> openStatement c (mkQueryT getDeclsReferencedInFileSQL)
+             <*> openStatement c (mkQueryT getReferencedSQL)
+             <*> openStatement c (mkQueryT getReferencesSQL)
+             <*> openStatement c (mkQueryT updateFileSQL)
+             <*> openStatement c (mkQueryT insertPathSQL)
+             <*> openStatement c (mkQueryT insertCommandSQL)
+             <*> openStatement c (mkQueryT insertArgsSQL)
 
 closeDB :: DBHandle -> IO ()
 closeDB h = do
   closeStatement (beginTransactionStmt h)
   closeStatement (endTransactionStmt h)
   closeStatement (updateInclusionStmt h)
+  closeStatement (updateInclusionsClosureStmt h)
+  closeStatement (postUpdateInclusionsClosureStmt h)
   closeStatement (resetInclusionsStmt h)
+  closeStatement (postResetInclusionsStmt h)
   closeStatement (getInclusionsStmt h)
   closeStatement (getDirectInclusionsStmt h)
   closeStatement (getIncludersStmt h)
-  closeStatement (getIncluderInfoStmt h)
+  --closeStatement (getIncluderInfoStmt h)
   closeStatement (getDirectIncludersStmt h)
   closeStatement (updateSourceFileStmt h)
   closeStatement (getCommandInfoStmt h)
@@ -196,7 +205,7 @@ closeDB h = do
   closeStatement (getDeclsReferencedInFileStmt h)
   closeStatement (getReferencedStmt h)
   closeStatement (getReferencesStmt h)
-  closeStatement (insertFileStmt h)
+  closeStatement (updateFileStmt h)
   closeStatement (insertPathStmt h)
   closeStatement (insertCommandStmt h)
   closeStatement (insertArgsStmt h)
@@ -266,7 +275,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int
 dbMajorVersion = 0
-dbMinorVersion = 25
+dbMinorVersion = 26
 
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c (mkQueryT sql)
@@ -299,43 +308,97 @@ defineFilesTable c = do
   where
     sql = T.concat [ "create table if not exists Files(          "
                    , "Hash integer primary key unique not null,  "
-                   , "Name text not null collate nocase)" ]
+                   , "Name text not null collate nocase,         "
+                   , "LastMTime integer not null,                "
+                   , "LastIndexed integer not null)"             ]
     indexSQL = "create index if not exists FilesNameIndex on Files(Name collate nocase)"
 
-insertFileSQL :: T.Text
-insertFileSQL = "insert or ignore into Files (Name, Hash) values (?, ?)"
+updateFile :: DBHandle -> SourceFile -> Time -> Time -> IO ()
+updateFile h sf mt lit = do
+  let sfHash = hash sf
+  execStatement h updateFileStmt (sf, sfHash, mt, lit)
+
+updateFileSQL :: T.Text
+updateFileSQL =
+  "replace into Files (Name, Hash, LastMTime, LastIndexed) values (?, ?, ?, ?)"
 
 -- Schema and operations for the Inclusions table.
 defineInclusionsTable :: Connection -> IO ()
 defineInclusionsTable c = do
     execute_ c (mkQueryT sql)
     execute_ c (mkQueryT indexSQL)
+    execute_ c (mkQueryT closureSQL)
+    execute_ c (mkQueryT closureIndexSQL)
   where
     sql = T.concat [ "create table if not exists Inclusions( "
-                   , "File integer not null,                 "
                    , "Inclusion integer not null,            "
-                   , "Direct integer not null,               "
-                   , "primary key (File, Inclusion))" ]
+                   , "Includer integer not null,             "
+                   , "primary key (Includer, Inclusion))"    ]
     indexSQL = "create index if not exists InclusionsInclusionIndex on Inclusions(Inclusion)"
+    closureSQL = T.concat
+                 [ "create table if not exists InclusionsClosure( "
+                 , "Inclusion integer not null,                   "
+                 , "Includer integer not null,                    "
+                 , "Depth integer not null,                       "
+                 , "primary key (Includer, Inclusion, Depth))"    ]
+    closureIndexSQL = T.concat
+                      [ "create index if not exists InclusionsClosureIndex on "
+                      , "InclusionsClosure(Inclusion, Depth, Includer)"       ]
 
 updateInclusion :: DBHandle -> Inclusion -> IO ()
-updateInclusion h (Inclusion hci sf d) = do
-  let hfHash = hash (ciSourceFile hci)
-  let sfHash = hash sf
-  execStatement h updateInclusionStmt (sfHash, hfHash, d)
+updateInclusion h (Inclusion inclusion includerHash) = do
+  -- TODO: Probably need to reset inclusions before updating, once we
+  -- have the lock.
+  -- TODO: The closure stuff is bullcrap. I don't buy it and I don't
+  -- want to debug it. Let's just manually compute the closure table
+  -- when we need a list of includers, and revisit the issue if
+  -- there's a problem.
+  let incHash = hash inclusion
+  putStrLn $ "About to insert inclusion pair: inclusion " ++ show incHash
+          ++ " (" ++ show inclusion ++ ") includer " ++ show includerHash
+  execStatement h updateInclusionStmt (incHash, includerHash)
+  execStatement h updateInclusionsClosureStmt (incHash, incHash,
+                                               includerHash, includerHash,
+                                               incHash, includerHash)
+  execStatement h postUpdateInclusionsClosureStmt (incHash, includerHash)
 
 updateInclusionSQL :: T.Text
 updateInclusionSQL = T.concat
-  [ "replace into Inclusions (File, Inclusion, Direct) "
-  , "values (?, ?, ?)" ]
+  [ "insert or ignore into Inclusions (Inclusion, Includer) "
+  , "values (?, ?)"                                         ]
+
+updateInclusionsClosureSQL :: T.Text
+updateInclusionsClosureSQL = T.concat
+  [ "insert or ignore into InclusionsClosure (Inclusion, Includer, Depth) values "
+  , "(?, ?, 0),                                                                  "
+  , "(?, ?, 0),                                                                  "
+  , "(?, ?, 1)"                                                                  ]
+
+postUpdateInclusionsClosureSQL :: T.Text
+postUpdateInclusionsClosureSQL = T.concat
+  [ "insert or ignore into InclusionsClosure(Inclusion, Includer, Depth) "
+  , "select P.Inclusion, C.Includer, P.Depth + C.Depth + 1               "
+  , "from InclusionsClosure as P, InclusionsClosure as C                 "
+  , "where P.Includer=? and C.Inclusion=?"                               ]
 
 resetInclusions :: DBHandle -> SourceFile -> IO ()
 resetInclusions h sf = do
   let sfHash = hash sf
-  execStatement h resetInclusionsStmt (Only $ sfHash)
+  execStatement h resetInclusionsStmt (Only sfHash)
+  execStatement h postResetInclusionsStmt (Only sfHash)
 
 resetInclusionsSQL :: T.Text
-resetInclusionsSQL = "delete from Inclusions where File = ?"
+resetInclusionsSQL = "delete from Inclusions where Includer = ?"
+
+postResetInclusionsSQL :: T.Text
+postResetInclusionsSQL = T.concat
+  [ "delete from InclusionsClosure where RowId in                                   "
+  , "(select ToDelete.RowId from InclusionsClosure as P, InclusionsClosure as Link, "
+  , "InclusionsClosure as C, InclusionsClosure ToDelete                             "
+  , "where P.Inclusion = Link.Includer and C.Includer = Link.Inclusion              "
+  , "and P.Includer = ToDelete.Inclusion and C.Inclusion = ToDelete.Includer        "
+  , "and (ToDelete.Inclusion=? or ToDelete.Includer=?)                              "
+  , "and ToDelete.Depth < 2)"                                                       ]
 
 getInclusions :: DBHandle -> SourceFile -> IO [SourceFile]
 getInclusions h sf = do
@@ -345,9 +408,9 @@ getInclusions h sf = do
 getInclusionsSQL :: T.Text
 getInclusionsSQL = T.concat
   [ "select F.Name                           "
-  , "from Inclusions as I                    "
+  , "from InclusionsClosure as I             "
   , "join Files as F on I.Inclusion = F.Hash "
-  , "where I.File = ?" ]
+  , "where I.Includer = ?" ]
 
 getDirectInclusions :: DBHandle -> SourceFile -> IO [SourceFile]
 getDirectInclusions h sf = do
@@ -359,7 +422,7 @@ getDirectInclusionsSQL = T.concat
   [ "select F.Name                                 "
   , "from Inclusions as I                          "
   , "join Files as F on I.Inclusion = F.Hash       "
-  , "where I.File = ? and I.Direct = 1" ]
+  , "where I.Includer = ?" ]
 
 getIncluders :: DBHandle -> SourceFile -> IO [SourceFile]
 getIncluders h sf = do
@@ -368,11 +431,12 @@ getIncluders h sf = do
 
 getIncludersSQL :: T.Text
 getIncludersSQL = T.concat
-  [ "select F.Name                      "
-  , "from Inclusions as I               "
-  , "join Files as F on I.File = F.Hash "
-  , "where I.Inclusion = ?" ]
+  [ "select F.Name                          "
+  , "from InclusionsClosure as I            "
+  , "join Files as F on I.Includer = F.Hash "
+  , "where I.Inclusion = ?"                 ]
 
+{-
 getIncluderInfo :: DBHandle -> SourceFile -> IO [CommandInfo]
 getIncluderInfo h sf = execQuery h getIncluderInfoStmt (Only $ hash sf)
 
@@ -380,12 +444,13 @@ getIncluderInfoSQL :: T.Text
 getIncluderInfoSQL = T.concat
   [ "select F.Name, W.Path, C.Command, A.Args, S.Language, S.LastMTime, S.LastIndexed "
   , "from Inclusions as I                                                             "
-  , "join SourceFiles as S on I.File = S.File                                         "
+  , "join SourceFiles as S on I.Includer = S.File                                     "
   , "join Files as F on S.File = F.Hash                                               "
   , "join Paths as W on S.WorkingPath = W.Hash                                        "
   , "join BuildCommands as C on S.BuildCommand = C.Hash                               "
   , "join BuildArgs as A on S.BuildArgs = A.Hash                                      "
   , "where I.Inclusion = ?" ]
+-}
 
 getDirectIncluders :: DBHandle -> SourceFile -> IO [SourceFile]
 getDirectIncluders h sf = do
@@ -396,8 +461,8 @@ getDirectIncludersSQL :: T.Text
 getDirectIncludersSQL = T.concat
   [ "select F.Name                           "
   , "from Inclusions as I                    "
-  , "join Files as F on I.File = F.Hash "
-  , "where I.Inclusion = ? and I.Direct = 1" ]
+  , "join Files as F on I.Includer = F.Hash  "
+  , "where I.Inclusion = ?"                  ]
 
 getInclusionHierarchy :: DBHandle -> SourceFile -> IO String
 getInclusionHierarchy h sf = asDot <$> generateHierarchy
@@ -416,32 +481,29 @@ getInclusionHierarchy h sf = asDot <$> generateHierarchy
 
       -- Find inclusions.
       ics <- getDirectInclusions h sf
-      g'' <- foldM (expandHierarchy mkReverseEdge
-                                    (\a b -> getDeclsReferencedInFile h b a)
-                                    getDirectInclusions nid)
-                   g' ics
-
-      return g''
+      foldM (expandHierarchy mkReverseEdge
+                             (flip (getDeclsReferencedInFile h))
+                             getDirectInclusions nid)
+            g' ics
       
     expandHierarchy newEdgeF refsF nextLevelF superNodeId g sf' = do
       let nid = hash sf'
 
       -- If this inclusion already exists in the graph, bail.
-      case nid `nodeElem` g of
-        True  -> do let edge = newEdgeF superNodeId nid
-                    return $ (addEdge edge) g
-        False -> do -- Find references to this inclusion in the original source file.
-                    refs <- refsF sf' sf
+      if nid `nodeElem` g
+        then do let edge = newEdgeF superNodeId nid
+                return $ addEdge edge g
+        else do -- Find references to this inclusion in the original source file.
+                refs <- refsF sf' sf
 
-                    -- Add this inclusion as a node in the graph.
-                    let node = mkNode nid sf' [(map diIdentifier refs)]
-                    let edge = newEdgeF superNodeId nid
-                    let g' = (addEdge edge) . (addUniqueNode node) $ g
+                -- Add this inclusion as a node in the graph.
+                let node = mkNode nid sf' [map diIdentifier refs]
+                let edge = newEdgeF superNodeId nid
+                let g' = addEdge edge . addUniqueNode node $ g
 
-                    -- Add its inclusions in turn.
-                    is <- nextLevelF h sf'
-                    g'' <- foldM (expandHierarchy newEdgeF refsF nextLevelF nid) g' is
-                    return g''
+                -- Add its inclusions in turn.
+                is <- nextLevelF h sf'
+                foldM (expandHierarchy newEdgeF refsF nextLevelF nid) g' is
 
 -- Schema and operations for the Paths table.
 definePathsTable :: Connection -> IO ()
@@ -481,20 +543,18 @@ defineSourceFilesTable c = execute_ c (mkQueryT sql)
                         , "WorkingPath integer not null,                  "
                         , "BuildCommand integer not null,                 "
                         , "BuildArgs integer not null,                    "
-                        , "Language integer not null,                     "
-                        , "LastMTime integer zerofill unsigned not null,  "
-                        , "LastIndexed integer zerofill unsigned not null)" ]
+                        , "Language integer not null)"                    ]
 
 updateSourceFileSQL :: T.Text
 updateSourceFileSQL = T.concat
   [ "replace into SourceFiles                                            "
-  , "(File, WorkingPath, BuildCommand, BuildArgs, Language, LastMTime, LastIndexed) "
-  , "values (?, ?, ?, ?, ?, ?, ?)" ]
+  , "(File, WorkingPath, BuildCommand, BuildArgs, Language) "
+  , "values (?, ?, ?, ?, ?)" ]
 
 updateSourceFile :: DBHandle -> CommandInfo -> IO ()
 updateSourceFile h (CommandInfo sf wd cmd args lang mt t) = do
     let sfHash = hash sf
-    execStatement h insertFileStmt (sf, sfHash)
+    execStatement h updateFileStmt (sf, sfHash, mt, t)
     let wdHash = hash wd
     execStatement h insertPathStmt (wd, wdHash)
     let cmdHash = hash cmd
@@ -503,31 +563,31 @@ updateSourceFile h (CommandInfo sf wd cmd args lang mt t) = do
     let argsHash = hash argsJoined
     execStatement h insertArgsStmt (argsJoined, argsHash)
     execStatement h updateSourceFileStmt (sfHash, wdHash, cmdHash, argsHash,
-                                          fromEnum lang, mt, t)
+                                          fromEnum lang)
 
 getAllSourceFiles :: DBHandle -> IO [CommandInfo]
 getAllSourceFiles h = query_ (conn h) (mkQueryT sql)
   where
     sql = T.concat
-          [ "select F.Name, W.Path, C.Command, A.Args, Language, LastMTime, LastIndexed "
-          , "from SourceFiles                                                           "
-          , "join Files as F on SourceFiles.File = F.Hash                               "
-          , "join Paths as W on SourceFiles.WorkingPath = W.Hash                        "
-          , "join BuildCommands as C on SourceFiles.BuildCommand = C.Hash               "
-          , "join BuildArgs as A on SourceFiles.BuildArgs = A.Hash" ]
+          [ "select F.Name, W.Path, C.Command, A.Args, Language, F.LastMTime, F.LastIndexed "
+          , "from SourceFiles                                                               "
+          , "join Files as F on SourceFiles.File = F.Hash                                   "
+          , "join Paths as W on SourceFiles.WorkingPath = W.Hash                            "
+          , "join BuildCommands as C on SourceFiles.BuildCommand = C.Hash                   "
+          , "join BuildArgs as A on SourceFiles.BuildArgs = A.Hash"                         ]
 
 getCommandInfo :: DBHandle -> SourceFile -> IO (Maybe CommandInfo)
-getCommandInfo h sf = execSingleRowQuery h getCommandInfoStmt (Only $ hash sf)
+getCommandInfo h sfHash = execSingleRowQuery h getCommandInfoStmt (Only sfHash)
 
 getCommandInfoSQL :: T.Text
 getCommandInfoSQL = T.concat
-  [ "select F.Name, W.Path, C.Command, A.Args, Language, LastMTime, LastIndexed "
-  , "from SourceFiles                                                           "
-  , "join Files as F on SourceFiles.File = F.Hash                               "
-  , "join Paths as W on SourceFiles.WorkingPath = W.Hash                        "
-  , "join BuildCommands as C on SourceFiles.BuildCommand = C.Hash               "
-  , "join BuildArgs as A on SourceFiles.BuildArgs = A.Hash                      "
-  , "where SourceFiles.File = ? limit 1" ]
+  [ "select F.Name, W.Path, C.Command, A.Args, Language, F.LastMTime, F.LastIndexed "
+  , "from SourceFiles                                                               "
+  , "join Files as F on SourceFiles.File = F.Hash                                   "
+  , "join Paths as W on SourceFiles.WorkingPath = W.Hash                            "
+  , "join BuildCommands as C on SourceFiles.BuildCommand = C.Hash                   "
+  , "join BuildArgs as A on SourceFiles.BuildArgs = A.Hash                          "
+  , "where SourceFiles.File = ? limit 1"                                            ]
 
 -- Eventually this should be more statistical, but right now it will just
 -- return an arbitrary file from the same directory.
@@ -541,13 +601,13 @@ getSimilarCommandInfo h sf = do
 
 getSimilarCommandInfoSQL :: T.Text
 getSimilarCommandInfoSQL = T.concat
-  [ "select F.Name, W.Path, C.Command, A.Args, SF.Language, SF.LastMTime, SF.LastIndexed "
-  , "from Files as F                                                                     "
-  , "join SourceFiles as SF on F.Hash = SF.File                                          "
-  , "join Paths as W on SF.WorkingPath = W.Hash                                          "
-  , "join BuildCommands as C on SF.BuildCommand = C.Hash                                 "
-  , "join BuildArgs as A on SF.BuildArgs = A.Hash                                        "
-  , "where F.Name like ? limit 1" ]
+  [ "select F.Name, W.Path, C.Command, A.Args, SF.Language, F.LastMTime, F.LastIndexed "
+  , "from Files as F                                                                   "
+  , "join SourceFiles as SF on F.Hash = SF.File                                        "
+  , "join Paths as W on SF.WorkingPath = W.Hash                                        "
+  , "join BuildCommands as C on SF.BuildCommand = C.Hash                               "
+  , "join BuildArgs as A on SF.BuildArgs = A.Hash                                      "
+  , "where F.Name like ? limit 1"                                                      ]
 
 -- Schema and operations for the Definitions table.
 defineDefinitionsTable :: Connection -> IO ()

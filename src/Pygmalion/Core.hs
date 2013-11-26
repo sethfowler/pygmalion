@@ -112,9 +112,8 @@ instance FromRow Language where
 
 -- | Inclusion metadata.
 data Inclusion = Inclusion
-    { icCommandInfo :: !CommandInfo  -- ^ Information about the included file.
-    , icSourceFile  :: !SourceFile   -- ^ The file which does the including.
-    , icDirect      :: !Bool         -- ^ Is it included directly?
+    { icInclusion :: !SourceFile      -- ^ The included file.
+    , icIncluder  :: !SourceFileHash  -- ^ The file which does the including.
     } deriving (Eq, Show, Generic)
 
 instance Serialize Inclusion
