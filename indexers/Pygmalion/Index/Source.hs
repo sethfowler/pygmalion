@@ -73,7 +73,7 @@ inclusionsAnalysis conn sfHash tu = do
       (f, _, _, _) <- Source.getSpellingLocation loc
       filename <- case f of Just f' -> File.getName f' >>= CS.unsafeUnpackByteString
                             Nothing -> return ""
-      liftIO $ putStrLn $ "Got inclusion " ++ show inc ++ " included by " ++ show filename
+      --liftIO $ putStrLn $ "Got inclusion " ++ show inc ++ " included by " ++ show filename
       return $ Inclusion inc (hash filename)
 
     prefixIsNot clangIncSF (TV.Inclusion file _ _) =

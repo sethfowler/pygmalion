@@ -112,7 +112,7 @@ handleSource idxStream f = do
   let file = FP.encodeString f
   fileExists <- doesFileExist file
   when (isSource file && fileExists) $
-    atomically $ addPendingIndex idxStream (FromNotify . mkSourceFile $ file)
+    atomically $ addPendingIndex idxStream (IndexUpdate . mkSourceFile $ file)
 
 isSource :: FilePath -> Bool
 isSource f = case extensionKind f of

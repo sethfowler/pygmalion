@@ -59,8 +59,6 @@ data CommandInfo = CommandInfo
   , ciCommand     :: !B.ByteString
   , ciArgs        :: ![B.ByteString]
   , ciLanguage    :: !Language
-  , ciLastMTime   :: !Time
-  , ciLastIndexed :: !Time
   } deriving (Eq, Read, Show, Generic)
 
 {-
@@ -78,8 +76,6 @@ instance FromRow CommandInfo where
                         <*> field               -- ciCommand
                         <*> (B.lines <$> field) -- ciArgs
                         <*> fromRow             -- ciLanguage
-                        <*> field               -- ciLastMTime
-                        <*> field               -- ciLastIndexed
 
 type SourceFile = B.ByteString
 type SourceFileHash = Int

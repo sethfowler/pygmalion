@@ -12,14 +12,17 @@ data DBUpdate = DBUpdateDef DefUpdate
               | DBUpdateOverride Override
               | DBUpdateRef ReferenceUpdate
               | DBUpdateCommandInfo CommandInfo
+              | DBUpdateFile SourceFile Time
+              | DBUpdateInclusion Inclusion
               | DBResetMetadata SourceFile
                 deriving (Show)
                          
-data DBRequest = DBGetCommandInfo SourceFile (Response (Maybe CommandInfo))
+data DBRequest = DBGetCommandInfo SourceFile (Response (Maybe CommandInfo, Maybe Time))
                | DBGetSimilarCommandInfo SourceFile (Response (Maybe CommandInfo))
                | DBGetDefinition SourceLocation (Response [DefInfo])
                | DBGetInclusions SourceFile (Response [SourceFile])
                | DBGetIncluders SourceFile (Response [SourceFile])
+               | DBGetDirectIncluders SourceFile (Response [SourceFile])
                -- | DBGetIncluderInfo SourceFile (Response [CommandInfo])
                | DBGetInclusionHierarchy SourceFile (Response String)
                | DBGetCallers SourceLocation (Response [Invocation])

@@ -4,11 +4,8 @@ module Pygmalion.Index.Manager
 ( runIndexManager
 ) where
 
-import Control.Applicative
 import Control.Concurrent.STM
---import Control.Monad
 import Control.Monad.Reader
-import Data.Time.Clock.POSIX
 import System.Exit
 import System.Process
 
@@ -16,7 +13,7 @@ import Control.Concurrent.Chan.Len
 import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.Database.Request
---import Pygmalion.Index.Extension
+import Pygmalion.File
 import Pygmalion.Index.Request
 import Pygmalion.Index.Stream
 import Pygmalion.Log
@@ -24,25 +21,23 @@ import Pygmalion.Log
 runIndexManager :: Config -> DBUpdateChan -> DBQueryChan -> IndexStream -> IO ()
 runIndexManager cf dbUpdateChan dbQueryChan is = go
   where
-    ctx = IndexContext (ifPort cf) (idxCmd cf) is dbUpdateChan --dbQueryChan
-    getCI sfHash = callLenChan dbQueryChan $ DBGetCommandInfo sfHash
-    go = {-# SCC "indexThread" #-} do
+    ctx = IndexContext (ifPort cf) (idxCmd cf) is dbUpdateChan dbQueryChan
+    go = do
          req <- atomically $ getNextFileToIndex is
          case req of
              Index r -> do
-               mayCI <- atomically $ getLastIndexedCache is (reqSF r)
-               dirtiness <- fileDirtiness r (getCI . reqSF $ r) mayCI
-               flip runReaderT ctx $
+               flip runReaderT ctx $ do
+                dirtiness <- fileDirtiness r
+                logDirtiness r dirtiness
                 case dirtiness of
-                  NewFile t ci           -> index t ci
-                  NewInclusion _         -> error "Shouldn't get NewInclusion here"
-                  CommandChanged t ci    -> checkDeps t ci >>= reset >>= index t
-                  FileChanged t ci       -> checkDeps t ci >>= reset >>= index t
-                  DependencyChanged t ci -> reset ci >>= index t
-                  InclusionChanged _     -> error "Shouldn't get InclusionChanged here"
-                  Unchanged _            -> ignoreUnchanged
-                  Unreadable             -> ignoreUnreadable r
-                  Unknown                -> ignoreUnknown r
+                  NewFile ci t        -> updateCI ci >> updateFile r t >> index ci
+                  FileChanged ci t    -> checkDeps r >> reset ci >> updateFile r t >> index ci
+                  CommandChanged ci   -> checkDeps r >> reset ci >> updateCI ci >> index ci
+                  CheckDepsOnly t     -> checkDeps r >> updateFile r t
+                  FileDepChanged ci   -> checkDeps r >> reset ci >> index ci
+                  FileUnchanged       -> ignoreUnchanged
+                  FileUnreadable      -> ignoreUnreadable r
+                  FileUnknown         -> ignoreUnknown r
                atomically $ finishIndexingFile (icIndexStream ctx) (reqSF r)
                go
              Shutdown -> logInfo "Shutting down indexing thread"
@@ -52,75 +47,116 @@ data IndexContext = IndexContext
   , icIndexer      :: !String
   , icIndexStream  :: !IndexStream
   , icDBUpdateChan :: !DBUpdateChan
-  --, icDBQueryChan  :: !DBQueryChan
+  , icDBQueryChan  :: !DBQueryChan
   }
 type Indexer a = ReaderT IndexContext IO a
 
-checkDeps :: Time -> CommandInfo -> Indexer CommandInfo
-checkDeps _ ci = return ci
-{-
-checkDeps mtime ci = do
-  unless (hasSourceExtension $ ciSourceFile ci) $ do
+data FileDirtiness = NewFile CommandInfo Time
+                   | FileChanged CommandInfo Time
+                   | CommandChanged CommandInfo
+                   | CheckDepsOnly Time
+                   | FileDepChanged CommandInfo
+                   | FileUnchanged
+                   | FileUnreadable
+                   | FileUnknown
+                     deriving (Eq, Show)
+  
+-- Trigger indexing if this file is dirty.
+fileDirtiness :: IndexRequest -> Indexer FileDirtiness
+fileDirtiness req = do
     ctx <- ask
-    others <- otherFilesToReindex ci
-    forM_ others $ \f -> do
-      -- Don't even request indexing if the cache says the file isn't dirty.
-      mayLastCI <- lift $ atomically $ getLastIndexedCache (icIndexStream ctx) (ciSourceFile ci)
-      case mayLastCI of
-        Just lastCI
-          | ciLastIndexed lastCI < mtime -> indexDep f mtime
-          | otherwise                    -> return ()
-        Nothing                          -> indexDep f mtime
-  return ci
--}
+    mayDirtiness <- lift $ atomically $ dirtinessCacheLookup (icIndexStream ctx) (reqSF req)
+    mayLastCI <- lift $ atomically $ commandInfoCacheLookup (icIndexStream ctx) (reqSF req)
+    case (req, mayDirtiness, mayLastCI) of
+      (IndexAdd ci, Just HasNotChanged, Just lastCI)
+        | ci /= lastCI                                 -> return $ CommandChanged ci
+        | otherwise                                    -> return FileUnchanged
+      (IndexUpdate _, Just HasChangedDep, Just lastCI) -> return $ FileDepChanged lastCI
+      (_, Just HasChangedDep, _)                       -> fileDirtiness' True
+      _                                                -> fileDirtiness' False
+  where
+    fileDirtiness' hasChangedDep = do
+      ctx <- ask
+      mayMTime <- lift $ getMTime $ reqSF req
+      info <- callLenChan (icDBQueryChan ctx) $ DBGetCommandInfo (reqSF req)
+      case (req, info, mayMTime) of
+        (_, _, Nothing)                               -> return FileUnreadable
+        (IndexUpdate _, (Nothing, Nothing), _)        -> return FileUnknown
+        (IndexUpdate _, (Nothing, Just oldMTime), Just mtime)
+          | oldMTime /= mtime                         -> return $ CheckDepsOnly mtime
+          | hasChangedDep                             -> return $ CheckDepsOnly mtime
+          | otherwise                                 -> return FileUnchanged
+        (IndexUpdate _, (Just oldCI, Just oldMTime), Just mtime)
+          | oldMTime /= mtime                         -> return $ FileChanged oldCI mtime
+          | hasChangedDep                             -> return $ FileDepChanged oldCI
+          | otherwise                                 -> return FileUnchanged
+        (IndexAdd ci, (Nothing, Nothing), Just mtime) -> return $ NewFile ci mtime
+        (IndexAdd ci, (Just oldCI, Just oldMTime), Just mtime)
+          | oldMTime /= mtime                         -> return $ FileChanged ci mtime
+          | ci /= oldCI                               -> return $ CommandChanged ci
+          | hasChangedDep                             -> return $ FileDepChanged ci
+          | otherwise                                 -> return FileUnchanged
+        (_, _, _)                                     -> do logWarn $
+                                                              "Unexpected dirtiness for " ++
+                                                              show (reqSF req)
+                                                            return FileUnknown
 
-{-
-indexDep :: CommandInfo -> Time -> Indexer ()
-indexDep sf t = do
+logDirtiness :: IndexRequest -> FileDirtiness -> Indexer ()
+logDirtiness r (NewFile _ _)      = logInfo $ "Indexing new file " ++ show (reqSF r)
+logDirtiness r (FileChanged _ _)  = logInfo $ "Indexing changed file " ++ show (reqSF r)
+logDirtiness r (CommandChanged _) = logInfo $ "Indexing file with changed command "
+                                           ++ show (reqSF r)
+logDirtiness r (CheckDepsOnly _)  = logInfo $ "Checking deps only for file " ++ show (reqSF r)
+logDirtiness r (FileDepChanged _) = logInfo $ "Indexing file with changed dep "
+                                           ++ show (reqSF r)
+logDirtiness r FileUnchanged      = logInfo $ "Not indexing unchanged file " ++ show (reqSF r)
+logDirtiness r FileUnreadable     = logInfo $ "Not indexing unreadable file " ++ show (reqSF r)
+logDirtiness r FileUnknown        = logInfo $ "Not indexing unknown file " ++ show (reqSF r)
+
+checkDeps :: IndexRequest -> Indexer ()
+checkDeps req = do
   ctx <- ask
-  lift $ atomically $ addPendingIndex (icIndexStream ctx) (FromDepChange sf t False)
--}
+  others <- callLenChan (icDBQueryChan ctx) $ DBGetDirectIncluders (reqSF req)
+  forM_ others $ \f -> do
+    lift $ putStrLn $ "Adding a pending update for dep " ++ show f
+    lift $ atomically $ addPendingDepIndex (icIndexStream ctx) (IndexUpdate f)
 
-reset :: CommandInfo -> Indexer CommandInfo
+updateFile :: IndexRequest -> Time -> Indexer ()
+updateFile req t = do
+  ctx <- ask
+  let sf = reqSF req
+  lift $ atomically $ updateDirtinessCache (icIndexStream ctx) sf HasNotChanged
+  writeLenChan (icDBUpdateChan ctx) [DBUpdateFile sf t]
+
+updateCI :: CommandInfo -> Indexer ()
+updateCI ci = do
+  ctx <- ask
+  lift $ atomically $ updateDirtinessCache (icIndexStream ctx) (ciSourceFile ci) HasNotChanged
+  lift $ atomically $ updateCommandInfoCache (icIndexStream ctx) ci
+  writeLenChan (icDBUpdateChan ctx) [DBUpdateCommandInfo ci]
+
+reset :: CommandInfo -> Indexer ()
 reset ci = do
   ctx <- ask
   writeLenChan (icDBUpdateChan ctx) [DBResetMetadata $ ciSourceFile ci]
-  return ci
 
-index :: Time -> CommandInfo -> Indexer ()
-index mtime ci = go 1
+index :: CommandInfo -> Indexer ()
+index ci = go 1
   where
     go :: Int -> Indexer ()
     go retries = do
       ctx <- ask
-      let is = icIndexStream ctx
       let sf = ciSourceFile ci
-      time <- floor <$> lift getPOSIXTime
-
-      -- Do the actual indexing.
-      logInfo $ "Indexing " ++ show sf
+          
       (_, _, _, h) <- lift $ createProcess
                            (proc (icIndexer ctx) [show (icPort ctx), show ci])
       code <- lift $ waitForProcess h
 
-      -- Update the last indexed time.
       case (code, retries) of
-        (ExitSuccess, _) -> do let newCI = ci { ciLastMTime = mtime, ciLastIndexed = time }
-                               lift $ atomically $ updateLastIndexedCache is newCI
-                               updateCommand newCI
-        (_, 0)           -> do logInfo "Indexing process failed."
-                               -- Make sure we reindex next time.
-                               let newCI = ci { ciLastMTime = 0, ciLastIndexed = 0 }
-                               lift $ atomically $ updateLastIndexedCache is newCI
-                               updateCommand newCI
-        (_, _)           -> do logInfo "Indexing process failed; will retry..."
-                               go (retries - 1)
+        (ExitSuccess, _) -> return ()
+        (_, 0)           -> logInfo $ "Indexing process failed for " ++ show sf ++ "."
+        (_, _)           -> logInfo "Indexing process failed; will retry..." >> go (retries - 1)
 
---ignoreUnchanged :: IndexRequest -> Time -> Bool -> Indexer ()
---ignoreUnchanged req mtime cached = logInfo $ "Index is up-to-date for file "
---                                          ++ (show . reqSF $ req)
---                                          ++ " (file mtime: " ++ show mtime ++ ")"
---                                          ++ (if cached then " (cached)" else "")
 ignoreUnchanged :: Indexer ()
 ignoreUnchanged = return ()
 
@@ -131,17 +167,3 @@ ignoreUnknown req = logInfo $ "Not indexing unknown file "
 ignoreUnreadable :: IndexRequest -> Indexer ()
 ignoreUnreadable req = logInfo $ "Not indexing unreadable file "
                               ++ (show . reqSF $ req)
-
-{-
--- If the source file associated with this CommandInfo has changed, what must
--- we reindex?
-otherFilesToReindex :: CommandInfo -> Indexer [CommandInfo]
-otherFilesToReindex ci = do
-  ctx <- ask
-  callLenChan (icDBQueryChan ctx) $ DBGetIncluderInfo (ciSourceFile ci)
--}
-
-updateCommand :: CommandInfo -> Indexer ()
-updateCommand ci = do
-  ctx <- ask
-  writeLenChan (icDBUpdateChan ctx) [DBUpdateCommandInfo ci]

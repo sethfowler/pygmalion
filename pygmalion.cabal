@@ -61,6 +61,7 @@ library
                    Pygmalion.Database.Manager,
                    Pygmalion.Database.Request,
                    Pygmalion.Dot,
+                   Pygmalion.File,
                    Pygmalion.Idle,
                    Pygmalion.JSON,
                    Pygmalion.Log,

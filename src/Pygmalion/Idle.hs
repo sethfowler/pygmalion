@@ -17,7 +17,7 @@ import qualified Data.IntSet as Set
 import Control.Concurrent.Chan.Len
 import Pygmalion.Config
 import Pygmalion.Database.Request
-import Pygmalion.Index.Stream (clearLastIndexedCache, IndexStream (..))
+import Pygmalion.Index.Stream (clearCaches, IndexStream (..))
 import Pygmalion.Log
 
 data IdleRequest = IdleBarrier (Response ())
@@ -40,7 +40,7 @@ runIdleManager cf idleChan idxStream dbUpdateChan dbQueryChan = forever $ do
 onIdle :: IdleChan -> IndexStream -> IO ()
 onIdle idleChan idxStream = do
     logInfo "Returned to idle."
-    atomically $ clearLastIndexedCache idxStream
+    atomically $ clearCaches idxStream
     go
   where
     go = do !req <- readLenChan idleChan

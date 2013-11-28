@@ -49,7 +49,7 @@ serverApp ctx ad = do
     open
     conduit `onException` closeException
   where
-    getCI = {-# SCC "serverget" #-} get :: Get RPCRequest
+    getCI = get :: Get RPCRequest
 
     conduit = appSource ad $= conduitGet getCI =$= process [] 0 $$ appSink ad
 
@@ -110,8 +110,8 @@ data RPCServerContext = RPCServerContext
 type RPCServer a = ReaderT RPCServerContext IO a
 
 route :: RPCRequest -> RPCServer (Maybe ByteString)
-route (RPCIndexCommand ci)                   = sendIndex_ $ FromBuild ci False
-route (RPCIndexFile ci)                      = sendIndex_ $ FromNotify ci
+route (RPCIndexCommand ci)                   = sendIndex_ $ IndexAdd ci
+route (RPCIndexFile sf)                      = sendIndex_ $ IndexUpdate sf
 route (RPCGetCommandInfo sf)                 = sendQuery $ DBGetCommandInfo sf
 route (RPCGetSimilarCommandInfo sf)          = sendQuery $ DBGetSimilarCommandInfo sf
 route (RPCGetDefinition sl)                  = sendQuery $ DBGetDefinition sl
