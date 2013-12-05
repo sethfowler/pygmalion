@@ -30,14 +30,14 @@ runIndexManager cf dbUpdateChan dbQueryChan is = go
                 dirtiness <- fileDirtiness r
                 logDirtiness r dirtiness
                 case dirtiness of
-                  NewFile ci t        -> updateCI ci >> updateFile r t >> index ci
-                  FileChanged ci t    -> checkDeps r >> reset ci >> updateFile r t >> index ci
-                  CommandChanged ci   -> checkDeps r >> reset ci >> updateCI ci >> index ci
-                  CheckDepsOnly t     -> checkDeps r >> updateFile r t
-                  FileDepChanged ci   -> checkDeps r >> reset ci >> index ci
-                  FileUnchanged       -> ignoreUnchanged
-                  FileUnreadable      -> ignoreUnreadable r
-                  FileUnknown         -> ignoreUnknown r
+                  NewFile ci t      -> updateFileAndCI ci t >> index ci
+                  FileChanged ci t  -> checkDeps r >> resetAndUpdateFile ci t >> index ci
+                  CommandChanged ci -> checkDeps r >> resetAndUpdateCI ci >> index ci
+                  CheckDepsOnly     -> checkDeps r
+                  FileDepChanged ci -> checkDeps r >> reset ci >> index ci
+                  FileUnchanged     -> ignoreUnchanged
+                  FileUnreadable    -> ignoreUnreadable r
+                  FileUnknown       -> ignoreUnknown r
                atomically $ finishIndexingFile (icIndexStream ctx) (reqSF r)
                go
              Shutdown -> logInfo "Shutting down indexing thread"
@@ -54,7 +54,7 @@ type Indexer a = ReaderT IndexContext IO a
 data FileDirtiness = NewFile CommandInfo Time
                    | FileChanged CommandInfo Time
                    | CommandChanged CommandInfo
-                   | CheckDepsOnly Time
+                   | CheckDepsOnly
                    | FileDepChanged CommandInfo
                    | FileUnchanged
                    | FileUnreadable
@@ -83,8 +83,8 @@ fileDirtiness req = do
         (_, _, Nothing)                               -> return FileUnreadable
         (IndexUpdate _, (Nothing, Nothing), _)        -> return FileUnknown
         (IndexUpdate _, (Nothing, Just oldMTime), Just mtime)
-          | oldMTime /= mtime                         -> return $ CheckDepsOnly mtime
-          | hasChangedDep                             -> return $ CheckDepsOnly mtime
+          | oldMTime /= mtime                         -> return CheckDepsOnly
+          | hasChangedDep                             -> return CheckDepsOnly
           | otherwise                                 -> return FileUnchanged
         (IndexUpdate _, (Just oldCI, Just oldMTime), Just mtime)
           | oldMTime /= mtime                         -> return $ FileChanged oldCI mtime
@@ -106,7 +106,7 @@ logDirtiness r (NewFile _ _)      = logInfo $ "Indexing new file " ++ show (reqS
 logDirtiness r (FileChanged _ _)  = logInfo $ "Indexing changed file " ++ show (reqSF r)
 logDirtiness r (CommandChanged _) = logInfo $ "Indexing file with changed command "
                                            ++ show (reqSF r)
-logDirtiness r (CheckDepsOnly _)  = logInfo $ "Checking deps only for file " ++ show (reqSF r)
+logDirtiness r CheckDepsOnly      = logInfo $ "Checking deps only for file " ++ show (reqSF r)
 logDirtiness r (FileDepChanged _) = logInfo $ "Indexing file with changed dep "
                                            ++ show (reqSF r)
 logDirtiness r FileUnchanged      = logInfo $ "Not indexing unchanged file " ++ show (reqSF r)
@@ -121,19 +121,31 @@ checkDeps req = do
     lift $ putStrLn $ "Adding a pending update for dep " ++ show f
     lift $ atomically $ addPendingDepIndex (icIndexStream ctx) (IndexUpdate f)
 
-updateFile :: IndexRequest -> Time -> Indexer ()
-updateFile req t = do
+resetAndUpdateFile :: CommandInfo -> Time -> Indexer ()
+resetAndUpdateFile ci t = do
   ctx <- ask
-  let sf = reqSF req
+  let sf = ciSourceFile ci
   lift $ atomically $ updateDirtinessCache (icIndexStream ctx) sf HasNotChanged
-  writeLenChan (icDBUpdateChan ctx) [DBUpdateFile sf t]
+  writeLenChan (icDBUpdateChan ctx) [DBResetMetadata sf,
+                                     DBUpdateFile sf t]
 
-updateCI :: CommandInfo -> Indexer ()
-updateCI ci = do
+resetAndUpdateCI :: CommandInfo -> Indexer ()
+resetAndUpdateCI ci = do
   ctx <- ask
+  let sf = ciSourceFile ci
   lift $ atomically $ updateDirtinessCache (icIndexStream ctx) (ciSourceFile ci) HasNotChanged
   lift $ atomically $ updateCommandInfoCache (icIndexStream ctx) ci
-  writeLenChan (icDBUpdateChan ctx) [DBUpdateCommandInfo ci]
+  writeLenChan (icDBUpdateChan ctx) [DBResetMetadata sf,
+                                     DBUpdateCommandInfo ci]
+
+updateFileAndCI :: CommandInfo -> Time -> Indexer ()
+updateFileAndCI ci t = do
+  ctx <- ask
+  let sf = ciSourceFile ci
+  lift $ atomically $ updateDirtinessCache (icIndexStream ctx) sf HasNotChanged
+  lift $ atomically $ updateCommandInfoCache (icIndexStream ctx) ci
+  writeLenChan (icDBUpdateChan ctx) [DBUpdateFile sf t,
+                                     DBUpdateCommandInfo ci]
 
 reset :: CommandInfo -> Indexer ()
 reset ci = do
