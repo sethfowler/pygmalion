@@ -169,7 +169,7 @@ updateAndFindDirtyInclusions sfHash is v = do
     -- Process the inclusions and determine which inclusions are actually dirty.
     -- For inclusions which *are* dirty, we update the dirtiness cache to mark
     -- them as not having changed, since we're about to index them.
-    (dirtyIncs, cleanIncs, reqs) <- foldM checkDirtiness ([], [], []) currentIncs
+    (cleanIncs, dirtyIncs, reqs) <- foldM checkDirtiness ([], [], []) currentIncs
 
     -- We update the dirtiness cache to mark each inclusion as not having changed,
     -- since either that's true now or we're about to index them.
