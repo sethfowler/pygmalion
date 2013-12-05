@@ -38,7 +38,7 @@ module Pygmalion.Database.IO
 ) where
 
 import Control.Applicative
-import Control.Exception (bracket)
+import Control.Exception (bracket, bracket_)
 import Control.Monad
 import qualified Data.ByteString as B
 import Data.Hashable
@@ -113,12 +113,11 @@ ensureDB :: IO ()
 ensureDB = withDB (const . return $ ())
 
 withDB :: (DBHandle -> IO a) -> IO a
-withDB f = bracket (openDB dbFile) closeDB f
+withDB = bracket (openDB dbFile) closeDB
 
 withTransaction :: DBHandle -> IO a -> IO a
-withTransaction h f = bracket (execStatement h beginTransactionStmt ())
-                              (const $ execStatement h endTransactionStmt ())
-                              (const f)
+withTransaction h = bracket_ (execStatement h beginTransactionStmt ())
+                             (execStatement h endTransactionStmt ())
 
 beginTransaction :: DBHandle -> IO ()
 beginTransaction h = execStatement h beginTransactionStmt ()

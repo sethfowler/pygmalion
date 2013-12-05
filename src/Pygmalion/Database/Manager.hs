@@ -37,7 +37,7 @@ runDatabaseManager updateChan queryChan iStream = do
     go !ctx !n !s = {-# SCC "databaseThread" #-}
            do !item <- atomically $ readFromChannels updateChan queryChan
               case item of
-                Left ups         -> runReaderT (routeUpdates ups) ctx >> go ctx (n+1) s
+                Left ups         -> routeUpdates ctx ups >> go ctx (n+1) s
                 Right DBShutdown -> logInfo "Shutting down DB thread"
                 Right req        -> runReaderT (route req) ctx >> go ctx (n+1) s
                 
@@ -54,16 +54,19 @@ data DBContext = DBContext
   }
 type DB a = ReaderT DBContext IO a
 
-routeUpdates :: [DBUpdate] -> DB ()
-routeUpdates ups = mapM_ routeUpdate ups
+routeUpdates :: DBContext -> [DBUpdate] -> IO ()
+routeUpdates ctx ups =
+    withTransaction (dbHandle ctx) $
+      forM_ ups $ \up ->
+        runReaderT (routeUpdate up) ctx
   where
-    routeUpdate (DBUpdateDef !di)            = update "definition" updateDef di
-    routeUpdate (DBUpdateRef !rf)            = update "reference" updateReference rf
-    routeUpdate (DBUpdateOverride !ov)       = update "override" updateOverride ov
-    routeUpdate (DBUpdateCommandInfo !ci)    = update "command info" updateSourceFile ci
-    routeUpdate (DBUpdateFile !sf !t)        = update2 "file" updateFile sf t
-    routeUpdate (DBUpdateInclusion !ic)      = update "inclusion" updateInclusion ic
-    routeUpdate (DBResetMetadata !sf)        = update "resetted metadata" resetMetadata sf
+    routeUpdate (DBUpdateDef !di)         = update "definition" updateDef di
+    routeUpdate (DBUpdateRef !rf)         = update "reference" updateReference rf
+    routeUpdate (DBUpdateOverride !ov)    = update "override" updateOverride ov
+    routeUpdate (DBUpdateCommandInfo !ci) = update "command info" updateSourceFile ci
+    routeUpdate (DBUpdateFile !sf !t)     = update2 "file" updateFile sf t
+    routeUpdate (DBUpdateInclusion !ic)   = update "inclusion" updateInclusion ic
+    routeUpdate (DBResetMetadata !sf)     = update "resetted metadata" resetMetadata sf
     
 route :: DBRequest -> DB ()
 route (DBGetCommandInfo !f !v)                   = getCommandInfoQuery f v
