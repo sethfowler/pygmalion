@@ -46,6 +46,7 @@ import Data.Conduit.Network.Unix
 import Data.Serialize
 import Data.Typeable
 import Network.Socket
+import System.IO.Error
 import System.Timeout
 
 import Pygmalion.Config
@@ -76,10 +77,10 @@ runRPC :: RPC a -> RPCConnection -> IO a
 runRPC = Reader.runReaderT
 
 rpcDone :: RPC ()
-rpcDone = callRPC_ RPCDone =<< Reader.ask
+rpcDone = callRPCInfallible_ RPCDone =<< Reader.ask
 
 rpcStop :: RPC ()
-rpcStop = callRPC_ RPCStop =<< Reader.ask
+rpcStop = callRPCInfallible_ RPCStop =<< Reader.ask
 
 rpcWait :: RPC ()
 rpcWait = callRPCWaitForever RPCWait =<< Reader.ask
@@ -170,8 +171,16 @@ callRPC req conn = liftIO $ do
         _                    -> throw $ RPCException "Unexpected result from server"
 
 callRPC_ :: RPCRequest -> RPCConnection -> RPC ()
-callRPC_ req conn = liftIO $ ensureCompleted =<< timeout 100000000 conduit 
+callRPC_ req conn = liftIO timedConduit
   where
+    timedConduit = ensureCompleted =<< timeout 100000000 conduit 
+    conduit = process $$ sinkSocket conn
+    process = yield (encode req)
+
+callRPCInfallible_ :: RPCRequest -> RPCConnection -> RPC ()
+callRPCInfallible_ req conn = liftIO $ catchIOError timedConduit (const $ return ())
+  where
+    timedConduit = ensureCompleted =<< timeout 100000000 conduit 
     conduit = process $$ sinkSocket conn
     process = yield (encode req)
 

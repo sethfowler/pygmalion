@@ -18,7 +18,6 @@ import Data.Conduit.Network.Unix
 import Data.Serialize
 import Data.Typeable
 
-import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan.Len
 import Pygmalion.Config
@@ -67,8 +66,7 @@ serverApp ctx ad = do
       conns <- takeMVar (rsConnections ctx)
       let newConns = conns - v
       putMVar (rsConnections ctx) newConns
-      when (newConns < 0) $ do
-        threadDelay 100  -- Give the final client time to disconnect.
+      when (newConns < 0) $
         throwTo (rsThread ctx) RPCServerExit -- Terminate the server.
 
     process :: [DBUpdate] -> Int -> ConduitM RPCRequest ByteString IO ()
