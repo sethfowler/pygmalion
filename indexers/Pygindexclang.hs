@@ -29,11 +29,11 @@ main = do
 
 parseArgs :: [String] -> IO ()
 parseArgs ["--ast", file] = printAST file
-parseArgs [port, ci]      = index (read port) (read ci)
+parseArgs [path, ci]      = index path (read ci)
 parseArgs _               = error "Invalid arguments"
 
-index :: Port -> CommandInfo -> IO ()
-index port ci = withRPCRaw port (runSourceAnalyses ci)
+index :: FilePath -> CommandInfo -> IO ()
+index path ci = withRPCRaw path (runSourceAnalyses ci)
                 
 printAST :: FilePath -> IO ()
 printAST f = do

@@ -2,8 +2,6 @@
 # this is the same result you'd get if you had a totally blank configuration
 # file. If you don't include a certain setting in your configuration file, it
 # will receive its default value.
-address: 127.0.0.1
-port: 7999
 make: make CC="$(idx) $(idxargs) $(cc) $(ccargs)" CXX="$(idx) $(idxargs) $(cpp) $(cppargs)" $(makeargs)
 # Note that the full flexibility of 'make' is usually not necessary. For most users, 'makeArgs' is enough.
 # For example, to execute the equivalent of 'make -f client.mk' you would use:

@@ -35,7 +35,6 @@ module Pygmalion.RPC.Client
 , rpcUpdateAndFindDirtyInclusions
 ) where
 
-import Control.Applicative
 import Control.Concurrent (newEmptyMVar, takeMVar, putMVar)
 import Control.Exception
 import Control.Monad.Trans
@@ -43,7 +42,7 @@ import qualified Control.Monad.Trans.Reader as Reader
 import Data.ByteString.Char8 ()
 import Data.Conduit
 import Data.Conduit.Cereal
-import Data.Conduit.Network
+import Data.Conduit.Network.Unix
 import Data.Serialize
 import Data.Typeable
 import Network.Socket
@@ -57,10 +56,10 @@ type RPC a = Reader.ReaderT RPCConnection IO a
 type RPCConnection = Socket
 
 openRPC :: Config -> IO RPCConnection
-openRPC config = fst <$> getSocket "127.0.0.1" (ifPort config)
+openRPC config = getSocket (socketPath config)
 
-openRPCRaw :: Port -> IO RPCConnection
-openRPCRaw port = fst <$> getSocket "127.0.0.1" port
+openRPCRaw :: FilePath -> IO RPCConnection
+openRPCRaw path = getSocket path
 
 closeRPC :: RPCConnection -> IO ()
 closeRPC conn = do
@@ -70,8 +69,8 @@ closeRPC conn = do
 withRPC :: Config -> (RPCConnection -> IO a) -> IO a
 withRPC config = bracket (openRPC config) closeRPC
 
-withRPCRaw :: Port -> (RPCConnection -> IO a) -> IO a
-withRPCRaw port = bracket (openRPCRaw port) closeRPC
+withRPCRaw :: FilePath -> (RPCConnection -> IO a) -> IO a
+withRPCRaw path = bracket (openRPCRaw path) closeRPC
 
 runRPC :: RPC a -> RPCConnection -> IO a
 runRPC = Reader.runReaderT

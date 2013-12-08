@@ -21,7 +21,7 @@ import Pygmalion.Log
 runIndexManager :: Config -> DBUpdateChan -> DBQueryChan -> IndexStream -> IO ()
 runIndexManager cf dbUpdateChan dbQueryChan is = go
   where
-    ctx = IndexContext (ifPort cf) (idxCmd cf) is dbUpdateChan dbQueryChan
+    ctx = IndexContext cf is dbUpdateChan dbQueryChan
     go = do
          req <- atomically $ getNextFileToIndex is
          case req of
@@ -43,8 +43,7 @@ runIndexManager cf dbUpdateChan dbQueryChan is = go
              Shutdown -> logInfo "Shutting down indexing thread"
 
 data IndexContext = IndexContext
-  { icPort         :: !Port
-  , icIndexer      :: !String
+  { icConfig       :: !Config
   , icIndexStream  :: !IndexStream
   , icDBUpdateChan :: !DBUpdateChan
   , icDBQueryChan  :: !DBQueryChan
@@ -159,9 +158,10 @@ index ci = go 1
     go retries = do
       ctx <- ask
       let sf = ciSourceFile ci
+          conf = icConfig ctx
           
       (_, _, _, h) <- lift $ createProcess
-                           (proc (icIndexer ctx) [show (icPort ctx), show ci])
+                           (proc (idxCmd conf) [socketPath conf, show ci])
       code <- lift $ waitForProcess h
 
       case (code, retries) of

@@ -33,7 +33,7 @@ library
                    json,
                    mtl,
                    network,
-                   network-conduit,
+                   network-conduit >= 1.0.1,
                    process,
                    safe,
                    sqlite-simple,

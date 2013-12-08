@@ -36,6 +36,7 @@ module Pygmalion.Core
 , pygmalionDir
 , dbFile
 , configFile
+, socketFile
 , compileCommandsFile
 , tagsFile
 ) where
@@ -251,9 +252,10 @@ daemonExecutable = "pygd"
 indexExecutable  = "pygindex-clang"
 
 -- Data files.
-pygmalionDir, dbFile, configFile, compileCommandsFile, tagsFile :: FilePath
+pygmalionDir, dbFile, configFile, socketFile, compileCommandsFile, tagsFile :: FilePath
 pygmalionDir        = ".pygmalion"
 dbFile              = pygmalionDir </> "index.sqlite"
 configFile          = pygmalionDir </> "pygmalion.yaml"
+socketFile          = pygmalionDir </> "socket"
 compileCommandsFile = "compile_commands.json"
 tagsFile            = "TAGS"

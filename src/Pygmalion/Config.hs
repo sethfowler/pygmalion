@@ -37,9 +37,7 @@ import Pygmalion.Log
 --   -DCMAKE_CXX_FLAGS="$(idxargs) $(cxx) $(cxxargs)"
 
 data Config = Config
-  { ifAddr     :: String   -- Address of interface to bind to.
-  , ifPort     :: Port     -- Port to bind to.
-  , makeCmd    :: String   -- Format string for the make command. See above.
+  { makeCmd    :: String   -- Format string for the make command. See above.
   , makeArgs   :: String   -- Format string for the make command. See above.
   , ccCmd      :: String   -- C compiler executable to use.
   , ccArgs     :: String   -- Extra C compiler args, if any.
@@ -52,13 +50,12 @@ data Config = Config
   , idleDelay  :: Int64    -- Numbers of seconds with no activity before we're idle.
   , logLevel   :: Priority -- The level of logging to enable.
   , projectDir :: FilePath -- The location of ".pygmalion". Set automatically.
+  , socketPath :: FilePath -- The location of ".pygmalion/socket". Set automatically.
   } deriving (Eq, Show)
 
 defaultConfig :: Config
 defaultConfig = Config
-  { ifAddr     = "127.0.0.1"
-  , ifPort     = 7999
-  , makeCmd    = "make CC=\"$(idx) $(idxargs) $(cc) $(ccargs)\" " ++
+  { makeCmd    = "make CC=\"$(idx) $(idxargs) $(cc) $(ccargs)\" " ++
                  "CXX=\"$(idx) $(idxargs) $(cpp) $(cppargs)\" $(makeargs)"
   , makeArgs   = ""
   , ccCmd      = "clang"
@@ -72,6 +69,7 @@ defaultConfig = Config
   , idleDelay  = 1
   , logLevel   = INFO
   , projectDir = ""
+  , socketPath = ""
   }
 
 instance FromJSON Priority where
@@ -88,9 +86,7 @@ instance FromJSON Priority where
 
 instance FromJSON Config where
   parseJSON (Object o) =
-    Config <$> o .:? "address"             .!= ifAddr defaultConfig
-           <*> o .:? "port"                .!= ifPort defaultConfig
-           <*> o .:? "make"                .!= makeCmd defaultConfig
+    Config <$> o .:? "make"                .!= makeCmd defaultConfig
            <*> o .:? "makeArgs"            .!= makeArgs defaultConfig
            <*> o .:? "cc"                  .!= ccCmd defaultConfig
            <*> o .:? "ccArgs"              .!= ccArgs defaultConfig
@@ -103,36 +99,39 @@ instance FromJSON Config where
            <*> o .:? "idleDelay"           .!= idleDelay defaultConfig
            <*> o .:? "logLevel"            .!= logLevel defaultConfig
            <*> pure (projectDir defaultConfig)
+           <*> pure (socketPath defaultConfig)
   parseJSON _ = mzero
 
-findConfigFile :: FilePath -> IO (FilePath, FilePath)
+findConfigFile :: FilePath -> IO (FilePath, FilePath, FilePath)
 findConfigFile dir = do
   let dirConfigFile = dir </> configFile
+      dirSocketPath = dir </> socketFile
   exists <- doesFileExist dirConfigFile
 
   case (exists, dir) of
-    (True, _)    -> return (dir, dirConfigFile)
+    (True, _)    -> return (dir, dirConfigFile, dirSocketPath)
     (False, "")  -> error "Couldn't locate pygmalion configuration file"
     (False, "/") -> error "Couldn't locate pygmalion configuration file"
     _            -> findConfigFile $ takeDirectory dir
 
-checkError :: FilePath -> ParseException -> IO Config
-checkError dir (UnexpectedEvent Nothing
-                (Just EventStreamStart)) = return $ defaultConfig { projectDir = dir }
-checkError dir (UnexpectedEvent (Just EventStreamEnd)
-                (Just EventDocumentStart)) = return $ defaultConfig { projectDir = dir }
-checkError _ ex = reportError . show $ ex
-
 reportError :: String -> IO a
 reportError err = error $ "Couldn't parse configuration file: " ++ err
 
-checkConfig :: FilePath -> Config -> IO Config
-checkConfig dir conf@Config { ifPort = port }
-  | port == 0 = reportError "Port 0 is invalid"
-  | otherwise = return $ conf { projectDir = dir }
+checkError :: ParseException -> IO Config
+checkError (UnexpectedEvent Nothing (Just EventStreamStart)) =
+  return defaultConfig
+checkError (UnexpectedEvent (Just EventStreamEnd) (Just EventDocumentStart)) =
+  return defaultConfig
+checkError ex = reportError . show $ ex
+
+checkConfig :: Config -> IO Config
+checkConfig = return  -- We don't do any checks right now.
 
 getConfiguration :: IO Config
 getConfiguration = do
-  (dir, conf) <- findConfigFile =<< getCurrentDirectory
-  result <- decodeEither' <$> B.readFile conf
-  either (checkError dir) (checkConfig dir) result
+  (dir, confFile, sock) <- findConfigFile =<< getCurrentDirectory
+  result <- decodeEither' <$> B.readFile confFile
+  conf <- either checkError checkConfig result
+  return $ conf { projectDir = dir,
+                  socketPath = sock
+                }

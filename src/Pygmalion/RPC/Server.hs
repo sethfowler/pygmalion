@@ -14,11 +14,11 @@ import Control.Monad.Reader
 import Data.ByteString.Char8 (ByteString)
 import Data.Conduit
 import Data.Conduit.Cereal
-import Data.Conduit.Network
+import Data.Conduit.Network.Unix
 import Data.Serialize
-import Data.String
 import Data.Typeable
 
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan.Len
 import Pygmalion.Config
@@ -33,16 +33,15 @@ runRPCServer :: Config -> IndexStream -> DBUpdateChan -> DBQueryChan -> IdleChan
 runRPCServer cf iStream dbUpdateChan dbQueryChan idleChan = do
     conns <- newMVar 0
     threadId <- myThreadId
-    runTCPServer settings (serverApp $ RPCServerContext threadId
-                                                        iStream
-                                                        dbUpdateChan
-                                                        dbQueryChan
-                                                        idleChan
-                                                        conns)
+    runUnixServer settings (serverApp $ RPCServerContext threadId
+                                                         iStream
+                                                         dbUpdateChan
+                                                         dbQueryChan
+                                                         idleChan
+                                                         conns)
   where
-    settings = serverSettings port addr :: ServerSettings IO
-    port = ifPort cf
-    addr = fromString $ ifAddr cf
+    settings = serverSettings path :: ServerSettings IO
+    path = socketPath cf
 
 serverApp :: RPCServerContext -> Application IO
 serverApp ctx ad = do
@@ -68,7 +67,8 @@ serverApp ctx ad = do
       conns <- takeMVar (rsConnections ctx)
       let newConns = conns - v
       putMVar (rsConnections ctx) newConns
-      when (newConns < 0) $
+      when (newConns < 0) $ do
+        threadDelay 100  -- Give the final client time to disconnect.
         throwTo (rsThread ctx) RPCServerExit -- Terminate the server.
 
     process :: [DBUpdate] -> Int -> ConduitM RPCRequest ByteString IO ()
