@@ -97,7 +97,7 @@ defsAnalysis conn dirtyFiles tu = do
 
 defsVisitor :: RPCConnection -> Set.IntSet -> TranslationUnit -> FileCache
             -> C.Cursor -> ClangApp s FileCache
-defsVisitor conn dirtyFiles tu fileCache cursor = do
+defsVisitor conn dirtyFiles tu fileCache cursor = liftIO $ runClangApp $ do
   (loc, fileCache') <- getCursorLocation fileCache dirtyFiles cursor
   -- TODO: What to do about inclusions that aren't normal inclusions?
   -- Ones that are intended to be multiply included, etc?
