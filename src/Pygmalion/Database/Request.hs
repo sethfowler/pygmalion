@@ -12,7 +12,7 @@ data DBUpdate = DBUpdateDef DefUpdate
               | DBUpdateOverride Override
               | DBUpdateRef ReferenceUpdate
               | DBUpdateCommandInfo CommandInfo
-              | DBUpdateFile SourceFile Time
+              | DBUpdateFile SourceFile Time TimeHash
               | DBUpdateInclusion Inclusion
               | DBResetMetadata SourceFile
                 deriving (Show)
@@ -34,8 +34,8 @@ data DBRequest = DBGetCommandInfo SourceFile (Response (Maybe CommandInfo, Maybe
                | DBGetReferenced SourceLocation (Response (Maybe SourceReferenced))
                | DBGetDeclReferenced SourceLocation (Response [DefInfo])
                | DBGetHierarchy SourceLocation (Response String)
-               | DBUpdateAndFindDirtyInclusions SourceFileHash [Inclusion]
-                                                (Response [SourceFileHash])
+               -- | DBUpdateAndFindDirtyInclusions SourceFileHash [Inclusion]
+               --                                  (Response [SourceFileHash])
                | DBShutdown
                  deriving (Show)
 

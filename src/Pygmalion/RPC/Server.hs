@@ -21,8 +21,10 @@ import Data.Typeable
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan.Len
 import Pygmalion.Config
+import Pygmalion.Core
 import Pygmalion.Database.Request
 import Pygmalion.Idle
+import Pygmalion.Index.Manager
 import Pygmalion.Index.Request
 import Pygmalion.Index.Stream
 import Pygmalion.Log
@@ -108,8 +110,8 @@ data RPCServerContext = RPCServerContext
 type RPCServer a = ReaderT RPCServerContext IO a
 
 route :: RPCRequest -> RPCServer (Maybe ByteString)
-route (RPCIndexCommand ci)                   = sendIndex_ $ IndexAdd ci
-route (RPCIndexFile sf)                      = sendIndex_ $ IndexUpdate sf
+route (RPCIndexCommand ci mtime)             = sendIndex_ $ indexRequestForCommand ci mtime
+route (RPCIndexFile sf mtime)                = sendIndex_ $ indexRequestForUpdate sf mtime
 route (RPCGetCommandInfo sf)                 = sendQuery $ DBGetCommandInfo sf
 route (RPCGetSimilarCommandInfo sf)          = sendQuery $ DBGetSimilarCommandInfo sf
 route (RPCGetDefinition sl)                  = sendQuery $ DBGetDefinition sl
@@ -125,7 +127,7 @@ route (RPCGetHierarchy sl)                   = sendQuery $ DBGetHierarchy sl
 route (RPCGetInclusions sf)                  = sendQuery $ DBGetInclusions sf
 route (RPCGetIncluders sf)                   = sendQuery $ DBGetIncluders sf
 route (RPCGetInclusionHierarchy sf)          = sendQuery $ DBGetInclusionHierarchy sf
-route (RPCUpdateAndFindDirtyInclusions s is) = sendQuery $ DBUpdateAndFindDirtyInclusions s is
+route (RPCUpdateAndFindDirtyInclusions s is) = doUpdateInclusions s is
 route (RPCWait)                              = sendWait_
 route (RPCLog s)                             = logInfo s >> return Nothing
 route (RPCPing)                              = return . Just $! encode (RPCOK ())
@@ -145,6 +147,12 @@ sendQuery :: Serialize a => (Response a -> DBRequest) -> RPCServer (Maybe ByteSt
 sendQuery !req = do
   ctx <- ask
   result <- callLenChan (rsDBQueryChan ctx) req
+  return . Just $! encode (RPCOK result)
+
+doUpdateInclusions :: SourceFileHash -> [Inclusion] -> RPCServer (Maybe ByteString)
+doUpdateInclusions !s !is = do
+  ctx <- ask
+  result <- lift $ updateInclusions (rsIndexStream ctx) (rsDBUpdateChan ctx) s is
   return . Just $! encode (RPCOK result)
 
 sendWait_ :: RPCServer (Maybe ByteString)

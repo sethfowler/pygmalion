@@ -9,12 +9,15 @@ module Pygmalion.Database.IO
 , resetMetadata
 , updateFile
 , getLastMTime
+, getAllFiles
 , updateInclusion
 , getInclusions
 , getIncluders
 --, getIncluderInfo
 , getDirectIncluders
+, getDirectIncluderHashes
 , getDirectInclusions
+, getDirectInclusionHashes
 , getInclusionHierarchy
 , updateSourceFile
 , getAllSourceFiles
@@ -80,9 +83,11 @@ data DBHandle = DBHandle
     --, postResetInclusionsStmt         :: Statement
     --, getInclusionsStmt               :: Statement
     , getDirectInclusionsStmt         :: Statement
+    , getDirectInclusionHashesStmt    :: Statement
     --, getIncludersStmt                :: Statement
     --, getIncluderInfoStmt             :: Statement
     , getDirectIncludersStmt          :: Statement
+    , getDirectIncluderHashesStmt     :: Statement
     , updateSourceFileStmt            :: Statement
     , getCommandInfoStmt              :: Statement
     , getSimilarCommandInfoStmt       :: Statement
@@ -148,9 +153,11 @@ openDB db = labeledCatch "openDB" $ do
              -- <*> openStatement c (mkQueryT postResetInclusionsSQL)
              -- <*> openStatement c (mkQueryT getInclusionsSQL)
              <*> openStatement c (mkQueryT getDirectInclusionsSQL)
+             <*> openStatement c (mkQueryT getDirectInclusionHashesSQL)
              -- <*> openStatement c (mkQueryT getIncludersSQL)
              -- <*> openStatement c (mkQueryT getIncluderInfoSQL)
              <*> openStatement c (mkQueryT getDirectIncludersSQL)
+             <*> openStatement c (mkQueryT getDirectIncluderHashesSQL)
              <*> openStatement c (mkQueryT updateSourceFileSQL)
              <*> openStatement c (mkQueryT getCommandInfoSQL)
              <*> openStatement c (mkQueryT getSimilarCommandInfoSQL)
@@ -187,9 +194,11 @@ closeDB h = do
   -- closeStatement (postResetInclusionsStmt h)
   -- closeStatement (getInclusionsStmt h)
   closeStatement (getDirectInclusionsStmt h)
+  closeStatement (getDirectInclusionHashesStmt h)
   -- closeStatement (getIncludersStmt h)
   --closeStatement (getIncluderInfoStmt h)
   closeStatement (getDirectIncludersStmt h)
+  closeStatement (getDirectIncluderHashesStmt h)
   closeStatement (updateSourceFileStmt h)
   closeStatement (getCommandInfoStmt h)
   closeStatement (getSimilarCommandInfoStmt h)
@@ -280,7 +289,7 @@ dbToolName = "pygmalion"
 
 dbMajorVersion, dbMinorVersion :: Int
 dbMajorVersion = 0
-dbMinorVersion = 26
+dbMinorVersion = 27
 
 defineMetadataTable :: Connection -> IO ()
 defineMetadataTable c = execute_ c (mkQueryT sql)
@@ -314,17 +323,16 @@ defineFilesTable c = do
     sql = T.concat [ "create table if not exists Files(          "
                    , "Hash integer primary key unique not null,  "
                    , "Name text not null collate nocase,         "
-                   , "LastMTime integer not null)"               ]
+                   , "LastMTime integer not null,                "
+                   , "VersionHash integer not null)"             ]
     indexSQL = "create index if not exists FilesNameIndex on Files(Name collate nocase)"
 
-updateFile :: DBHandle -> SourceFile -> Time -> IO ()
-updateFile h sf mt = do
-  let sfHash = hash sf
-  execStatement h updateFileStmt (sf, sfHash, mt)
+updateFile :: DBHandle -> SourceFile -> Time -> TimeHash -> IO ()
+updateFile h sf mt vh = execStatement h updateFileStmt (sf, hash sf, mt, vh)
 
 updateFileSQL :: T.Text
 updateFileSQL =
-  "replace into Files (Name, Hash, LastMTime) values (?, ?, ?)"
+  "replace into Files (Name, Hash, LastMTime, VersionHash) values (?, ?, ?, ?)"
 
 getLastMTime :: DBHandle -> SourceFileHash -> IO (Maybe Time)
 getLastMTime h sfHash = do
@@ -335,6 +343,11 @@ getLastMTime h sfHash = do
 
 getLastMTimeSQL :: T.Text
 getLastMTimeSQL = "select LastMTime from Files where Hash=?"
+
+getAllFiles :: DBHandle -> IO [(SourceFile, Time, TimeHash)]
+getAllFiles h = query_ (conn h) (mkQueryT sql)
+  where
+    sql = "select Name, LastMTime, VersionHash from Files" 
 
 -- Schema and operations for the Inclusions table.
 defineInclusionsTable :: Connection -> IO ()
@@ -406,6 +419,14 @@ getDirectInclusionsSQL = T.concat
   , "join Files as F on I.Inclusion = F.Hash       "
   , "where I.Includer = ?" ]
 
+getDirectInclusionHashes :: DBHandle -> SourceFileHash -> IO [SourceFileHash]
+getDirectInclusionHashes h sfHash = do
+  hashes <- execQuery h getDirectInclusionHashesStmt (Only sfHash)
+  return $ map unwrapSourceFileHash hashes
+
+getDirectInclusionHashesSQL :: T.Text
+getDirectInclusionHashesSQL = "select Inclusion from Inclusions where Includer = ?"
+
 getIncluders :: DBHandle -> SourceFile -> IO [SourceFile]
 getIncluders = getDirectIncluders  -- TODO FIXME
 
@@ -450,6 +471,14 @@ getDirectIncludersSQL = T.concat
   , "from Inclusions as I                    "
   , "join Files as F on I.Includer = F.Hash  "
   , "where I.Inclusion = ?"                  ]
+
+getDirectIncluderHashes :: DBHandle -> SourceFileHash -> IO [SourceFileHash]
+getDirectIncluderHashes h sfHash = do
+  hashes <- execQuery h getDirectIncluderHashesStmt (Only sfHash)
+  return $ map unwrapSourceFileHash hashes
+
+getDirectIncluderHashesSQL :: T.Text
+getDirectIncluderHashesSQL = "select Includer from Inclusions where Inclusion = ?"
 
 getInclusionHierarchy :: DBHandle -> SourceFile -> IO String
 getInclusionHierarchy h sf = asDot <$> generateHierarchy

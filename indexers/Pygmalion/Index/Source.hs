@@ -54,9 +54,12 @@ displayAST ci = do
 inclusionsAnalysis :: RPCConnection -> SourceFileHash -> TranslationUnit
                    -> ClangApp s Set.IntSet
 inclusionsAnalysis conn sfHash tu = do
+    {-
     clangIncPath <- mkSourceFile <$> liftIO libclangIncludePath
     incs <- DVS.filterM (prefixIsNot clangIncPath)
         =<< TV.getInclusions tu
+    -}
+    incs <- TV.getInclusions tu
     incs' <- mapM toInclusion $ DVS.toList incs
     dirtyIncs <- liftIO $ runRPC (rpcUpdateAndFindDirtyInclusions sfHash incs') conn
     -- We include the source file itself in the list of dirty files.
@@ -76,8 +79,10 @@ inclusionsAnalysis conn sfHash tu = do
       --liftIO $ putStrLn $ "Got inclusion " ++ show inc ++ " included by " ++ show filename
       return $ Inclusion inc (hash filename)
 
+    {-
     prefixIsNot clangIncSF (TV.Inclusion file _ _) =
       (not . B.isPrefixOf clangIncSF) <$> (CS.unsafeUnpackByteString =<< File.getName file)
+    -}
 
 {-
 addFileDefs :: RPCConnection -> CommandInfo -> Set.IntSet -> ClangApp s ()

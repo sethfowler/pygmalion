@@ -91,11 +91,11 @@ rpcPing = callRPC RPCPing =<< Reader.ask
 rpcLog :: String -> RPC ()
 rpcLog s = callRPC_ (RPCLog s) =<< Reader.ask
 
-rpcIndexCommand :: CommandInfo -> RPC ()
-rpcIndexCommand ci = callRPC_ (RPCIndexCommand ci) =<< Reader.ask
+rpcIndexCommand :: CommandInfo -> Time -> RPC ()
+rpcIndexCommand ci mtime = callRPC_ (RPCIndexCommand ci mtime) =<< Reader.ask
 
-rpcIndexFile :: SourceFile -> RPC ()
-rpcIndexFile sf = callRPC_ (RPCIndexFile sf) =<< Reader.ask
+rpcIndexFile :: SourceFile -> Time -> RPC ()
+rpcIndexFile sf mtime = callRPC_ (RPCIndexFile sf mtime) =<< Reader.ask
 
 rpcGetSimilarCommandInfo :: SourceFile -> RPC (Maybe CommandInfo)
 rpcGetSimilarCommandInfo sf = callRPC (RPCGetSimilarCommandInfo sf) =<< Reader.ask

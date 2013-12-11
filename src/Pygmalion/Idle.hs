@@ -17,7 +17,7 @@ import qualified Data.IntSet as Set
 import Control.Concurrent.Chan.Len
 import Pygmalion.Config
 import Pygmalion.Database.Request
-import Pygmalion.Index.Stream (clearCaches, IndexStream (..))
+import Pygmalion.Index.Stream (IndexStream (..))
 import Pygmalion.Log
 
 data IdleRequest = IdleBarrier (Response ())
@@ -30,17 +30,16 @@ runIdleManager cf idleChan idxStream dbUpdateChan dbQueryChan = forever $ do
   -- Start the idle timer once activity stops.
   waitForAllEmpty idxStream dbUpdateChan dbQueryChan
   logDebug "Starting the idle timer..."
-  timer <- oneShotTimer (onIdle idleChan idxStream) (sDelay . idleDelay $ cf)
+  timer <- oneShotTimer (onIdle idleChan) (sDelay . idleDelay $ cf)
 
   -- Wait for activity and stop the idle timer.
   waitForAnyNonempty idxStream dbUpdateChan dbQueryChan
   logDebug "Stopping the idle timer..."
   stopTimer timer
   
-onIdle :: IdleChan -> IndexStream -> IO ()
-onIdle idleChan idxStream = do
+onIdle :: IdleChan -> IO ()
+onIdle idleChan = do
     logInfo "Returned to idle."
-    atomically $ clearCaches idxStream
     go
   where
     go = do !req <- readLenChan idleChan
@@ -59,7 +58,7 @@ waitForAllEmpty idxStream dbUpdateChan dbQueryChan = liftIO $ atomically $ do
   -- Check index stream.
   idxPending <- readTMVar (isPending idxStream)
   check (Map.null idxPending)
-  idxCurrent <- readTMVar (isCurrent idxStream)
+  (idxCurrent, _) <- readTMVar (isCurrent idxStream)
   check (Set.null idxCurrent)
 
   -- Check the channels.
@@ -71,7 +70,7 @@ waitForAnyNonempty :: MonadIO m => IndexStream -> DBUpdateChan -> DBQueryChan ->
 waitForAnyNonempty idxStream dbUpdateChan dbQueryChan = liftIO $ atomically $ do
   idxPending <- readTMVar (isPending idxStream)
   when (Map.null idxPending) $ do
-    idxCurrent <- readTMVar (isCurrent idxStream)
+    (idxCurrent, _) <- readTMVar (isCurrent idxStream)
     when (Set.null idxCurrent) $ do
       isUpdateChanEmpty <- isEmptyLenChan' dbUpdateChan
       isQueryChanEmpty <- isEmptyLenChan' dbQueryChan

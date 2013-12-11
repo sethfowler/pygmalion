@@ -65,6 +65,7 @@ library
                    Pygmalion.Idle,
                    Pygmalion.JSON,
                    Pygmalion.Log,
+                   Pygmalion.Metadata,
                    Pygmalion.RPC.Client,
                    Pygmalion.RPC.Request,
                    Pygmalion.RPC.Server

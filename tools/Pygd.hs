@@ -22,8 +22,10 @@ import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.Database.Manager
 import Pygmalion.Database.Request
+import Pygmalion.File
 import Pygmalion.Log
 import Pygmalion.Idle
+import Pygmalion.Metadata
 import Pygmalion.RPC.Server
 
 main :: IO ()
@@ -31,24 +33,35 @@ main = do
   -- Initialize.
   cf <- getConfiguration
   initLogger (logLevel cf)
+
+  -- Initialize the database and file metadata.
   ensureDB
+  logInfo "Reading file metadata from database..."
+  metadata <- readMetadata
+  logInfo "Checking file metadata consistency..."
+  case checkMetadata metadata of
+    []   ->    logInfo "File metadata is consistent."
+    errs -> do logWarn "File metadata is inconsistent:"
+               mapM_ logWarn errs
+
+  -- Create communication channels.
   stopWatching <- newEmptyMVar
   dbUpdateChan <- newLenChan
   dbQueryChan <- newLenChan
   idleChan <- newLenChan
-  idxStream <- mkIndexStream
+  idxStream <- mkIndexStream metadata
 
   -- Launch threads.
   logDebug "Launching idle thread"
   idleThread <- asyncBound $ runIdleManager cf idleChan idxStream dbUpdateChan dbQueryChan
   logDebug "Launching database thread"
-  dbThread <- asyncBound (runDatabaseManager dbUpdateChan dbQueryChan idxStream)
+  dbThread <- asyncBound (runDatabaseManager dbUpdateChan dbQueryChan)
   let maxThreads = case idxThreads cf of
                      0 -> numCapabilities
                      n -> n
   indexThreads <- forM [1..maxThreads] $ \i -> do
     logDebug $ "Launching indexing thread #" ++ show i
-    asyncBound (runIndexManager cf dbUpdateChan dbQueryChan idxStream)
+    asyncBound (runIndexManager cf dbUpdateChan idxStream)
   rpcThread <- async (runRPCServer cf idxStream dbUpdateChan dbQueryChan idleChan)
   watchThread <- async (doWatch idxStream stopWatching)
 
@@ -111,8 +124,13 @@ handleSource :: IndexStream -> FP.FilePath -> IO ()
 handleSource idxStream f = do
   let file = FP.encodeString f
   fileExists <- doesFileExist file
-  when (isSource file && fileExists) $
-    atomically $ addPendingIndex idxStream (IndexUpdate . mkSourceFile $ file)
+  when (isSource file && fileExists) $ do
+    let sf = mkSourceFile file
+    mayMTime <- getMTime sf
+    case mayMTime of
+      Just mtime -> atomically $ addPendingIndex idxStream
+                               $ indexRequestForUpdate sf mtime
+      Nothing    -> return ()  -- Couldn't stat the file.
 
 isSource :: FilePath -> Bool
 isSource f = case extensionKind f of

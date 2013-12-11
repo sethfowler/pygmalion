@@ -17,6 +17,7 @@ import System.Process
 
 import Pygmalion.Config
 import Pygmalion.Core
+import Pygmalion.File
 import Pygmalion.Index.Command
 import Pygmalion.Log
 import Pygmalion.RPC.Client
@@ -130,13 +131,21 @@ initialize = do
 
 indexCommand :: Config -> String -> [String] -> IO ()
 indexCommand cf cmd args = do
-  result <- getCommandInfo cmd args
-  case result of
-    Just ci -> withRPC cf $ runRPC (rpcIndexCommand ci)
-    _       -> return ()   -- Can't do anything with this command.
+  mayCI <- getCommandInfo cmd args
+  case mayCI of
+    Just ci -> do let sf = ciSourceFile ci
+                  mayMTime <- getMTime sf
+                  case mayMTime of
+                    Just mtime -> withRPC cf $ runRPC (rpcIndexCommand ci mtime)
+                    Nothing    -> putStrLn $ "Couldn't read file " ++ show sf
+    Nothing -> return ()  -- Couldn't parse command. Very likely a linker command.
 
 indexFile :: Config -> SourceFile -> IO ()
-indexFile cf f = withRPC cf $ runRPC (rpcIndexFile f)
+indexFile cf f = do
+  mayMTime <- getMTime f
+  case mayMTime of
+    Just mtime -> withRPC cf $ runRPC (rpcIndexFile f mtime)
+    Nothing    -> putStrLn $ "Couldn't read file " ++ show f
 
 makeCommand :: Config -> String -> [String] -> IO ()
 makeCommand cf cmd args = do

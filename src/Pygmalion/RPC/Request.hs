@@ -10,8 +10,8 @@ import GHC.Generics
 
 import Pygmalion.Core
 
-data RPCRequest = RPCIndexCommand CommandInfo
-                | RPCIndexFile SourceFile
+data RPCRequest = RPCIndexCommand CommandInfo Time
+                | RPCIndexFile SourceFile Time
                 | RPCGetCommandInfo SourceFile
                 | RPCGetSimilarCommandInfo SourceFile
                 | RPCGetDefinition SourceLocation

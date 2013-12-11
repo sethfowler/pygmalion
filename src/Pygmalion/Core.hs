@@ -4,9 +4,13 @@ module Pygmalion.Core
 ( CommandInfo (..)
 , SourceFile
 , SourceFileHash
-, SourceFileWrapper (..)
+, SourceFileWrapper
+, unwrapSourceFile
+, SourceFileHashWrapper
+, unwrapSourceFileHash
 , WorkingPath
 , Time
+, TimeHash
 , Language (..)
 , Inclusion (..)
 , DefInfo (..)
@@ -25,7 +29,6 @@ module Pygmalion.Core
 , SourceReferenced (..)
 , SourceReference (..)
 , SourceContext
-, Port
 , mkSourceFile
 , unSourceFile
 --, unSourceFileText
@@ -50,8 +53,6 @@ import GHC.Generics
 import System.FilePath.Posix ((</>))
 
 import Pygmalion.SourceKind
-
-type Port = Int
 
 -- The information we collect about a compilation command.
 data CommandInfo = CommandInfo
@@ -87,15 +88,25 @@ mkSourceFile = B.fromString
 unSourceFile :: SourceFile -> FilePath
 unSourceFile = B.toString
 
-data SourceFileWrapper = SourceFileWrapper
-  { unwrapSourceFile :: !SourceFile
-  } deriving (Eq, Show)
+newtype SourceFileWrapper = SourceFileWrapper SourceFile
+
+unwrapSourceFile :: SourceFileWrapper -> SourceFile
+unwrapSourceFile (SourceFileWrapper sf) = sf
 
 instance FromRow SourceFileWrapper where
   fromRow = SourceFileWrapper <$> field
 
+newtype SourceFileHashWrapper = SourceFileHashWrapper SourceFileHash
+
+unwrapSourceFileHash :: SourceFileHashWrapper -> SourceFileHash
+unwrapSourceFileHash (SourceFileHashWrapper sf) = sf
+
+instance FromRow SourceFileHashWrapper where
+  fromRow = SourceFileHashWrapper <$> field
+
 type WorkingPath = B.ByteString
 type Time = Int64
+type TimeHash = Int
 
 data Language = CLanguage
               | CPPLanguage
