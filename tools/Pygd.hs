@@ -12,6 +12,7 @@ import System.Directory
 import System.FilePath.Posix
 import System.FSNotify
 import System.Path.NameManip
+import qualified System.Remote.Monitoring as EKG
 
 import Control.Concurrent.Chan.Len
 import Pygmalion.Index.Extension
@@ -33,6 +34,7 @@ main = do
   -- Initialize.
   cf <- getConfiguration
   initLogger (logLevel cf)
+  void $ EKG.forkServer "localhost" 8000
 
   -- Initialize the database and file metadata.
   ensureDB

@@ -100,12 +100,13 @@ executable pygmake
   hs-source-dirs: tools
 
 executable pygd
-  ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N -with-rtsopts=-T
   main-is:        Pygd.hs 
   build-depends:  base >= 4
                ,  async
                ,  containers
                ,  directory
+               ,  ekg
                ,  filepath
                ,  fsnotify
                ,  mtl
