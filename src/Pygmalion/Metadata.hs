@@ -58,10 +58,10 @@ hasBuildCommand (FileMetadata _ _ _ _ _ _ (Just _)) = True
 hasBuildCommand _                                   = False
 
 newSourceEntry :: CommandInfo -> Time -> FileMetadata
-newSourceEntry ci mt = FileMetadata (ciSourceFile ci) mt 0 Set.empty Set.empty False (Just ci)
+newSourceEntry !ci !mt = FileMetadata (ciSourceFile ci) mt 0 Set.empty Set.empty False (Just ci)
 
 newInclusionEntry :: SourceFile -> Time -> FileMetadata
-newInclusionEntry sf mt = FileMetadata sf mt 0 Set.empty Set.empty False Nothing
+newInclusionEntry !sf !mt = FileMetadata sf mt 0 Set.empty Set.empty False Nothing
     
 -- Reads file metadata from the database and creates the data structure
 -- we query at runtime. Note that it is not safe to run this at the

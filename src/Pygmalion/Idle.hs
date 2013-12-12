@@ -17,7 +17,7 @@ import qualified Data.IntSet as Set
 import Control.Concurrent.Chan.Len
 import Pygmalion.Config
 import Pygmalion.Database.Request
-import Pygmalion.Index.Stream (IndexStream (..))
+import Pygmalion.Index.Stream (IndexStream (..), Pair (..))
 import Pygmalion.Log
 
 data IdleRequest = IdleBarrier (Response ())
@@ -58,7 +58,7 @@ waitForAllEmpty idxStream dbUpdateChan dbQueryChan = liftIO $ atomically $ do
   -- Check index stream.
   idxPending <- readTMVar (isPending idxStream)
   check (Map.null idxPending)
-  (idxCurrent, _) <- readTMVar (isCurrent idxStream)
+  Pair idxCurrent _ <- readTMVar (isCurrent idxStream)
   check (Set.null idxCurrent)
 
   -- Check the channels.
@@ -70,7 +70,7 @@ waitForAnyNonempty :: MonadIO m => IndexStream -> DBUpdateChan -> DBQueryChan ->
 waitForAnyNonempty idxStream dbUpdateChan dbQueryChan = liftIO $ atomically $ do
   idxPending <- readTMVar (isPending idxStream)
   when (Map.null idxPending) $ do
-    (idxCurrent, _) <- readTMVar (isCurrent idxStream)
+    Pair idxCurrent _ <- readTMVar (isCurrent idxStream)
     when (Set.null idxCurrent) $ do
       isUpdateChanEmpty <- isEmptyLenChan' dbUpdateChan
       isQueryChanEmpty <- isEmptyLenChan' dbQueryChan

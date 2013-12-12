@@ -3,6 +3,7 @@
 module Pygmalion.Index.Stream
 ( IndexStream (..)
 , IndexRequestOrShutdown (..)
+, Pair (..)
 , mkIndexStream
 , shutdownIndexStream
 , getFileMetadata
@@ -33,16 +34,17 @@ import Pygmalion.Metadata
 
 type CurrentSet = Set.IntSet
 type CurrentInclusionsMap = Map.IntMap Set.IntSet
+data Pair a b = Pair !a !b
 
 data IndexStream = IndexStream
-  { isCurrent           :: TMVar (CurrentSet, CurrentInclusionsMap)
+  { isCurrent           :: TMVar (Pair CurrentSet CurrentInclusionsMap)
   , isPending           :: TMVar (Map.IntMap IndexRequest)
   , isMetadata          :: TMVar FileMetadataMap
   , isShouldShutdown    :: TVar Bool
   }
 
 mkIndexStream :: FileMetadataMap -> IO IndexStream
-mkIndexStream m = IndexStream <$> newTMVarIO (Set.empty, Map.empty)
+mkIndexStream m = IndexStream <$> newTMVarIO (Pair Set.empty Map.empty)
                               <*> newTMVarIO Map.empty
                               <*> newTMVarIO m
                               <*> newTVarIO False
@@ -68,7 +70,7 @@ addSourceFileMetadata is ci mt = do
 
 updateSourceFileMetadata :: IndexStream -> SourceFile -> Time -> Maybe CommandInfo
                          -> STM (Maybe FileMetadata)
-updateSourceFileMetadata is sf mt mayCI = do
+updateSourceFileMetadata is sf !mt mayCI = do
     curMetadata <- takeTMVar (isMetadata is)
     let newMetadata = Map.adjust (updater curMetadata) sfHash curMetadata
     putTMVar (isMetadata is) newMetadata
@@ -77,10 +79,10 @@ updateSourceFileMetadata is sf mt mayCI = do
     sfHash = hash sf
     updater files entry = let !vh = rehashVersion files mt entry
                           in case mayCI of
-                                Just ci -> entry { fmMTime = mt
-                                                 , fmCommandInfo = Just ci
-                                                 , fmVersionHash = vh
-                                                 }
+                                Just !ci -> entry { fmMTime = mt
+                                                  , fmCommandInfo = Just ci
+                                                  , fmVersionHash = vh
+                                                  }
                                 Nothing -> entry { fmMTime = mt , fmVersionHash = vh } 
 
 addInclusionMetadata :: IndexStream -> SourceFile -> Time -> STM ()
@@ -92,7 +94,7 @@ addInclusionMetadata is sf mt = do
     entry = newInclusionEntry sf mt
 
 updateInclusionMetadata :: IndexStream -> SourceFile -> Time -> Bool -> STM (Maybe FileMetadata)
-updateInclusionMetadata is sf mt isDirty = do
+updateInclusionMetadata is sf !mt !isDirty = do
     curMetadata <- takeTMVar (isMetadata is)
     let newMetadata = Map.adjust (updater curMetadata) sfHash curMetadata
     putTMVar (isMetadata is) newMetadata
@@ -117,7 +119,7 @@ addPendingIncluderIndex :: IndexStream -> SourceFileHash -> STM (Maybe FileMetad
 addPendingIncluderIndex is sfHash = do
     curMetadata <- readTMVar (isMetadata is)
     case sfHash `Map.lookup` curMetadata of
-      Just entry -> do let vh = rehashVersion curMetadata (fmMTime entry) entry
+      Just entry -> do let !vh = rehashVersion curMetadata (fmMTime entry) entry
                        addPendingIndex is $ indexRequestForDepChange (fmFile entry) vh
                        return (Just entry)
       Nothing    -> return Nothing
@@ -143,12 +145,12 @@ getNextFileToIndex is = do
       let (sfHash, req) = Map.findMin curPending
 
       -- Make sure someone else isn't already working on it.
-      (curCurrent, curIncs) <- takeTMVar (isCurrent is)
+      Pair curCurrent curIncs <- takeTMVar (isCurrent is)
       check (not $ sfHash `Set.member` curCurrent)
 
       -- Update the current and pending sets. We now have ownership.
       let newCurrent = sfHash `Set.insert` curCurrent
-      putTMVar (isCurrent is) (newCurrent, curIncs)
+      putTMVar (isCurrent is) $ Pair newCurrent curIncs
       let newPending = Map.deleteMin curPending
       putTMVar (isPending is) newPending
       
@@ -188,19 +190,19 @@ acquireInclusion :: IndexStream -> SourceFileHash -> SourceFileHash
                  -> STM (Maybe SourceFileHash)
 acquireInclusion is sfHash incHash = do
   -- Filter out inclusions which someone else is already working on.
-  (curCurrent, curIncs) <- takeTMVar (isCurrent is)
+  Pair curCurrent curIncs <- takeTMVar (isCurrent is)
   if not (incHash `Set.member` curCurrent)
      then do let newIncs = Map.insertWith Set.union sfHash
                                           (Set.singleton incHash) curIncs
                  newCurrent = incHash `Set.insert` curCurrent
-             putTMVar (isCurrent is) (newCurrent, newIncs)
+             putTMVar (isCurrent is) $ Pair newCurrent newIncs
              return $ Just incHash
-     else do putTMVar (isCurrent is) (curCurrent, curIncs)
+     else do putTMVar (isCurrent is) $ Pair curCurrent curIncs
              return Nothing
 
 releaseInclusions :: IndexStream -> SourceFileHash -> [SourceFileHash] -> STM ()
 releaseInclusions is sfHash incs = do
-  (curCurrent, curIncs) <- takeTMVar (isCurrent is)
+  Pair curCurrent curIncs <- takeTMVar (isCurrent is)
   let incSet = Map.findWithDefault Set.empty sfHash curIncs
 
   -- Remove the passed-in inclusions from both the set of current
@@ -216,22 +218,22 @@ releaseInclusions is sfHash incs = do
                   then sfHash `Map.delete` curIncs
                   else Map.insert sfHash newIncSet curIncs
 
-  putTMVar (isCurrent is) (newCurrent, newIncs)
+  putTMVar (isCurrent is) $ Pair newCurrent newIncs
 
 finishIndexingFile :: IndexStream -> SourceFile -> STM ()
 finishIndexingFile is sf = do
     -- Release ownership of this file and any associated inclusions.
-    (curCurrent, curIncs) <- takeTMVar (isCurrent is)
+    Pair curCurrent curIncs <- takeTMVar (isCurrent is)
     let incSet = Map.findWithDefault Set.empty sfHash curIncs
     let newCurrent = sfHash `Set.delete` (curCurrent `Set.difference` incSet)
     let newIncs = sfHash `Map.delete` curIncs
-    putTMVar (isCurrent is) (newCurrent, newIncs)
+    putTMVar (isCurrent is) $ Pair newCurrent newIncs
   where
     sfHash = hash sf
 
 cleanedInclusions :: IndexStream -> SourceFileHash -> STM [FileMetadata]
 cleanedInclusions is sfHash = do
-    (_, curIncs) <- readTMVar (isCurrent is)
+    Pair _ curIncs <- readTMVar (isCurrent is)
     let incSet = Map.findWithDefault Set.empty sfHash curIncs
 
     -- Update metadata of current inclusions.
