@@ -112,7 +112,6 @@ sendUpdates _ _ 0         = return ()
 sendUpdates ctx !ups !upn = do
   v <- VV.unsafeFreeze $ V.unsafeSlice 0 upn ups
   writeLenChan (rsDBUpdateChan ctx) v
-                                         
 
 data RPCServerContext = RPCServerContext
   { rsThread       :: !ThreadId

@@ -9,7 +9,7 @@ module Pygmalion.Idle
 import Control.Concurrent.STM
 import Control.Concurrent.Suspend.Lifted (sDelay)
 import Control.Concurrent.Timer (oneShotTimer, stopTimer)
-import Control.Monad (forever, unless, when)
+import Control.Monad (forever, unless)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import qualified Data.IntMap as Map
 import qualified Data.IntSet as Set
@@ -69,9 +69,10 @@ waitForAllEmpty idxStream dbUpdateChan dbQueryChan = liftIO $ atomically $ do
 waitForAnyNonempty :: MonadIO m => IndexStream -> DBUpdateChan -> DBQueryChan -> m ()
 waitForAnyNonempty idxStream dbUpdateChan dbQueryChan = liftIO $ atomically $ do
   idxPending <- readTMVar (isPending idxStream)
-  when (Map.null idxPending) $ do
-    Pair idxCurrent _ <- readTMVar (isCurrent idxStream)
-    when (Set.null idxCurrent) $ do
-      isUpdateChanEmpty <- isEmptyLenChan' dbUpdateChan
-      isQueryChanEmpty <- isEmptyLenChan' dbQueryChan
-      check $ not (isUpdateChanEmpty && isQueryChanEmpty)
+  Pair idxCurrent _ <- readTMVar (isCurrent idxStream)
+  isUpdateChanEmpty <- isEmptyLenChan' dbUpdateChan
+  isQueryChanEmpty <- isEmptyLenChan' dbQueryChan
+  check $ not (Map.null idxPending &&
+               Set.null idxCurrent &&
+               isUpdateChanEmpty &&
+               isQueryChanEmpty)
