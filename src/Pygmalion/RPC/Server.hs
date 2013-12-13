@@ -54,7 +54,7 @@ serverApp ctx ad = do
   where
     getCI = get :: Get RPCRequest
 
-    vecSize = 100000
+    vecSize = 10000
     conduit iv = appSource ad $= conduitGet getCI =$= process iv 0 $$ appSink ad
 
     open = liftIO $ modifyMVar_ (rsConnections ctx) (\c -> return (c + 1))
