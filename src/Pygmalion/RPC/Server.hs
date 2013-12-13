@@ -17,6 +17,8 @@ import Data.Conduit.Cereal
 import Data.Conduit.Network.Unix
 import Data.Serialize
 import Data.Typeable
+import qualified Data.Vector as VV
+import qualified Data.Vector.Mutable as V
 
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan.Len
@@ -46,19 +48,21 @@ runRPCServer cf iStream dbUpdateChan dbQueryChan idleChan = do
 
 serverApp :: RPCServerContext -> Application IO
 serverApp ctx ad = do
+    initialVec <- liftIO $ V.unsafeNew vecSize
     open
-    conduit `onException` closeException
+    (conduit initialVec) `onException` closeException
   where
     getCI = get :: Get RPCRequest
 
-    conduit = appSource ad $= conduitGet getCI =$= process [] 0 $$ appSink ad
+    vecSize = 100000
+    conduit iv = appSource ad $= conduitGet getCI =$= process iv 0 $$ appSink ad
 
     open = liftIO $ modifyMVar_ (rsConnections ctx) (\c -> return (c + 1))
-    close ups = liftIO $ do sendUpdates ctx ups 
-                            terminate' 1
+    close ups upn = liftIO $ do sendUpdates ctx ups upn
+                                terminate' 1
     closeException = terminate' 1
-    terminate ups = liftIO $ do sendUpdates ctx ups
-                                terminate' 2
+    terminate ups upn = liftIO $ do sendUpdates ctx ups upn
+                                    terminate' 2
 
     terminate' v = do
       -- If v == 1, this balances the increment to rsConnections that
@@ -71,33 +75,44 @@ serverApp ctx ad = do
       when (newConns < 0) $
         throwTo (rsThread ctx) RPCServerExit -- Terminate the server.
 
-    process :: [DBUpdate] -> Int -> ConduitM RPCRequest ByteString IO ()
-    process !ups 100000 = do
-      -- Go ahead and send our updates. This puts a cap on how many
-      -- requests the database will process at once.
-      liftIO $ sendUpdates ctx ups
-      process [] 0
-      
-    process !ups !upn = do
-      result <- await
-      case result of
-        Just RPCDone                 -> close ups
-        Just RPCStop                 -> terminate ups
-        Just (RPCFoundDef !df)       -> process (DBUpdateDef df : ups) (upn + 1)
-        Just (RPCFoundRef !ru)       -> process (DBUpdateRef ru : ups) (upn + 1)
-        Just (RPCFoundOverride !ov)  -> process (DBUpdateOverride ov : ups) (upn + 1)
-        Just req                     -> do liftIO $ sendUpdates ctx ups
-                                           res <- liftIO $ runReaderT (route req) ctx
-                                           case res of
-                                              Just res' -> yield res' >> process [] 0
-                                              Nothing   -> process [] 0
-        _                            -> do logError "RPC server got bad request"
-                                           yield . encode $ (RPCError :: RPCResponse ())
-                                           close ups
+    process :: V.IOVector DBUpdate -> Int -> ConduitM RPCRequest ByteString IO ()
+    process !ups !upn
+      | upn == vecSize = do
 
-sendUpdates :: RPCServerContext -> [DBUpdate] -> IO ()
-sendUpdates _ []    = return ()
-sendUpdates ctx ups = writeLenChan (rsDBUpdateChan ctx) ups
+        -- Go ahead and send our updates. This puts a cap on how many
+        -- requests the database will process at once.
+        liftIO $ sendUpdates ctx ups upn
+        v <- liftIO $ V.unsafeNew vecSize
+        process v 0
+      
+      | otherwise = do
+
+        result <- await
+        case result of
+          Just RPCDone                 -> close ups upn
+          Just RPCStop                 -> terminate ups upn
+          Just (RPCFoundDef !df)       -> do liftIO $ V.unsafeWrite ups upn $! DBUpdateDef df
+                                             process ups (upn + 1)
+          Just (RPCFoundRef !ru)       -> do liftIO $ V.unsafeWrite ups upn $! DBUpdateRef ru
+                                             process ups (upn + 1)
+          Just (RPCFoundOverride !ov)  -> do liftIO $ V.unsafeWrite ups upn $! DBUpdateOverride ov
+                                             process ups (upn + 1)
+          Just req                     -> do liftIO $ sendUpdates ctx ups upn
+                                             v <- liftIO $ V.unsafeNew vecSize
+                                             res <- liftIO $ runReaderT (route req) ctx
+                                             case res of
+                                                Just res' -> yield res' >> process v 0
+                                                Nothing   -> process v 0
+          _                            -> do logError "RPC server got bad request"
+                                             yield . encode $ (RPCError :: RPCResponse ())
+                                             close ups upn
+
+sendUpdates :: RPCServerContext -> V.IOVector DBUpdate -> Int -> IO ()
+sendUpdates _ _ 0         = return ()
+sendUpdates ctx !ups !upn = do
+  v <- VV.unsafeFreeze $ V.unsafeSlice 0 upn ups
+  writeLenChan (rsDBUpdateChan ctx) v
+                                         
 
 data RPCServerContext = RPCServerContext
   { rsThread       :: !ThreadId

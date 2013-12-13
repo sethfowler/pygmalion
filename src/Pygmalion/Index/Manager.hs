@@ -12,6 +12,7 @@ import Data.Hashable
 import qualified Data.IntSet as Set
 import Data.List (foldl')
 import Data.Maybe (catMaybes)
+import qualified Data.Vector as V
 import System.Exit
 import System.Process
 
@@ -49,7 +50,8 @@ finishIndexing sf = do
 
   incs <- lift $ atomically $ cleanedInclusions (icIndexStream ctx) (hash sf)
   forM_ incs $ \i -> do
-    writeLenChan (icDBUpdateChan ctx) [DBUpdateFile (fmFile i) (fmMTime i) (fmVersionHash i)]
+    writeLenChan (icDBUpdateChan ctx) $
+      V.singleton $ DBUpdateFile (fmFile i) (fmMTime i) (fmVersionHash i)
 
   lift $ atomically $ finishIndexingFile (icIndexStream ctx) sf
 
@@ -141,7 +143,7 @@ updateFile sf mt mayCI = do
   case mayFM of
     Just fm -> do let upds = DBUpdateFile sf (fmMTime fm) (fmVersionHash fm) :
                              maybe [] (pure . DBUpdateCommandInfo) mayCI
-                  writeLenChan (icDBUpdateChan ctx) upds
+                  writeLenChan (icDBUpdateChan ctx) (V.fromList upds)
                   return (Just fm)
     Nothing -> do logWarn $ "Missing metadata while updating file: " ++ show sf
                   return Nothing
@@ -149,7 +151,7 @@ updateFile sf mt mayCI = do
 resetFile :: SourceFile -> Indexer ()
 resetFile sf = do
   ctx <- ask
-  writeLenChan (icDBUpdateChan ctx) [DBResetMetadata sf]
+  writeLenChan (icDBUpdateChan ctx) $ V.singleton $ DBResetMetadata sf
 
 index :: CommandInfo -> Indexer Bool
 index ci = go 1
@@ -202,7 +204,7 @@ updateInclusions iStream dbUpdateChan sfHash is = do
     let reqs' = foldl' (\rs ic -> DBUpdateInclusion ic : rs) reqs is
 
     -- Send the requests.
-    writeLenChan dbUpdateChan $ reverse reqs'
+    writeLenChan dbUpdateChan $ V.fromList $ reverse reqs'
     
     -- Release the lock on the clean inclusions.
     atomically $ releaseInclusions iStream sfHash cleanIncs

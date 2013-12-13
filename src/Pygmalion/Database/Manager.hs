@@ -7,10 +7,11 @@ module Pygmalion.Database.Manager
 
 import Control.Applicative
 import Control.Concurrent.STM
-import Control.Monad
+--import Control.Monad
 import Control.Monad.Reader
 import Data.Hashable (hash)
 import Data.Time.Clock
+import qualified Data.Vector as V
 
 import Control.Concurrent.Chan.Len
 import Pygmalion.Core
@@ -38,7 +39,7 @@ runDatabaseManager updateChan queryChan = do
                 Right DBShutdown -> logInfo "Shutting down DB thread"
                 Right req        -> runReaderT (route req) ctx >> go ctx (n+1) s
                 
-readFromChannels :: DBUpdateChan -> DBQueryChan -> STM (Either [DBUpdate] DBRequest)
+readFromChannels :: DBUpdateChan -> DBQueryChan -> STM (Either (V.Vector DBUpdate) DBRequest)
 readFromChannels updateChan queryChan = readQueryChan `orElse` readUpdateChan
   where
     readQueryChan  = Right <$> readTBQueue queryChan
@@ -49,10 +50,10 @@ data DBContext = DBContext
   }
 type DB a = ReaderT DBContext IO a
 
-routeUpdates :: DBContext -> [DBUpdate] -> IO ()
+routeUpdates :: DBContext -> V.Vector DBUpdate -> IO ()
 routeUpdates ctx ups =
     withTransaction (dbHandle ctx) $
-      forM_ ups $ \up ->
+      V.forM_ ups $ \up ->
         runReaderT (routeUpdate up) ctx
   where
     routeUpdate (DBUpdateDef !di)         = update "definition" updateDef di

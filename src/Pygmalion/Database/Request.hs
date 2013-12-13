@@ -5,6 +5,8 @@ module Pygmalion.Database.Request
 , DBQueryChan
 ) where
 
+import Data.Vector
+
 import Control.Concurrent.Chan.Len
 import Pygmalion.Core
 
@@ -39,5 +41,5 @@ data DBRequest = DBGetCommandInfo SourceFile (Response (Maybe CommandInfo, Maybe
                | DBShutdown
                  deriving (Show)
 
-type DBUpdateChan = LenChan [DBUpdate]
+type DBUpdateChan = LenChan (Vector DBUpdate)
 type DBQueryChan = LenChan DBRequest
