@@ -6,9 +6,12 @@ module Pygmalion.RPC.Request
 ) where
 
 import Data.Serialize
+import qualified Data.Vector as V
+import Data.Vector.Serialize ()
 import GHC.Generics
 
 import Pygmalion.Core
+import Pygmalion.Database.Request
 
 data RPCRequest = RPCIndexCommand CommandInfo Time
                 | RPCIndexFile SourceFile Time
@@ -27,9 +30,7 @@ data RPCRequest = RPCIndexCommand CommandInfo Time
                 | RPCGetInclusions SourceFile
                 | RPCGetIncluders SourceFile
                 | RPCGetInclusionHierarchy SourceFile
-                | RPCFoundDef DefUpdate
-                | RPCFoundOverride Override
-                | RPCFoundRef ReferenceUpdate
+                | RPCFoundUpdates (V.Vector DBUpdate)
                 | RPCUpdateAndFindDirtyInclusions SourceFileHash [Inclusion]
                 | RPCWait
                 | RPCPing

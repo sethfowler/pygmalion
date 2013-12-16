@@ -18,7 +18,6 @@ import Data.Conduit.Network.Unix
 import Data.Serialize
 import Data.Typeable
 import qualified Data.Vector as VV
-import qualified Data.Vector.Mutable as V
 
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan.Len
@@ -48,21 +47,17 @@ runRPCServer cf iStream dbUpdateChan dbQueryChan idleChan = do
 
 serverApp :: RPCServerContext -> Application IO
 serverApp ctx ad = do
-    initialVec <- liftIO $ V.unsafeNew vecSize
     open
-    (conduit initialVec) `onException` closeException
+    conduit `onException` closeException
   where
     getCI = get :: Get RPCRequest
 
-    vecSize = 10000
-    conduit iv = appSource ad $= conduitGet getCI =$= process iv 0 $$ appSink ad
+    conduit = appSource ad $= conduitGet getCI =$= process $$ appSink ad
 
     open = liftIO $ modifyMVar_ (rsConnections ctx) (\c -> return (c + 1))
-    close ups upn = liftIO $ do sendUpdates ctx ups upn
-                                terminate' 1
+    close = liftIO $ terminate' 1
     closeException = terminate' 1
-    terminate ups upn = liftIO $ do sendUpdates ctx ups upn
-                                    terminate' 2
+    terminate = liftIO $ terminate' 2
 
     terminate' v = do
       -- If v == 1, this balances the increment to rsConnections that
@@ -75,43 +70,32 @@ serverApp ctx ad = do
       when (newConns < 0) $
         throwTo (rsThread ctx) RPCServerExit -- Terminate the server.
 
-    process :: V.IOVector DBUpdate -> Int -> ConduitM RPCRequest ByteString IO ()
-    process !ups !upn
-      | upn == vecSize = do
-
-        -- Go ahead and send our updates. This puts a cap on how many
-        -- requests the database will process at once.
-        liftIO $ sendUpdates ctx ups upn
-        v <- liftIO $ V.unsafeNew vecSize
-        process v 0
-      
-      | otherwise = do
-
+    process :: ConduitM RPCRequest ByteString IO ()
+    process = do
         result <- await
         case result of
-          Just RPCDone                 -> close ups upn
-          Just RPCStop                 -> terminate ups upn
-          Just (RPCFoundDef !df)       -> do liftIO $ V.unsafeWrite ups upn $! DBUpdateDef df
-                                             process ups (upn + 1)
-          Just (RPCFoundRef !ru)       -> do liftIO $ V.unsafeWrite ups upn $! DBUpdateRef ru
-                                             process ups (upn + 1)
-          Just (RPCFoundOverride !ov)  -> do liftIO $ V.unsafeWrite ups upn $! DBUpdateOverride ov
-                                             process ups (upn + 1)
-          Just req                     -> do liftIO $ sendUpdates ctx ups upn
-                                             v <- liftIO $ V.unsafeNew vecSize
-                                             res <- liftIO $ runReaderT (route req) ctx
-                                             case res of
-                                                Just res' -> yield res' >> process v 0
-                                                Nothing   -> process v 0
-          _                            -> do logError "RPC server got bad request"
-                                             yield . encode $ (RPCError :: RPCResponse ())
-                                             close ups upn
+          Just RPCDone                -> close
+          Just RPCStop                -> terminate
+          Just (RPCFoundUpdates !ups) -> do liftIO $ sendUpdates ctx ups
+                                            process
+          Just req                    -> do res <- liftIO $ runReaderT (route req) ctx
+                                            case res of
+                                               Just res' -> yield res' >> process
+                                               Nothing   -> process
+          _                           -> do logError "RPC server got bad request"
+                                            yield . encode $ (RPCError :: RPCResponse ())
+                                            close
 
+{-
 sendUpdates :: RPCServerContext -> V.IOVector DBUpdate -> Int -> IO ()
 sendUpdates _ _ 0         = return ()
 sendUpdates ctx !ups !upn = do
   v <- VV.unsafeFreeze $ V.unsafeSlice 0 upn ups
   writeLenChan (rsDBUpdateChan ctx) v
+-}
+
+sendUpdates :: RPCServerContext -> VV.Vector DBUpdate -> IO ()
+sendUpdates ctx !ups = writeLenChan (rsDBUpdateChan ctx) ups
 
 data RPCServerContext = RPCServerContext
   { rsThread       :: !ThreadId
@@ -145,9 +129,7 @@ route (RPCUpdateAndFindDirtyInclusions s is) = doUpdateInclusions s is
 route (RPCWait)                              = sendWait_
 route (RPCLog s)                             = logInfo s >> return Nothing
 route (RPCPing)                              = return . Just $! encode (RPCOK ())
-route (RPCFoundDef _)                        = error "Should not route RPCFoundDef"
-route (RPCFoundRef _)                        = error "Should not route RPCFoundRef"
-route (RPCFoundOverride _)                   = error "Should not route RPCFoundOverride"
+route (RPCFoundUpdates _)                    = error "Should not route RPCFoundUpdates"
 route (RPCDone)                              = error "Should not route RPCDone"
 route (RPCStop)                              = error "Should not route RPCStop"
 

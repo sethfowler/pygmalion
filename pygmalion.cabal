@@ -19,6 +19,7 @@ library
                    bytestring,
                    cereal,
                    cereal-conduit,
+                   cereal-vector,
                    conduit,
                    configurator,
                    containers,

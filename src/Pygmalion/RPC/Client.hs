@@ -29,9 +29,7 @@ module Pygmalion.RPC.Client
 , rpcGetInclusions
 , rpcGetIncluders
 , rpcGetInclusionHierarchy
-, rpcFoundDef
-, rpcFoundOverride
-, rpcFoundRef
+, rpcSendUpdates
 , rpcUpdateAndFindDirtyInclusions
 ) where
 
@@ -45,12 +43,14 @@ import Data.Conduit.Cereal
 import Data.Conduit.Network.Unix
 import Data.Serialize
 import Data.Typeable
+import qualified Data.Vector as V
 import Network.Socket
 import System.IO.Error
 import System.Timeout
 
 import Pygmalion.Config
 import Pygmalion.Core
+import Pygmalion.Database.Request
 import Pygmalion.RPC.Request
 
 type RPC a = Reader.ReaderT RPCConnection IO a
@@ -139,14 +139,8 @@ rpcGetIncluders sf = callRPC (RPCGetIncluders sf) =<< Reader.ask
 rpcGetInclusionHierarchy :: SourceFile -> RPC String
 rpcGetInclusionHierarchy sf = callRPC (RPCGetInclusionHierarchy sf) =<< Reader.ask
 
-rpcFoundDef :: DefUpdate -> RPC ()
-rpcFoundDef di = callRPC_ (RPCFoundDef di) =<< Reader.ask
-
-rpcFoundOverride :: Override -> RPC ()
-rpcFoundOverride ov = callRPC_ (RPCFoundOverride ov) =<< Reader.ask
-
-rpcFoundRef :: ReferenceUpdate -> RPC ()
-rpcFoundRef rf = callRPC_ (RPCFoundRef rf) =<< Reader.ask
+rpcSendUpdates :: V.Vector DBUpdate -> RPC ()
+rpcSendUpdates ups = callRPC_ (RPCFoundUpdates ups) =<< Reader.ask
 
 rpcUpdateAndFindDirtyInclusions :: SourceFileHash -> [Inclusion] -> RPC [SourceFileHash]
 rpcUpdateAndFindDirtyInclusions sfHash ics =

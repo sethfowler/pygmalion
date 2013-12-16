@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveGeneric #-}
+
 module Pygmalion.Database.Request
 ( DBUpdate (..)
 , DBRequest (..)
@@ -5,7 +7,9 @@ module Pygmalion.Database.Request
 , DBQueryChan
 ) where
 
+import Data.Serialize
 import Data.Vector
+import GHC.Generics
 
 import Control.Concurrent.Chan.Len
 import Pygmalion.Core
@@ -17,7 +21,9 @@ data DBUpdate = DBUpdateDef DefUpdate
               | DBUpdateFile SourceFile Time TimeHash
               | DBUpdateInclusion Inclusion
               | DBResetMetadata SourceFile
-                deriving (Show)
+                deriving (Eq, Generic, Show)
+
+instance Serialize DBUpdate
                          
 data DBRequest = DBGetCommandInfo SourceFile (Response (Maybe CommandInfo, Maybe Time))
                | DBGetSimilarCommandInfo SourceFile (Response (Maybe CommandInfo))

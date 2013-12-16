@@ -30,17 +30,22 @@ import Data.Hashable
 import qualified Data.IntMap.Strict as Map
 import qualified Data.IntSet as Set
 import Data.Typeable
+import qualified Data.Vector as VV
+import qualified Data.Vector.Mutable as V
 import qualified Data.Vector.Storable as DVS
 
 import Data.Bool.Predicate
 import Pygmalion.Core
+import Pygmalion.Database.Request
 import Pygmalion.Log
 import Pygmalion.RPC.Client
 
 data AnalysisState = AnalysisState
-  { asConn       :: !RPCConnection
-  , asDirtyFiles :: !Set.IntSet
-  , asFileCache  :: !FileCache
+  { asConn        :: !RPCConnection
+  , asDirtyFiles  :: !Set.IntSet
+  , asFileCache   :: !FileCache
+  , asUpdates     :: !(V.IOVector DBUpdate)
+  , asUpdateCount :: !Int
   }
 
 type Analysis s a = ClangT s (StateT AnalysisState IO) a
@@ -48,14 +53,18 @@ type Analysis s a = ClangT s (StateT AnalysisState IO) a
 runAnalysis :: b -> StateT b IO a -> IO a
 runAnalysis = flip evalStateT
 
+vecSize :: Int
+vecSize = 1000
+
 runSourceAnalyses :: CommandInfo -> RPCConnection -> IO ()
 runSourceAnalyses ci conn = do
-  let initialState = AnalysisState conn Set.empty Map.empty
+  initialVec <- liftIO $ V.unsafeNew vecSize
+  let initialState = AnalysisState conn Set.empty Map.empty initialVec 0
   result <- try $ runAnalysis initialState $ withTranslationUnit ci $ \tu -> do
                     logDiagnostics tu
                     inclusionsAnalysis (hash $ ciSourceFile ci) tu
                     --addFileDefs conn ci dirtyFiles
-                    defsAnalysis tu
+                    analysisScope (defsAnalysis tu)
   case result of
     Right _ -> return ()
     Left (ClangException e) -> void $ logWarn ("Clang exception: " ++ e)
@@ -111,6 +120,28 @@ addFileDefs conn ci dirtyFiles = do
     liftIO $ runRPC (rpcFoundDef def) conn
 -}
   
+analysisScope :: (forall s. Analysis s ()) -> Analysis s' ()
+analysisScope f = clangScope $ do
+  f
+  ctx <- lift get
+  when (asUpdateCount ctx > 0) $ do
+    finishedVec <- liftIO $ VV.unsafeFreeze $ V.unsafeSlice 0 (asUpdateCount ctx) (asUpdates ctx)
+    sendRPC $ rpcSendUpdates $ finishedVec
+    newVec <- liftIO $ V.unsafeNew vecSize
+    lift $ put $! ctx { asUpdates = newVec, asUpdateCount = 0 }
+
+sendUpdate :: DBUpdate -> Analysis s ()
+sendUpdate up = do
+  ctx <- lift $ get
+  liftIO $ V.unsafeWrite (asUpdates ctx) (asUpdateCount ctx) up
+  let newCount = (asUpdateCount ctx) + 1
+  if (newCount == vecSize)
+     then do finishedVec <- liftIO $ VV.unsafeFreeze (asUpdates ctx)
+             sendRPC $ rpcSendUpdates $ finishedVec
+             newVec <- liftIO $ V.unsafeNew vecSize
+             lift $ put $! ctx { asUpdates = newVec, asUpdateCount = 0 }
+     else lift $ put $! ctx { asUpdateCount = newCount }
+
 defsAnalysis :: TranslationUnit -> Analysis s ()
 defsAnalysis tu = do
   cursor <- getCursor tu
@@ -167,11 +198,11 @@ defsVisitor tu cursor = do
     let recurse = DVS.mapM_ (defsVisitor tu) =<< TV.getChildren cursor
     case cKind of
       C.Cursor_MacroDefinition  -> return ()
-      C.Cursor_FunctionDecl     -> clangScope recurse
-      C.Cursor_FunctionTemplate -> clangScope recurse
-      C.Cursor_CXXMethod        -> clangScope recurse
-      C.Cursor_Constructor      -> clangScope recurse
-      C.Cursor_Destructor       -> clangScope recurse
+      C.Cursor_FunctionDecl     -> analysisScope recurse
+      C.Cursor_FunctionTemplate -> analysisScope recurse
+      C.Cursor_CXXMethod        -> analysisScope recurse
+      C.Cursor_Constructor      -> analysisScope recurse
+      C.Cursor_Destructor       -> analysisScope recurse
       _                         -> recurse
 
 sendRPC :: RPC () -> Analysis s ()
@@ -212,7 +243,7 @@ visitInclusions tu loc cKind cursor = do
                                    0
                                    (hash ctxUSR)
                                    incFileHash
-  sendRPC $ rpcFoundRef reference
+  sendUpdate (DBUpdateRef reference)
       
 visitReferences :: TranslationUnit -> TULocation -> C.CursorKind -> C.Cursor -> Analysis s ()
 visitReferences tu loc cKind cursor = do
@@ -267,7 +298,7 @@ visitReferences tu loc cKind cursor = do
                                      declHash
                                      (hash ctxUSR)
                                      (hash referToUSR)
-    sendRPC $ rpcFoundRef reference
+    sendUpdate (DBUpdateRef reference)
     
 visitOverrides :: C.Cursor -> Analysis s ()
 visitOverrides cursor = do
@@ -279,7 +310,7 @@ visitOverrides cursor = do
   usr <- XRef.getUSR cursor >>= CS.unsafeUnpackByteString
   forM_ overrideUSRs $ \oUSR -> do
     let !override = Override (hash usr) (hash oUSR)
-    sendRPC $ rpcFoundOverride override
+    sendUpdate (DBUpdateOverride override)
 
 visitDefinitions :: TranslationUnit -> TULocation -> C.CursorKind -> C.Cursor -> Analysis s ()
 visitDefinitions tu loc cKind cursor = do
@@ -300,7 +331,7 @@ visitDefinitions tu loc cKind cursor = do
                        (tlCol loc)
                        kind
                        (hash ctxUSR)
-  sendRPC $ rpcFoundDef def
+  sendUpdate (DBUpdateDef def)
 
 classVisitor :: C.Cursor -> C.Cursor -> Analysis s ()
 classVisitor thisClassC cursor = do
@@ -311,7 +342,7 @@ classVisitor thisClassC cursor = do
       defC <- C.getDefinition cursor
       baseUSR <- XRef.getUSR defC >>= CS.unsafeUnpackByteString
       let !override = Override (hash thisClassUSR) (hash baseUSR)
-      sendRPC $ rpcFoundOverride override
+      sendUpdate (DBUpdateOverride override)
     _ -> return ()
 
 type FileCache = Map.IntMap (Bool, Int)
