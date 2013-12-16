@@ -54,7 +54,7 @@ runAnalysis :: b -> StateT b IO a -> IO a
 runAnalysis = flip evalStateT
 
 vecSize :: Int
-vecSize = 1000
+vecSize = 100000
 
 runSourceAnalyses :: CommandInfo -> RPCConnection -> IO ()
 runSourceAnalyses ci conn = do
@@ -64,7 +64,7 @@ runSourceAnalyses ci conn = do
                     logDiagnostics tu
                     inclusionsAnalysis (hash $ ciSourceFile ci) tu
                     --addFileDefs conn ci dirtyFiles
-                    analysisScope (defsAnalysis tu)
+                    defsAnalysis ci tu
   case result of
     Right _ -> return ()
     Left (ClangException e) -> void $ logWarn ("Clang exception: " ++ e)
@@ -126,7 +126,7 @@ analysisScope f = clangScope $ do
   ctx <- lift get
   when (asUpdateCount ctx > 0) $ do
     finishedVec <- liftIO $ VV.unsafeFreeze $ V.unsafeSlice 0 (asUpdateCount ctx) (asUpdates ctx)
-    sendRPC $ rpcSendUpdates $ finishedVec
+    sendRPC $ rpcSendUpdates finishedVec
     newVec <- liftIO $ V.unsafeNew vecSize
     lift $ put $! ctx { asUpdates = newVec, asUpdateCount = 0 }
 
@@ -137,16 +137,26 @@ sendUpdate up = do
   let newCount = (asUpdateCount ctx) + 1
   if (newCount == vecSize)
      then do finishedVec <- liftIO $ VV.unsafeFreeze (asUpdates ctx)
-             sendRPC $ rpcSendUpdates $ finishedVec
+             sendRPC $ rpcSendUpdates finishedVec
              newVec <- liftIO $ V.unsafeNew vecSize
              lift $ put $! ctx { asUpdates = newVec, asUpdateCount = 0 }
+             liftIO $ putStrLn $ "Overflowed vector and had to send early"
      else lift $ put $! ctx { asUpdateCount = newCount }
 
-defsAnalysis :: TranslationUnit -> Analysis s ()
-defsAnalysis tu = do
-  cursor <- getCursor tu
-  kids <- TV.getChildren cursor
-  DVS.mapM_ (defsVisitor tu) kids
+defsAnalysis :: CommandInfo -> TranslationUnit -> Analysis s ()
+defsAnalysis ci tu = do
+    cursor <- getCursor tu
+    kids <- TV.getChildren cursor
+    liftIO $ putStrLn $ show (ciSourceFile ci) ++ ": top-level nodes = " ++ show (DVS.length kids)
+    go (DVS.splitAt groupSize kids)
+  where
+    go (!h, !t)
+      | DVS.null h = return ()
+      | DVS.null t = analysisScope $ DVS.mapM_ (defsVisitor tu) h
+      | otherwise  = do analysisScope $ DVS.mapM_ (defsVisitor tu) h
+                        go (DVS.splitAt groupSize t)
+
+    groupSize = 10000
 
 refKinds :: [C.CursorKind]
 refKinds = [C.Cursor_CallExpr,
@@ -198,11 +208,13 @@ defsVisitor tu cursor = do
     let recurse = DVS.mapM_ (defsVisitor tu) =<< TV.getChildren cursor
     case cKind of
       C.Cursor_MacroDefinition  -> return ()
+      {-
       C.Cursor_FunctionDecl     -> analysisScope recurse
       C.Cursor_FunctionTemplate -> analysisScope recurse
       C.Cursor_CXXMethod        -> analysisScope recurse
       C.Cursor_Constructor      -> analysisScope recurse
       C.Cursor_Destructor       -> analysisScope recurse
+      -}
       _                         -> recurse
 
 sendRPC :: RPC () -> Analysis s ()
