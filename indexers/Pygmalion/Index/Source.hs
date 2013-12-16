@@ -1,4 +1,10 @@
-{-# LANGUAGE Haskell2010, BangPatterns, DeriveDataTypeable, OverloadedStrings, RankNTypes #-}
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DoAndIfThenElse #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Pygmalion.Index.Source
 ( runSourceAnalyses
@@ -10,6 +16,7 @@ import qualified Clang.Cursor as C
 import qualified Clang.Diagnostic as Diag
 import qualified Clang.File as File
 import Clang.Monad
+import Control.Monad.State.Strict
 import qualified Clang.Source as Source
 import qualified Clang.String as CS
 import Clang.TranslationUnit
@@ -17,8 +24,6 @@ import qualified Clang.Traversal as TV
 import qualified Clang.Type as T
 import Control.Applicative
 import Control.Exception
-import Control.Monad
-import Control.Monad.IO.Class
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as BU
 import Data.Hashable
@@ -32,14 +37,25 @@ import Pygmalion.Core
 import Pygmalion.Log
 import Pygmalion.RPC.Client
 
+data AnalysisState = AnalysisState
+  { asConn       :: !RPCConnection
+  , asDirtyFiles :: !Set.IntSet
+  , asFileCache  :: !FileCache
+  }
+
+type Analysis s a = ClangT s (StateT AnalysisState IO) a
+
+runAnalysis :: b -> StateT b IO a -> IO a
+runAnalysis = flip evalStateT
+
 runSourceAnalyses :: CommandInfo -> RPCConnection -> IO ()
 runSourceAnalyses ci conn = do
-  result <- try $ withTranslationUnit ci $ \tu -> do
-                    let sfHash = hash $ ciSourceFile ci
+  let initialState = AnalysisState conn Set.empty Map.empty
+  result <- try $ runAnalysis initialState $ withTranslationUnit ci $ \tu -> do
                     logDiagnostics tu
-                    dirtyFiles <- inclusionsAnalysis conn sfHash tu
+                    inclusionsAnalysis (hash $ ciSourceFile ci) tu
                     --addFileDefs conn ci dirtyFiles
-                    defsAnalysis conn dirtyFiles tu
+                    defsAnalysis tu
   case result of
     Right _ -> return ()
     Left (ClangException e) -> void $ logWarn ("Clang exception: " ++ e)
@@ -51,9 +67,9 @@ displayAST ci = do
     Right _                 -> return ()
     Left (ClangException e) -> logWarn ("Clang exception: " ++ e )
 
-inclusionsAnalysis :: RPCConnection -> SourceFileHash -> TranslationUnit
-                   -> ClangApp s Set.IntSet
-inclusionsAnalysis conn sfHash tu = do
+inclusionsAnalysis :: SourceFileHash -> TranslationUnit -> Analysis s ()
+inclusionsAnalysis sfHash tu = do
+    ctx <- lift get
     {-
     clangIncPath <- mkSourceFile <$> liftIO libclangIncludePath
     incs <- DVS.filterM (prefixIsNot clangIncPath)
@@ -61,13 +77,14 @@ inclusionsAnalysis conn sfHash tu = do
     -}
     incs <- TV.getInclusions tu
     incs' <- mapM toInclusion $ DVS.toList incs
-    dirtyIncs <- liftIO $ runRPC (rpcUpdateAndFindDirtyInclusions sfHash incs') conn
+    dirtyIncs <- queryRPC $ rpcUpdateAndFindDirtyInclusions sfHash incs'
     -- We include the source file itself in the list of dirty files.
     -- TODO: What we should do here is construct the 'dirtyFiles'
     -- cache here instead of lazily. Then we can pass it around with
     -- ReaderT instead of explicitly. This will remove significant
     -- complexity from defsAnalysis.
-    return $ sfHash `Set.insert` Set.fromList dirtyIncs
+    let dirtyFiles = sfHash `Set.insert` Set.fromList dirtyIncs
+    lift $ put $! ctx { asDirtyFiles = dirtyFiles }
 
   where
 
@@ -85,7 +102,7 @@ inclusionsAnalysis conn sfHash tu = do
     -}
 
 {-
-addFileDefs :: RPCConnection -> CommandInfo -> Set.IntSet -> ClangApp s ()
+addFileDefs :: RPCConnection -> CommandInfo -> Set.IntSet -> Clang s ()
 addFileDefs conn ci dirtyFiles = do
   -- Add a special definition for the beginning of each file we're indexing. This is
   -- referenced by inclusion directives.
@@ -94,187 +111,207 @@ addFileDefs conn ci dirtyFiles = do
     liftIO $ runRPC (rpcFoundDef def) conn
 -}
   
-defsAnalysis :: RPCConnection -> Set.IntSet -> TranslationUnit -> ClangApp s ()
-defsAnalysis conn dirtyFiles tu = do
+defsAnalysis :: TranslationUnit -> Analysis s ()
+defsAnalysis tu = do
   cursor <- getCursor tu
   kids <- TV.getChildren cursor
-  void $ DVS.foldM' (defsVisitor conn dirtyFiles tu) Map.empty kids
+  DVS.mapM_ (defsVisitor tu) kids
 
-defsVisitor :: RPCConnection -> Set.IntSet -> TranslationUnit -> FileCache
-            -> C.Cursor -> ClangApp s FileCache
-defsVisitor conn dirtyFiles tu fileCache cursor = clangScope $ do
-  (loc, fileCache') <- getCursorLocation fileCache dirtyFiles cursor
+refKinds :: [C.CursorKind]
+refKinds = [C.Cursor_CallExpr,
+            C.Cursor_DeclRefExpr,
+            C.Cursor_MemberRefExpr,
+            C.Cursor_TypeRef,
+            C.Cursor_MacroExpansion,
+            C.Cursor_MacroDefinition,
+            C.Cursor_CXXMethod]
+
+overrideKinds :: [C.CursorKind]
+overrideKinds = [C.Cursor_CXXMethod, C.Cursor_Destructor]
+
+defKinds :: [C.CursorKind]
+defKinds = [C.Cursor_MacroDefinition, C.Cursor_VarDecl]
+           
+defsVisitor :: TranslationUnit -> C.Cursor -> Analysis s ()
+defsVisitor tu cursor = do
+  loc <- getCursorLocation cursor
   -- TODO: What to do about inclusions that aren't normal inclusions?
   -- Ones that are intended to be multiply included, etc?
-  if tlShouldIndex loc then do
+  when (tlShouldIndex loc) $ do
     cKind <- C.getKind cursor
-    defC <- C.getDefinition cursor
-    defIsNull <- C.isNullCursor defC
-    refC <- C.getReferenced cursor
-    refIsNull <- C.isNullCursor refC
     cursorIsDef <- isDef cursor cKind
     cursorIsRef <- C.isReference cKind
     cursorIsDecl <- C.isDeclaration cKind
-    cursorIsPV <- if cKind == C.Cursor_CXXMethod then C.isPureVirtualCppMethod cursor
-                                                 else return False
+    cursorIsPV <- if cKind == C.Cursor_CXXMethod
+                  then C.isPureVirtualCppMethod cursor
+                  else return False
 
-    -- Record inclusion directives.
-    fileCache'' <- if cKind == C.Cursor_InclusionDirective then do
-                     incFile <- C.getIncludedFile cursor
-                     (_, incFileHash, fileCache'') <- lookupFile fileCache' dirtyFiles incFile
+    when (cKind == C.Cursor_InclusionDirective) $
+      visitInclusions tu loc cKind cursor
 
-                     -- Determine the end of the extent of this cursor.
-                     extent <- C.getExtent cursor
-                     endLoc <- Source.getEnd extent
-                     (_, endLn, endCol, _) <- Source.getSpellingLocation endLoc
-
-                     -- Determine the context.
-                     ctxC <- getContext tu cursor
-                     ctxUSR <- XRef.getUSR ctxC >>= CS.unsafeUnpackByteString
-
-                     -- Record.
-                     refId <- refHash incFileHash loc
-                     reference <- return $! ReferenceUpdate refId
-                                                            (tlFileHash loc)
-                                                            (tlLine loc)
-                                                            (tlCol loc)
-                                                            endLn
-                                                            endCol
-                                                            (toSourceKind cKind)
-                                                            0
-                                                            0
-                                                            (hash ctxUSR)
-                                                            (incFileHash)
-                     liftIO $ runRPC (rpcFoundRef reference) conn
-                     return fileCache''
-                   else
-                     return fileCache'
-      
-    -- Record references.
-    -- TODO: Ignore CallExpr children that start at the same
-    -- position as the CallExpr. This always refers to the same
-    -- thing as the CallExpr itself. We don't want to just ignore
-    -- the CallExpr though, because e.g. constructor calls are
-    -- represented as CallExprs with no children.
-    -- TODO: Support LabelRefs.
-    let goodRef = cKind `elem` [C.Cursor_CallExpr,
-                                C.Cursor_DeclRefExpr,
-                                C.Cursor_MemberRefExpr,
-                                C.Cursor_TypeRef,
-                                C.Cursor_MacroExpansion,
-                                C.Cursor_MacroDefinition,
-                                C.Cursor_CXXMethod]
-                               || cursorIsDef
-                               || cursorIsRef
-                               || cursorIsDecl
-    fileCache''' <- if goodRef && not (defIsNull && refIsNull) then do
-        -- Prefer definitions to references when available.
-        let referToC = if defIsNull then refC else defC
-        referToUSR <- XRef.getUSR referToC >>= CS.unsafeUnpackByteString
-
-        -- Determine the end of the extent of this cursor.
-        extent <- C.getExtent cursor
-        endLoc <- Source.getEnd extent
-        (_, endLn, endCol, _) <- Source.getSpellingLocation endLoc
-
-        -- Determine the context.
-        ctxC <- getContext tu cursor
-        ctxUSR <- XRef.getUSR ctxC >>= CS.unsafeUnpackByteString
-
-        -- Special analysis for CallExprs.
-        refKind <- if cKind == C.Cursor_CallExpr then analyzeCall cursor
-                                                 else return $ toSourceKind cKind
-        viaUSRHash <- if cKind == C.Cursor_CallExpr then callBaseUSRHash cursor
-                                                    else return 0
-
-        -- Record location of reference for declaration lookups.
-        let referToUSRHash = hash referToUSR
-        (declHash, newCache) <- if refIsNull
-                                then return (0, fileCache'')
-                                else do
-                                  (tl, nc) <- getCursorLocation fileCache'' dirtyFiles refC
-                                  rh <- refHash referToUSRHash tl
-                                  return (rh, nc)
-
-        -- Record.
-        refId <- refHash referToUSRHash loc
-        reference <- return $! ReferenceUpdate refId
-                                               (tlFileHash loc)
-                                               (tlLine loc)
-                                               (tlCol loc)
-                                               endLn
-                                               endCol
-                                               refKind
-                                               viaUSRHash
-                                               declHash
-                                               (hash ctxUSR)
-                                               (hash referToUSR)
-        liftIO $ runRPC (rpcFoundRef reference) conn
-        return newCache
-      else
-        return fileCache''
+    when ((cKind `elem` refKinds) || cursorIsDef || cursorIsRef || cursorIsDecl) $
+      visitReferences tu loc cKind cursor
     
-    -- Record method overrides.
-    -- TODO: I seem to recall that in C++11 you can override
-    -- constructors. Add support for that if so.
-    when (cKind `elem` [C.Cursor_CXXMethod, C.Cursor_Destructor]) $ do
-      overrides <- C.getOverriddenCursors cursor
-      overrideUSRs <- mapM (CS.unsafeUnpackByteString <=< XRef.getUSR) overrides
-      usr <- XRef.getUSR cursor >>= CS.unsafeUnpackByteString
-      forM_ overrideUSRs $ \oUSR -> do
-        override <- return $! Override (hash usr) (hash oUSR)
-        liftIO $ runRPC (rpcFoundOverride override) conn
+    when (cKind `elem` overrideKinds) $
+      visitOverrides cursor
 
-    -- Record class inheritance ("overrides").
     when (cKind == C.Cursor_ClassDecl) $ do
+      -- Record class inheritance ("overrides").
       kids <- TV.getChildren cursor
-      DVS.mapM_ (classVisitor conn cursor) kids
+      DVS.mapM_ (classVisitor cursor) kids
 
-    -- Record definitions.
-    -- TODO: Support labels.
-    let goodDef = cKind `elem` [C.Cursor_MacroDefinition,
-                                C.Cursor_VarDecl]
-                               || cursorIsDef
-                               || cursorIsPV
-    when goodDef $ do
-        usr <- XRef.getUSR cursor >>= CS.unsafeUnpackByteString
-        name <- fqn cursor
-        let kind = toSourceKind cKind
+    when ((cKind `elem` defKinds) || cursorIsDef || cursorIsPV) $
+      visitDefinitions tu loc cKind cursor
+    
+    -- Recurse (most of the time).
+    let recurse = DVS.mapM_ (defsVisitor tu) =<< TV.getChildren cursor
+    case cKind of
+      C.Cursor_MacroDefinition  -> return ()
+      C.Cursor_FunctionDecl     -> clangScope recurse
+      C.Cursor_FunctionTemplate -> clangScope recurse
+      C.Cursor_CXXMethod        -> clangScope recurse
+      C.Cursor_Constructor      -> clangScope recurse
+      C.Cursor_Destructor       -> clangScope recurse
+      _                         -> recurse
 
-        -- Determine the context.
-        ctxC <- getContext' tu cursor
-        ctxUSR <- XRef.getUSR ctxC >>= CS.unsafeUnpackByteString
+sendRPC :: RPC () -> Analysis s ()
+sendRPC req = do
+  ctx <- lift get
+  liftIO $ runRPC req (asConn ctx)
 
-        def <- return $! DefUpdate name
-                                   (hash usr)
+queryRPC :: RPC a -> Analysis s a
+queryRPC req = do
+  ctx <- lift get
+  liftIO $ runRPC req (asConn ctx)
+
+visitInclusions :: TranslationUnit -> TULocation -> C.CursorKind -> C.Cursor -> Analysis s ()
+visitInclusions tu loc cKind cursor = do
+  -- Record inclusion directives.
+  incFile <- C.getIncludedFile cursor
+  (_, incFileHash) <- lookupFile incFile
+
+  -- Determine the end of the extent of this cursor.
+  extent <- C.getExtent cursor
+  endLoc <- Source.getEnd extent
+  (_, endLn, endCol, _) <- Source.getSpellingLocation endLoc
+
+  -- Determine the context.
+  ctxC <- getContext tu cursor
+  ctxUSR <- XRef.getUSR ctxC >>= CS.unsafeUnpackByteString
+
+  -- Record.
+  refId <- refHash incFileHash loc
+  let !reference = ReferenceUpdate refId
                                    (tlFileHash loc)
                                    (tlLine loc)
                                    (tlCol loc)
-                                   kind
+                                   endLn
+                                   endCol
+                                   (toSourceKind cKind)
+                                   0
+                                   0
                                    (hash ctxUSR)
-        liftIO $ runRPC (rpcFoundDef def) conn
+                                   incFileHash
+  sendRPC $ rpcFoundRef reference
+      
+visitReferences :: TranslationUnit -> TULocation -> C.CursorKind -> C.Cursor -> Analysis s ()
+visitReferences tu loc cKind cursor = do
+  -- Record references.
+  -- TODO: Ignore CallExpr children that start at the same
+  -- position as the CallExpr. This always refers to the same
+  -- thing as the CallExpr itself. We don't want to just ignore
+  -- the CallExpr though, because e.g. constructor calls are
+  -- represented as CallExprs with no children.
+  -- TODO: Support LabelRefs.
+  defC <- C.getDefinition cursor
+  defIsNull <- C.isNullCursor defC
+  refC <- C.getReferenced cursor
+  refIsNull <- C.isNullCursor refC
 
-    -- Recurse (most of the time).
-    case cKind of
-      C.Cursor_MacroDefinition -> return fileCache'
-      _                        -> do kids <- TV.getChildren cursor
-                                     DVS.foldM' (defsVisitor conn dirtyFiles tu)
-                                                fileCache''' kids
+  unless (defIsNull && refIsNull) $ do
+    -- Prefer definitions to references when available.
+    let referToC = if defIsNull then refC else defC
+    referToUSR <- XRef.getUSR referToC >>= CS.unsafeUnpackByteString
 
-  else
-    -- Don't recurse into out-of-project header files.
-    return fileCache'
+    -- Determine the end of the extent of this cursor.
+    extent <- C.getExtent cursor
+    endLoc <- Source.getEnd extent
+    (_, endLn, endCol, _) <- Source.getSpellingLocation endLoc
 
-classVisitor :: RPCConnection -> C.Cursor -> C.Cursor -> ClangApp s ()
-classVisitor conn thisClassC cursor = do
+    -- Determine the context.
+    ctxC <- getContext tu cursor
+    ctxUSR <- XRef.getUSR ctxC >>= CS.unsafeUnpackByteString
+
+    -- Special analysis for CallExprs.
+    refKind <- if cKind == C.Cursor_CallExpr then analyzeCall cursor
+                                             else return $ toSourceKind cKind
+    viaUSRHash <- if cKind == C.Cursor_CallExpr then callBaseUSRHash cursor
+                                                else return 0
+
+    -- Record location of reference for declaration lookups.
+    let referToUSRHash = hash referToUSR
+    declHash <- if refIsNull
+                then return 0
+                else refHash referToUSRHash =<< getCursorLocation refC
+
+    -- Record.
+    refId <- refHash referToUSRHash loc
+    let !reference = ReferenceUpdate refId
+                                     (tlFileHash loc)
+                                     (tlLine loc)
+                                     (tlCol loc)
+                                     endLn
+                                     endCol
+                                     refKind
+                                     viaUSRHash
+                                     declHash
+                                     (hash ctxUSR)
+                                     (hash referToUSR)
+    sendRPC $ rpcFoundRef reference
+    
+visitOverrides :: C.Cursor -> Analysis s ()
+visitOverrides cursor = do
+  -- Record method overrides.
+  -- TODO: I seem to recall that in C++11 you can override
+  -- constructors. Add support for that if so.
+  overrides <- C.getOverriddenCursors cursor
+  overrideUSRs <- mapM (CS.unsafeUnpackByteString <=< XRef.getUSR) overrides
+  usr <- XRef.getUSR cursor >>= CS.unsafeUnpackByteString
+  forM_ overrideUSRs $ \oUSR -> do
+    let !override = Override (hash usr) (hash oUSR)
+    sendRPC $ rpcFoundOverride override
+
+visitDefinitions :: TranslationUnit -> TULocation -> C.CursorKind -> C.Cursor -> Analysis s ()
+visitDefinitions tu loc cKind cursor = do
+  -- Record definitions.
+  -- TODO: Support labels.
+  usr <- XRef.getUSR cursor >>= CS.unsafeUnpackByteString
+  name <- fqn cursor
+  let kind = toSourceKind cKind
+
+  -- Determine the context.
+  ctxC <- getContext' tu cursor
+  ctxUSR <- XRef.getUSR ctxC >>= CS.unsafeUnpackByteString
+
+  let !def = DefUpdate name
+                       (hash usr)
+                       (tlFileHash loc)
+                       (tlLine loc)
+                       (tlCol loc)
+                       kind
+                       (hash ctxUSR)
+  sendRPC $ rpcFoundDef def
+
+classVisitor :: C.Cursor -> C.Cursor -> Analysis s ()
+classVisitor thisClassC cursor = do
   cKind <- C.getKind cursor
   case cKind of
     C.Cursor_CXXBaseSpecifier -> do
       thisClassUSR <- XRef.getUSR thisClassC >>= CS.unsafeUnpackByteString
       defC <- C.getDefinition cursor
       baseUSR <- XRef.getUSR defC >>= CS.unsafeUnpackByteString
-      override <- return $! Override (hash thisClassUSR) (hash baseUSR)
-      liftIO $ runRPC (rpcFoundOverride override) conn
+      let !override = Override (hash thisClassUSR) (hash baseUSR)
+      sendRPC $ rpcFoundOverride override
     _ -> return ()
 
 type FileCache = Map.IntMap (Bool, Int)
@@ -286,16 +323,16 @@ data TULocation = TULocation
   , tlCol         :: SourceCol
   } deriving (Eq, Show)
 
-getCursorLocation :: FileCache -> Set.IntSet -> C.Cursor -> ClangApp s (TULocation, FileCache)
-getCursorLocation fileCache dirtyFiles cursor = do
+getCursorLocation :: C.Cursor -> Analysis s TULocation
+getCursorLocation cursor = do
   loc <- C.getLocation cursor
-  (f, ln, col, _) <- Source.getSpellingLocation loc
-  case f of
-    Just f' -> do (shouldIndex, filenameHash, newCache) <- lookupFile fileCache dirtyFiles f'
-                  return (TULocation shouldIndex filenameHash ln col, newCache)
-    Nothing -> return (TULocation False 0 ln col, fileCache)
+  (mayF, ln, col, _) <- Source.getSpellingLocation loc
+  case mayF of
+    Just f  -> do (shouldIndex, filenameHash) <- lookupFile f
+                  return $ TULocation shouldIndex filenameHash ln col
+    Nothing -> return $ TULocation False 0 ln col
 
-getCursorLocation' :: C.Cursor -> ClangApp s SourceLocation
+getCursorLocation' :: C.Cursor -> Clang s SourceLocation
 getCursorLocation' cursor = do
   loc <- C.getLocation cursor
   (f, ln, col, _) <- Source.getSpellingLocation loc
@@ -303,20 +340,23 @@ getCursorLocation' cursor = do
                     Nothing -> return ""
   return $ SourceLocation file ln col
   
-lookupFile :: FileCache -> Set.IntSet -> File.File
-           -> ClangApp s (Bool, SourceFileHash, FileCache)
-lookupFile fileCache dirtyFiles file = do
+lookupFile :: File.File -> Analysis s (Bool, SourceFileHash)
+lookupFile file = do
+  ctx <- lift get
   fileObjHash <- File.hashFile file  -- This is a hash of the file _object_, not the name.
+  let fileCache = asFileCache ctx
+
   case Map.lookup fileObjHash fileCache of
     Just (shouldIndex, filenameHash) ->
-      return (shouldIndex, filenameHash, fileCache)
+      return (shouldIndex, filenameHash)
     Nothing -> do
       !filenameHash <- hash <$> (CS.unsafeUnpackByteString =<< File.getName file)
-      let !shouldIndex = filenameHash `Set.member` dirtyFiles
+      let !shouldIndex = filenameHash `Set.member` (asDirtyFiles ctx)
       let !newCache = Map.insert fileObjHash (shouldIndex, filenameHash) fileCache
-      return (shouldIndex, filenameHash, newCache)
+      lift $ put $! ctx { asFileCache = newCache }
+      return (shouldIndex, filenameHash)
   
-analyzeCall :: C.Cursor -> ClangApp s SourceKind
+analyzeCall :: C.Cursor -> Analysis s SourceKind
 analyzeCall c = do
   isDynamicCall <- C.isDynamicCall c
 
@@ -328,36 +368,37 @@ analyzeCall c = do
   else 
     return CallExpr
 
-callBaseUSRHash :: C.Cursor -> ClangApp s USRHash
-callBaseUSRHash = return . hash
-              -- <=< (\x -> (liftIO . putStrLn $ "Got base USR: " ++ (show x)) >> return x)
-              <=< CS.unsafeUnpackByteString
-              <=< XRef.getUSR
-              <=< C.getTypeDeclaration
-              <=< underlyingType
-              <=< C.getBaseExpression
+callBaseUSRHash :: C.Cursor -> Analysis s USRHash
+callBaseUSRHash = go
+  where
+    go = return . hash
+         -- <=< (\x -> (liftIO . putStrLn $ "Got base USR: " ++ (show x)) >> return x)
+         <=< CS.unsafeUnpackByteString
+         <=< XRef.getUSR
+         <=< C.getTypeDeclaration
+         <=< underlyingType
+         <=< C.getBaseExpression
 
-refHash :: Int -> TULocation -> ClangApp s USRHash
+refHash :: Int -> TULocation -> Analysis s USRHash
 refHash usrHash loc = return refHash'
   where
     refHash' = usrHash `hashWithSalt` tlFileHash loc
                        `hashWithSalt` tlLine loc
                        `hashWithSalt` tlCol loc
                       
-
-isDef :: C.Cursor -> C.CursorKind -> ClangApp s Bool
+isDef :: C.Cursor -> C.CursorKind -> Analysis s Bool
 isDef c k = do
   q1 <- C.isDefinition c
   return $ q1 && (k /= C.Cursor_CXXAccessSpecifier)
 
-fqn :: C.Cursor -> ClangApp s Identifier 
+fqn :: C.Cursor -> Analysis s Identifier 
 fqn cursor = (B.intercalate "::" . reverse) <$> go cursor
   where go c = do isNull <- C.isNullCursor c
                   isTU <- C.getKind c >>= C.isTranslationUnit
                   if isNull || isTU then return [] else go' c
         go' c =  (:) <$> cursorName c <*> (C.getSemanticParent c >>= go)
 
-getContext :: TranslationUnit -> C.Cursor -> ClangApp s C.Cursor
+getContext :: TranslationUnit -> C.Cursor -> Analysis s C.Cursor
 getContext tu cursor = do
     isNull <- C.isNullCursor cursor
     cKind <- C.getKind cursor
@@ -379,7 +420,7 @@ getContext tu cursor = do
                            _                       -> getContext tu srcCursor
     go c _ _ = C.getSemanticParent c >>= getContext tu
 
-getContext' :: TranslationUnit -> C.Cursor -> ClangApp s C.Cursor
+getContext' :: TranslationUnit -> C.Cursor -> Analysis s C.Cursor
 getContext' tu cursor = do
   isNull <- C.isNullCursor cursor
   cKind <- C.getKind cursor
@@ -388,12 +429,12 @@ getContext' tu cursor = do
     (False, C.Cursor_TranslationUnit) -> return cursor
     (False, _)                        -> C.getSemanticParent cursor >>= getContext tu
 
-cursorName :: C.Cursor -> ClangApp s Identifier
+cursorName :: C.Cursor -> Analysis s Identifier
 cursorName c = C.getDisplayName c >>= CS.unsafeUnpackByteString >>= anonymize
   where anonymize s | B.null s  = return "<anonymous>"
                     | otherwise = return s
 
-logDiagnostics :: TranslationUnit -> ClangApp s ()
+logDiagnostics :: TranslationUnit -> Analysis s ()
 logDiagnostics tu = do
     opts <- Diag.defaultDisplayOptions
     dias <- Diag.getDiagnostics tu
@@ -405,18 +446,18 @@ logDiagnostics tu = do
   where
     isError = (== Diag.Diagnostic_Error) .||. (== Diag.Diagnostic_Fatal)
 
-doDisplayAST :: TranslationUnit -> ClangApp s ()
+doDisplayAST :: TranslationUnit -> Clang s ()
 doDisplayAST tu = getCursor tu >>= dumpSubtree
 
-dumpSubtree :: C.Cursor -> ClangApp s ()
+dumpSubtree :: C.Cursor -> Clang s ()
 dumpSubtree cursor = do
     dumpVisitor 0 cursor
     liftIO $ putStrLn "Finished recursing!"
-  where dumpVisitor :: Int -> C.Cursor -> ClangApp s ()
+  where dumpVisitor :: Int -> C.Cursor -> Clang s ()
         dumpVisitor i c = do dump i c
                              kids <- TV.getChildren c
                              DVS.mapM_ (dumpVisitor $ i + 1) kids
-        dump :: Int -> C.Cursor -> ClangApp s ()
+        dump :: Int -> C.Cursor -> Clang s ()
         dump i c = do
           -- Get location.
           loc <- C.getLocation c
@@ -477,7 +518,7 @@ dumpSubtree cursor = do
                               "definition [" ++ defName ++ "/" ++ defUSR ++ "] " ++
                               "reference [" ++ refName ++ "/" ++ refFile ++ "%" ++ refUSR ++ "]"
 
-underlyingType :: C.Cursor -> ClangApp s T.Type
+underlyingType :: ClangBase m => C.Cursor -> ClangT s m T.Type
 underlyingType c = do
   t <- C.getType c
   tKind <- T.getKind t
@@ -486,17 +527,29 @@ underlyingType c = do
   else
     return t
     
-isVirtualCall :: C.CursorKind -> C.Cursor -> ClangApp s Bool
-isVirtualCall k | k `elem` [C.Cursor_CallExpr, C.Cursor_MemberRefExpr, C.Cursor_DeclRefExpr] = doesRefKindRequireVirtualDispatch <=< baseRefKind
+isVirtualCall :: ClangBase m => C.CursorKind -> C.Cursor -> ClangT s m Bool
+isVirtualCall k | k `elem` vcKinds =
+    doesRefKindRequireVirtualDispatch <=< baseRefKind
+  where
+    vcKinds = [C.Cursor_CallExpr,
+               C.Cursor_MemberRefExpr,
+               C.Cursor_DeclRefExpr]
 isVirtualCall _ = const $ return True
 
-doesRefKindRequireVirtualDispatch :: T.TypeKind -> ClangApp s Bool
-doesRefKindRequireVirtualDispatch k = return $ (`elem` [T.Type_LValueReference, T.Type_RValueReference, T.Type_Pointer, T.Type_Unexposed, T.Type_Invalid]) k
+doesRefKindRequireVirtualDispatch :: ClangBase m => T.TypeKind -> ClangT s m Bool
+doesRefKindRequireVirtualDispatch = return . (`elem` vdKinds)
+  where
+    vdKinds = [T.Type_LValueReference,
+               T.Type_RValueReference,
+               T.Type_Pointer,
+               T.Type_Unexposed,
+               T.Type_Invalid]
 
-baseRefKind :: C.Cursor -> ClangApp s T.TypeKind
+baseRefKind :: ClangBase m => C.Cursor -> ClangT s m T.TypeKind
 baseRefKind = T.getKind <=< C.getType <=< C.getReferenced
 
-withTranslationUnit :: CommandInfo -> (forall s. TranslationUnit -> ClangApp s a) -> IO a
+withTranslationUnit :: ClangBase m => CommandInfo
+                    -> (forall s. TranslationUnit -> ClangT s m a) -> m a
 withTranslationUnit ci f = 
     withCreateIndex False False $ \index -> do
       clangIncludePath <- liftIO $ libclangIncludePath

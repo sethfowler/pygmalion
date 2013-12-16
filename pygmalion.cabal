@@ -135,6 +135,7 @@ executable pygindex-clang
                  ,  hashable
                  ,  LibClang >= 0.2
                  ,  MissingH
+                 ,  mtl
                  ,  pygmalion
                  ,  transformers
                  ,  unix
