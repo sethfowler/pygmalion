@@ -204,6 +204,13 @@ defsVisitor tu cursor = do
       C.Cursor_CXXMethod        -> analysisScope recurse
       C.Cursor_Constructor      -> analysisScope recurse
       C.Cursor_Destructor       -> analysisScope recurse
+      C.Cursor_StructDecl       -> analysisScope recurse
+      C.Cursor_UnionDecl        -> analysisScope recurse
+      C.Cursor_ClassDecl        -> analysisScope recurse
+      C.Cursor_EnumDecl         -> analysisScope recurse
+      C.Cursor_ClassTemplate    -> analysisScope recurse
+      C.Cursor_ClassTemplatePartialSpecialization
+                                -> analysisScope recurse
       _                         -> recurse
 
 sendRPC :: RPC () -> Analysis s ()
