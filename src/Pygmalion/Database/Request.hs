@@ -54,7 +54,7 @@ data DBRequest = DBGetCommandInfo !SourceFile (Response (Maybe CommandInfo, Mayb
                  deriving (Show)
 
 dbQueueLimit :: Int
-dbQueueLimit = 1000 -- 100000
+dbQueueLimit = 5000 -- 100000
 
 data DBUpdateChan = DBUpdateChan
   { duQueue :: TVar [Vector DBUpdate]
