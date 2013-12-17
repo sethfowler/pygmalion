@@ -48,7 +48,7 @@ main = do
 
   -- Create communication channels.
   stopWatching <- newEmptyMVar
-  dbUpdateChan <- newLenChan
+  dbUpdateChan <- newDBUpdateChan
   dbQueryChan <- newLenChan
   idleChan <- newLenChan
   idxStream <- mkIndexStream metadata

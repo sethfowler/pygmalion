@@ -16,7 +16,7 @@ import qualified Data.Vector as V
 import System.Exit
 import System.Process
 
-import Control.Concurrent.Chan.Len
+--import Control.Concurrent.Chan.Len
 import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.Database.Request
@@ -50,7 +50,7 @@ finishIndexing sf = do
 
   incs <- lift $ atomically $ cleanedInclusions (icIndexStream ctx) (hash sf)
   forM_ incs $ \i -> do
-    writeLenChan (icDBUpdateChan ctx) $
+    lift $ pushUpdate (icDBUpdateChan ctx) $
       V.singleton $ DBUpdateFile (fmFile i) (fmMTime i) (fmVersionHash i)
 
   lift $ atomically $ finishIndexingFile (icIndexStream ctx) sf
@@ -143,7 +143,7 @@ updateFile sf mt mayCI = do
   case mayFM of
     Just fm -> do let upds = DBUpdateFile sf (fmMTime fm) (fmVersionHash fm) :
                              maybe [] (pure . DBUpdateCommandInfo) mayCI
-                  writeLenChan (icDBUpdateChan ctx) (V.fromList upds)
+                  lift $ pushUpdate (icDBUpdateChan ctx) (V.fromList upds)
                   return (Just fm)
     Nothing -> do logWarn $ "Missing metadata while updating file: " ++ show sf
                   return Nothing
@@ -151,7 +151,7 @@ updateFile sf mt mayCI = do
 resetFile :: SourceFile -> Indexer ()
 resetFile sf = do
   ctx <- ask
-  writeLenChan (icDBUpdateChan ctx) $ V.singleton $ DBResetMetadata sf
+  lift $ pushUpdate (icDBUpdateChan ctx) $ V.singleton $ DBResetMetadata sf
 
 index :: CommandInfo -> Indexer Bool
 index ci = go 1
@@ -204,7 +204,7 @@ updateInclusions iStream dbUpdateChan sfHash is = do
     let reqs' = foldl' (\rs ic -> DBUpdateInclusion ic : rs) reqs is
 
     -- Send the requests.
-    writeLenChan dbUpdateChan $ V.fromList $ reverse reqs'
+    pushUpdate dbUpdateChan $ V.fromList $ reverse reqs'
     
     -- Release the lock on the clean inclusions.
     atomically $ releaseInclusions iStream sfHash cleanIncs

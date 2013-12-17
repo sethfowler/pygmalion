@@ -64,7 +64,7 @@ runSourceAnalyses ci conn = do
                     logDiagnostics tu
                     inclusionsAnalysis (hash $ ciSourceFile ci) tu
                     --addFileDefs conn ci dirtyFiles
-                    analysisScope (defsAnalysis ci tu)
+                    analysisScope (defsAnalysis tu)
   case result of
     Right _ -> return ()
     Left (ClangException e) -> void $ logWarn ("Clang exception: " ++ e)
@@ -143,8 +143,8 @@ sendUpdate up = do
              liftIO $ putStrLn $ "Overflowed vector and had to send early"
      else lift $ put $! ctx { asUpdateCount = newCount }
 
-defsAnalysis :: CommandInfo -> TranslationUnit -> Analysis s ()
-defsAnalysis ci tu = do
+defsAnalysis :: TranslationUnit -> Analysis s ()
+defsAnalysis tu = do
     cursor <- getCursor tu
     kids <- TV.getChildren cursor
     DVS.mapM_ (defsVisitor tu) kids

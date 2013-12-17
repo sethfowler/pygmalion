@@ -62,7 +62,7 @@ waitForAllEmpty idxStream dbUpdateChan dbQueryChan = liftIO $ atomically $ do
   check (Set.null idxCurrent)
 
   -- Check the channels.
-  isUpdateChanEmpty <- isEmptyLenChan' dbUpdateChan
+  isUpdateChanEmpty <- isEmptyUpdateChan dbUpdateChan
   isQueryChanEmpty <- isEmptyLenChan' dbQueryChan
   check (isUpdateChanEmpty && isQueryChanEmpty)
 
@@ -70,7 +70,7 @@ waitForAnyNonempty :: MonadIO m => IndexStream -> DBUpdateChan -> DBQueryChan ->
 waitForAnyNonempty idxStream dbUpdateChan dbQueryChan = liftIO $ atomically $ do
   idxPending <- readTMVar (isPending idxStream)
   Pair idxCurrent _ <- readTMVar (isCurrent idxStream)
-  isUpdateChanEmpty <- isEmptyLenChan' dbUpdateChan
+  isUpdateChanEmpty <- isEmptyUpdateChan dbUpdateChan
   isQueryChanEmpty <- isEmptyLenChan' dbQueryChan
   check $ not (Map.null idxPending &&
                Set.null idxCurrent &&

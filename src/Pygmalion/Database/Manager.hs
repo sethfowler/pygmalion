@@ -35,26 +35,27 @@ runDatabaseManager updateChan queryChan = do
     go !ctx !n !s = {-# SCC "databaseThread" #-}
            do !item <- atomically $ readFromChannels updateChan queryChan
               case item of
-                Left ups         -> routeUpdates ctx ups >> go ctx (n+1) s
+                Left ups         -> routeUpdates ctx (reverse ups) >> go ctx (n+1) s
                 Right DBShutdown -> logInfo "Shutting down DB thread"
                 Right req        -> runReaderT (route req) ctx >> go ctx (n+1) s
                 
-readFromChannels :: DBUpdateChan -> DBQueryChan -> STM (Either (V.Vector DBUpdate) DBRequest)
+readFromChannels :: DBUpdateChan -> DBQueryChan -> STM (Either [V.Vector DBUpdate] DBRequest)
 readFromChannels updateChan queryChan = readQueryChan `orElse` readUpdateChan
   where
     readQueryChan  = Right <$> readTBQueue queryChan
-    readUpdateChan = Left <$> readTBQueue updateChan
+    readUpdateChan = Left <$> popUpdates updateChan
 
 data DBContext = DBContext
   { dbHandle      :: !DBHandle
   }
 type DB a = ReaderT DBContext IO a
 
-routeUpdates :: DBContext -> V.Vector DBUpdate -> IO ()
-routeUpdates ctx ups =
+routeUpdates :: DBContext -> [V.Vector DBUpdate] -> IO ()
+routeUpdates ctx upList =
     withTransaction (dbHandle ctx) $
-      V.forM_ ups $ \up ->
-        runReaderT (routeUpdate up) ctx
+      forM_ upList $ \ups ->
+        V.forM_ ups $ \up ->
+          runReaderT (routeUpdate up) ctx
   where
     routeUpdate (DBUpdateDef !di)         = update "definition" updateDef di
     routeUpdate (DBUpdateRef !rf)         = update "reference" updateReference rf

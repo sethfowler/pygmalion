@@ -5,8 +5,14 @@ module Pygmalion.Database.Request
 , DBRequest (..)
 , DBUpdateChan
 , DBQueryChan
+, newDBUpdateChan
+, pushUpdate
+, popUpdates
+, isEmptyUpdateChan
 ) where
 
+import Control.Applicative
+import Control.Concurrent.STM
 import Data.Serialize
 import Data.Vector
 import GHC.Generics
@@ -47,5 +53,39 @@ data DBRequest = DBGetCommandInfo !SourceFile (Response (Maybe CommandInfo, Mayb
                | DBShutdown
                  deriving (Show)
 
-type DBUpdateChan = LenChan (Vector DBUpdate)
+dbQueueLimit :: Int
+dbQueueLimit = 1000 -- 100000
+
+data DBUpdateChan = DBUpdateChan
+  { duQueue :: TVar [Vector DBUpdate]
+  , duLen   :: TVar Int
+  }
+
+newDBUpdateChan :: IO DBUpdateChan
+newDBUpdateChan = DBUpdateChan <$> newTVarIO []
+                               <*> newTVarIO 0
+
+pushUpdate :: DBUpdateChan -> Vector DBUpdate -> IO ()
+pushUpdate chan up = atomically $ do
+  n <- readTVar (duLen chan)
+  check (n < dbQueueLimit)
+  q <- readTVar (duQueue chan)
+  writeTVar (duLen chan) $! (n + 1)
+  writeTVar (duQueue chan) $! (up : q)
+
+popUpdates :: DBUpdateChan -> STM [Vector DBUpdate]
+popUpdates chan = do
+  n <- readTVar (duLen chan)
+  check (n > 0)
+  q <- readTVar (duQueue chan)
+  writeTVar (duLen chan) 0
+  writeTVar (duQueue chan) []
+  return q
+
+isEmptyUpdateChan :: DBUpdateChan -> STM Bool
+isEmptyUpdateChan chan = do
+  n <- readTVar (duLen chan)
+  return $! n == 0
+
+--type DBUpdateChan = LenChan (Vector DBUpdate)
 type DBQueryChan = LenChan DBRequest
