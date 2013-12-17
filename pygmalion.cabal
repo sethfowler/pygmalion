@@ -25,6 +25,7 @@ library
                    containers,
                    direct-sqlite >= 2.3.8,
                    directory,
+                   ekg,
                    filepath,
                    fgl,
                    ghc-prim,

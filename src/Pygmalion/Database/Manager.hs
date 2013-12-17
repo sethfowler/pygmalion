@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Pygmalion.Database.Manager
 ( runDatabaseManager
@@ -10,8 +11,9 @@ import Control.Concurrent.STM
 --import Control.Monad
 import Control.Monad.Reader
 import Data.Hashable (hash)
-import Data.Time.Clock
 import qualified Data.Vector as V
+import qualified System.Remote.Monitoring as EKG
+import qualified System.Remote.Gauge as Gauge
 
 import Control.Concurrent.Chan.Len
 import Pygmalion.Core
@@ -19,25 +21,20 @@ import Pygmalion.Database.IO
 import Pygmalion.Database.Request
 import Pygmalion.Log
 
-runDatabaseManager :: DBUpdateChan -> DBQueryChan -> IO ()
-runDatabaseManager updateChan queryChan = do
-    start <- getCurrentTime
+runDatabaseManager :: DBUpdateChan -> DBQueryChan -> EKG.Server -> IO ()
+runDatabaseManager updateChan queryChan ekg = do
+    updateGauge <- EKG.getGauge "Database Updates Popped" ekg
     withDB $ \h -> do
-      let ctx = DBContext h
-      go ctx 0 start
+      let ctx = DBContext h updateGauge
+      go ctx
   where
-    go :: DBContext -> Int -> UTCTime -> IO ()
-    go !ctx 1000 !start = do 
-      stop <- getCurrentTime
-      logInfo $ "Handled 1000 updates in " ++ show (stop `diffUTCTime` start)
-      newStart <- getCurrentTime
-      go ctx 0 newStart
-    go !ctx !n !s = {-# SCC "databaseThread" #-}
+    go :: DBContext -> IO ()
+    go !ctx = 
            do !item <- atomically $ readFromChannels updateChan queryChan
               case item of
-                Left ups         -> routeUpdates ctx (reverse ups) >> go ctx (n+1) s
+                Left ups         -> routeUpdates ctx (reverse ups) >> go ctx
                 Right DBShutdown -> logInfo "Shutting down DB thread"
-                Right req        -> runReaderT (route req) ctx >> go ctx (n+1) s
+                Right req        -> runReaderT (route req) ctx >> go ctx
                 
 readFromChannels :: DBUpdateChan -> DBQueryChan -> STM (Either [V.Vector DBUpdate] DBRequest)
 readFromChannels updateChan queryChan = readQueryChan `orElse` readUpdateChan
@@ -47,11 +44,13 @@ readFromChannels updateChan queryChan = readQueryChan `orElse` readUpdateChan
 
 data DBContext = DBContext
   { dbHandle      :: !DBHandle
+  , dbUpdateGauge :: !Gauge.Gauge
   }
 type DB a = ReaderT DBContext IO a
 
 routeUpdates :: DBContext -> [V.Vector DBUpdate] -> IO ()
-routeUpdates ctx upList =
+routeUpdates ctx upList = do
+    Gauge.set (dbUpdateGauge ctx) $ sum (map V.length upList)
     withTransaction (dbHandle ctx) $
       forM_ upList $ \ups ->
         V.forM_ ups $ \up ->

@@ -34,7 +34,7 @@ main = do
   -- Initialize.
   cf <- getConfiguration
   initLogger (logLevel cf)
-  void $ EKG.forkServer "localhost" 8000
+  ekg <- EKG.forkServer "localhost" 8000
 
   -- Initialize the database and file metadata.
   ensureDB
@@ -57,7 +57,7 @@ main = do
   logDebug "Launching idle thread"
   idleThread <- asyncBound $ runIdleManager cf idleChan idxStream dbUpdateChan dbQueryChan
   logDebug "Launching database thread"
-  dbThread <- asyncBound (runDatabaseManager dbUpdateChan dbQueryChan)
+  dbThread <- asyncBound (runDatabaseManager dbUpdateChan dbQueryChan ekg)
   let maxThreads = case idxThreads cf of
                      0 -> numCapabilities
                      n -> n
