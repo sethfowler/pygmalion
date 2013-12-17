@@ -54,7 +54,7 @@ runAnalysis :: b -> StateT b IO a -> IO a
 runAnalysis = flip evalStateT
 
 vecSize :: Int
-vecSize = 100000
+vecSize = 1000 -- 100000
 
 runSourceAnalyses :: CommandInfo -> RPCConnection -> IO ()
 runSourceAnalyses ci conn = do
@@ -64,7 +64,7 @@ runSourceAnalyses ci conn = do
                     logDiagnostics tu
                     inclusionsAnalysis (hash $ ciSourceFile ci) tu
                     --addFileDefs conn ci dirtyFiles
-                    defsAnalysis ci tu
+                    analysisScope (defsAnalysis ci tu)
   case result of
     Right _ -> return ()
     Left (ClangException e) -> void $ logWarn ("Clang exception: " ++ e)
@@ -147,16 +147,7 @@ defsAnalysis :: CommandInfo -> TranslationUnit -> Analysis s ()
 defsAnalysis ci tu = do
     cursor <- getCursor tu
     kids <- TV.getChildren cursor
-    liftIO $ putStrLn $ show (ciSourceFile ci) ++ ": top-level nodes = " ++ show (DVS.length kids)
-    go (DVS.splitAt groupSize kids)
-  where
-    go (!h, !t)
-      | DVS.null h = return ()
-      | DVS.null t = analysisScope $ DVS.mapM_ (defsVisitor tu) h
-      | otherwise  = do analysisScope $ DVS.mapM_ (defsVisitor tu) h
-                        go (DVS.splitAt groupSize t)
-
-    groupSize = 10000
+    DVS.mapM_ (defsVisitor tu) kids
 
 refKinds :: [C.CursorKind]
 refKinds = [C.Cursor_CallExpr,
@@ -208,13 +199,11 @@ defsVisitor tu cursor = do
     let recurse = DVS.mapM_ (defsVisitor tu) =<< TV.getChildren cursor
     case cKind of
       C.Cursor_MacroDefinition  -> return ()
-      {-
       C.Cursor_FunctionDecl     -> analysisScope recurse
       C.Cursor_FunctionTemplate -> analysisScope recurse
       C.Cursor_CXXMethod        -> analysisScope recurse
       C.Cursor_Constructor      -> analysisScope recurse
       C.Cursor_Destructor       -> analysisScope recurse
-      -}
       _                         -> recurse
 
 sendRPC :: RPC () -> Analysis s ()

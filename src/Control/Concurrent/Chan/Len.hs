@@ -21,7 +21,7 @@ import Control.Monad.IO.Class
 type LenChan a = TBQueue a
 
 queueLimit :: Int
-queueLimit = 100000
+queueLimit = 1000 -- 100000
 
 newLenChan :: MonadIO m => m (LenChan a)
 newLenChan = liftIO $ atomically $ newTBQueue queueLimit
