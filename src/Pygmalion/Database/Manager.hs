@@ -32,9 +32,9 @@ runDatabaseManager updateChan queryChan ekg = do
     go !ctx = 
            do !item <- atomically $ readFromChannels updateChan queryChan
               case item of
-                Left ups         -> routeUpdates ctx (reverse ups) >> go ctx
+                Left ups         -> return () >> go ctx {- routeUpdates ctx (reverse ups) >> go ctx -}
                 Right DBShutdown -> logInfo "Shutting down DB thread"
-                Right req        -> runReaderT (route req) ctx >> go ctx
+                Right req        -> return () >> go ctx {- runReaderT (route req) ctx >> go ctx -}
                 
 readFromChannels :: DBUpdateChan -> DBQueryChan -> STM (Either [V.Vector DBUpdate] DBRequest)
 readFromChannels updateChan queryChan = readQueryChan `orElse` readUpdateChan

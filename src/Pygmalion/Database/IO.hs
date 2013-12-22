@@ -131,6 +131,8 @@ endTransaction :: DBHandle -> IO ()
 endTransaction h = execStatement h endTransactionStmt ()
 
 resetMetadata :: DBHandle -> SourceFile -> IO ()
+resetMetadata _ _ = return ()
+{-
 resetMetadata h sf = do
   resetInclusions h sf
   resetOverrides h sf
@@ -138,6 +140,7 @@ resetMetadata h sf = do
   -- We need to reset definitions last since the rest of the reset code
   -- sometimes refers to the definitions table.
   resetDefs h sf
+-}
 
 openDB :: FilePath -> IO DBHandle
 openDB db = labeledCatch "openDB" $ do
@@ -353,24 +356,13 @@ getAllFiles h = query_ (conn h) (mkQueryT sql)
 defineInclusionsTable :: Connection -> IO ()
 defineInclusionsTable c = do
     execute_ c (mkQueryT sql)
-    execute_ c (mkQueryT indexSQL)
-    execute_ c (mkQueryT closureSQL)
-    execute_ c (mkQueryT closureIndexSQL)
+    --execute_ c (mkQueryT indexSQL)
   where
     sql = T.concat [ "create table if not exists Inclusions( "
                    , "Inclusion integer not null,            "
                    , "Includer integer not null,             "
                    , "primary key (Includer, Inclusion))"    ]
     indexSQL = "create index if not exists InclusionsInclusionIndex on Inclusions(Inclusion)"
-    closureSQL = T.concat
-                 [ "create table if not exists InclusionsClosure( "
-                 , "Inclusion integer not null,                   "
-                 , "Includer integer not null,                    "
-                 , "Depth integer not null,                       "
-                 , "primary key (Includer, Inclusion, Depth))"    ]
-    closureIndexSQL = T.concat
-                      [ "create index if not exists InclusionsClosureIndex on "
-                      , "InclusionsClosure(Inclusion, Depth, Includer)"       ]
 
 updateInclusion :: DBHandle -> Inclusion -> IO ()
 updateInclusion h (Inclusion inclusion includerHash) = do
@@ -629,8 +621,8 @@ getSimilarCommandInfoSQL = T.concat
 defineDefinitionsTable :: Connection -> IO ()
 defineDefinitionsTable c = do
     execute_ c (mkQueryT sql)
-    execute_ c (mkQueryT indexSQL)
-    execute_ c (mkQueryT indexSQL')
+    --execute_ c (mkQueryT indexSQL)
+    --execute_ c (mkQueryT indexSQL')
   where
     sql = T.concat [ "create table if not exists Definitions(      "
                    , "USRHash integer primary key unique not null, "
@@ -694,7 +686,7 @@ getDefSQL = T.concat
 defineOverridesTable :: Connection -> IO ()
 defineOverridesTable c = do
     execute_ c (mkQueryT sql)
-    execute_ c (mkQueryT indexSQL)
+    --execute_ c (mkQueryT indexSQL)
   where
     sql = T.concat [ "create table if not exists Overrides(           "
                    , "Definition integer primary key unique not null, "
@@ -823,9 +815,9 @@ getMembersSQL = T.concat
 defineReferencesTable :: Connection -> IO ()
 defineReferencesTable c = do
     execute_ c (mkQueryT sql)
-    execute_ c (mkQueryT indexSQL)
-    execute_ c (mkQueryT indexSQL')
-    execute_ c (mkQueryT indexSQL'')
+    --execute_ c (mkQueryT indexSQL)
+    --execute_ c (mkQueryT indexSQL')
+    --execute_ c (mkQueryT indexSQL'')
   where
     sql = T.concat [ "create table if not exists Refs(           "
                    , "RefId integer unique primary key not null, "

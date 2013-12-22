@@ -40,12 +40,23 @@ import Pygmalion.Database.Request
 import Pygmalion.Log
 import Pygmalion.RPC.Client
 
+type FileCache = Map.IntMap (Bool, Int)
+type USRHashCache = Map.IntMap Int
+
+data TULocation = TULocation
+  { tlShouldIndex :: Bool
+  , tlFileHash    :: SourceFileHash
+  , tlLine        :: SourceLine
+  , tlCol         :: SourceCol
+  } deriving (Eq, Show)
+
 data AnalysisState = AnalysisState
-  { asConn        :: !RPCConnection
-  , asDirtyFiles  :: !Set.IntSet
-  , asFileCache   :: !FileCache
-  , asUpdates     :: !(V.IOVector DBUpdate)
-  , asUpdateCount :: !Int
+  { asConn         :: !RPCConnection
+  , asDirtyFiles   :: !Set.IntSet
+  , asFileCache    :: !FileCache
+  , asUSRHashCache :: !USRHashCache
+  , asUpdates      :: !(V.IOVector DBUpdate)
+  , asUpdateCount  :: !Int
   }
 
 type Analysis s a = ClangT s (StateT AnalysisState IO) a
@@ -59,7 +70,7 @@ vecSize = 1000 -- 100000
 runSourceAnalyses :: CommandInfo -> RPCConnection -> IO ()
 runSourceAnalyses ci conn = do
   initialVec <- liftIO $ V.unsafeNew vecSize
-  let initialState = AnalysisState conn Set.empty Map.empty initialVec 0
+  let initialState = AnalysisState conn Set.empty Map.empty Map.empty initialVec 0
   result <- try $ runAnalysis initialState $ withTranslationUnit ci $ \tu -> do
                     logDiagnostics tu
                     inclusionsAnalysis (hash $ ciSourceFile ci) tu
@@ -121,6 +132,8 @@ addFileDefs conn ci dirtyFiles = do
 -}
   
 analysisScope :: (forall s. Analysis s ()) -> Analysis s' ()
+analysisScope = clangScope
+{-
 analysisScope f = clangScope $ do
   f
   ctx <- lift get
@@ -129,8 +142,11 @@ analysisScope f = clangScope $ do
     sendRPC $ rpcSendUpdates finishedVec
     newVec <- liftIO $ V.unsafeNew vecSize
     lift $ put $! ctx { asUpdates = newVec, asUpdateCount = 0 }
+-}
 
 sendUpdate :: DBUpdate -> Analysis s ()
+sendUpdate _ = return ()
+{-
 sendUpdate up = do
   ctx <- lift $ get
   liftIO $ V.unsafeWrite (asUpdates ctx) (asUpdateCount ctx) up
@@ -142,12 +158,93 @@ sendUpdate up = do
              lift $ put $! ctx { asUpdates = newVec, asUpdateCount = 0 }
              liftIO $ putStrLn $ "Overflowed vector and had to send early"
      else lift $ put $! ctx { asUpdateCount = newCount }
+-}
 
 defsAnalysis :: TranslationUnit -> Analysis s ()
 defsAnalysis tu = do
     cursor <- getCursor tu
     kids <- TV.getChildren cursor
     DVS.mapM_ (defsVisitor tu) kids
+
+defsVisitor :: TranslationUnit -> C.Cursor -> Analysis s ()
+defsVisitor tu cursor = do
+  loc <- getCursorLocation cursor
+  -- TODO: What to do about inclusions that aren't normal inclusions?
+  -- Ones that are intended to be multiply included, etc?
+  when (tlShouldIndex loc) $ do
+    cKind <- C.getKind cursor
+    route tu loc cKind cursor
+
+    {-
+    cursorIsDef <- isDef cursor cKind
+    cursorIsRef <- C.isReference cKind
+    cursorIsDecl <- C.isDeclaration cKind
+    cursorIsPV <- if cKind == C.Cursor_CXXMethod
+                  then C.isPureVirtualCppMethod cursor
+                  else return False
+
+    when (cKind == C.Cursor_InclusionDirective) $
+      visitInclusions tu loc cKind cursor
+
+    when ((cKind `elem` refKinds) || cursorIsDef || cursorIsRef || cursorIsDecl) $
+      visitReferences tu loc cKind cursor
+    -}
+    
+    {-
+    when (cKind `elem` overrideKinds) $
+      visitOverrides cursor
+
+    when (cKind == C.Cursor_ClassDecl) $
+      visitClassOverrides cursor
+    -}
+
+    {-
+    when ((cKind `elem` defKinds) || cursorIsDef || cursorIsPV) $
+      visitDefinitions tu loc cKind cursor
+    -}
+    
+    -- Recurse (most of the time).
+    let recurse     = DVS.mapM_ (defsVisitor tu) =<< TV.getChildren cursor
+        fastRecurse = DVS.mapM_ (fastVisitor tu) =<< TV.getDescendants cursor
+    case cKind of
+      C.Cursor_MacroDefinition  -> return ()
+      C.Cursor_Namespace        -> analysisScope recurse
+      _                         -> analysisScope fastRecurse
+
+fastVisitor :: TranslationUnit -> C.Cursor -> Analysis s ()
+fastVisitor tu cursor = do
+  loc <- getCursorLocation cursor
+  when (tlShouldIndex loc) $ do
+    cKind <- C.getKind cursor
+    route tu loc cKind cursor
+
+    {-
+    cursorIsDef <- isDef cursor cKind
+    cursorIsRef <- C.isReference cKind
+    cursorIsDecl <- C.isDeclaration cKind
+    cursorIsPV <- if cKind == C.Cursor_CXXMethod
+                  then C.isPureVirtualCppMethod cursor
+                  else return False
+
+    when (cKind == C.Cursor_InclusionDirective) $
+      visitInclusions tu loc cKind cursor
+
+    when ((cKind `elem` refKinds) || cursorIsDef || cursorIsRef || cursorIsDecl) $
+      visitReferences tu loc cKind cursor
+    -}
+
+    {-
+    when (cKind `elem` overrideKinds) $
+      visitOverrides cursor
+
+    when (cKind == C.Cursor_ClassDecl) $
+      visitClassOverrides cursor
+    -}
+
+    {-
+    when ((cKind `elem` defKinds) || cursorIsDef || cursorIsPV) $
+      visitDefinitions tu loc cKind cursor
+    -}
 
 refKinds :: [C.CursorKind]
 refKinds = [C.Cursor_CallExpr,
@@ -164,59 +261,176 @@ overrideKinds = [C.Cursor_CXXMethod, C.Cursor_Destructor]
 defKinds :: [C.CursorKind]
 defKinds = [C.Cursor_MacroDefinition, C.Cursor_VarDecl]
            
-defsVisitor :: TranslationUnit -> C.Cursor -> Analysis s ()
-defsVisitor tu cursor = do
-  loc <- getCursorLocation cursor
-  -- TODO: What to do about inclusions that aren't normal inclusions?
-  -- Ones that are intended to be multiply included, etc?
-  when (tlShouldIndex loc) $ do
-    cKind <- C.getKind cursor
-    cursorIsDef <- isDef cursor cKind
-    cursorIsRef <- C.isReference cKind
-    cursorIsDecl <- C.isDeclaration cKind
-    cursorIsPV <- if cKind == C.Cursor_CXXMethod
-                  then C.isPureVirtualCppMethod cursor
-                  else return False
+route :: TranslationUnit -> TULocation -> C.CursorKind -> C.Cursor -> Analysis s ()
+route tu loc k c
+  | k == C.Cursor_UnexposedDecl                      = return ()
+  | k == C.Cursor_StructDecl                         = visitReferences tu loc k c >> visitClassOverrides c >> visitDefinitions tu loc k c
+  | k == C.Cursor_UnionDecl                          = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_ClassDecl                          = visitReferences tu loc k c >> visitClassOverrides c >> visitDefinitions tu loc k c
+  | k == C.Cursor_EnumDecl                           = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_FieldDecl                          = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_EnumConstantDecl                   = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_FunctionDecl                       = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_VarDecl                            = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_ParmDecl                           = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_ObjCInterfaceDecl                  = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_ObjCCategoryDecl                   = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_ObjCProtocolDecl                   = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_ObjCPropertyDecl                   = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_ObjCIvarDecl                       = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_ObjCInstanceMethodDecl             = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_ObjCClassMethodDecl                = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_ObjCImplementationDecl             = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_ObjCCategoryImplDecl               = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_TypedefDecl                        = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_CXXMethod                          = visitReferences tu loc k c >> visitOverrides c >> visitDefinitions tu loc k c
+  | k == C.Cursor_Namespace                          = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_LinkageSpec                        = return ()
+  | k == C.Cursor_Constructor                        = visitReferences tu loc k c >> visitOverrides c >> visitDefinitions tu loc k c
+  | k == C.Cursor_Destructor                         = visitReferences tu loc k c >> visitOverrides c >> visitDefinitions tu loc k c
+  | k == C.Cursor_ConversionFunction                 = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_TemplateTypeParameter              = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_NonTypeTemplateParameter           = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_TemplateTemplateParameter          = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_FunctionTemplate                   = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_ClassTemplate                      = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_ClassTemplatePartialSpecialization = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_NamespaceAlias                     = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_UsingDirective                     = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_UsingDeclaration                   = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_TypeAliasDecl                      = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_ObjCSynthesizeDecl                 = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_ObjCDynamicDecl                    = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_CXXAccessSpecifier                 = return ()
+  | k == C.Cursor_FirstDecl                          = return ()
+  | k == C.Cursor_LastDecl                           = return ()
+  | k == C.Cursor_FirstRef                           = return ()
+  | k == C.Cursor_ObjCSuperClassRef                  = visitReferences tu loc k c
+  | k == C.Cursor_ObjCProtocolRef                    = visitReferences tu loc k c
+  | k == C.Cursor_ObjCClassRef                       = visitReferences tu loc k c
+  | k == C.Cursor_TypeRef                            = visitReferences tu loc k c
+  | k == C.Cursor_CXXBaseSpecifier                   = return ()
+  | k == C.Cursor_TemplateRef                        = visitReferences tu loc k c
+  | k == C.Cursor_NamespaceRef                       = visitReferences tu loc k c
+  | k == C.Cursor_MemberRef                          = visitReferences tu loc k c
+  | k == C.Cursor_LabelRef                           = visitReferences tu loc k c
+  | k == C.Cursor_OverloadedDeclRef                  = visitReferences tu loc k c
+  | k == C.Cursor_LastRef                            = return ()
+  | k == C.Cursor_FirstInvalid                       = return ()
+  | k == C.Cursor_InvalidFile                        = return ()
+  | k == C.Cursor_NoDeclFound                        = return ()
+  | k == C.Cursor_NotImplemented                     = return ()
+  | k == C.Cursor_InvalidCode                        = return ()
+  | k == C.Cursor_LastInvalid                        = return ()
+  | k == C.Cursor_FirstExpr                          = return ()
+  | k == C.Cursor_UnexposedExpr                      = return ()
+  | k == C.Cursor_DeclRefExpr                        = visitReferences tu loc k c
+  | k == C.Cursor_MemberRefExpr                      = visitReferences tu loc k c
+  | k == C.Cursor_CallExpr                           = visitReferences tu loc k c
+  | k == C.Cursor_ObjCMessageExpr                    = visitReferences tu loc k c
+  | k == C.Cursor_BlockExpr                          = return ()
+  | k == C.Cursor_IntegerLiteral                     = return ()
+  | k == C.Cursor_FloatingLiteral                    = return ()
+  | k == C.Cursor_ImaginaryLiteral                   = return ()
+  | k == C.Cursor_StringLiteral                      = return ()
+  | k == C.Cursor_CharacterLiteral                   = return ()
+  | k == C.Cursor_ParenExpr                          = return ()
+  | k == C.Cursor_UnaryOperator                      = return ()
+  | k == C.Cursor_ArraySubscriptExpr                 = return ()
+  | k == C.Cursor_BinaryOperator                     = return ()
+  | k == C.Cursor_CompoundAssignOperator             = return ()
+  | k == C.Cursor_ConditionalOperator                = return ()
+  | k == C.Cursor_CStyleCastExpr                     = return ()
+  | k == C.Cursor_CompoundLiteralExpr                = return ()
+  | k == C.Cursor_InitListExpr                       = return ()
+  | k == C.Cursor_AddrLabelExpr                      = return ()
+  | k == C.Cursor_StmtExpr                           = return ()
+  | k == C.Cursor_GenericSelectionExpr               = return ()
+  | k == C.Cursor_GNUNullExpr                        = return ()
+  | k == C.Cursor_CXXStaticCastExpr                  = return ()
+  | k == C.Cursor_CXXDynamicCastExpr                 = return ()
+  | k == C.Cursor_CXXReinterpretCastExpr             = return ()
+  | k == C.Cursor_CXXConstCastExpr                   = return ()
+  | k == C.Cursor_CXXFunctionalCastExpr              = return ()
+  | k == C.Cursor_CXXTypeidExpr                      = return ()
+  | k == C.Cursor_CXXBoolLiteralExpr                 = return ()
+  | k == C.Cursor_CXXNullPtrLiteralExpr              = return ()
+  | k == C.Cursor_CXXThisExpr                        = return ()
+  | k == C.Cursor_CXXThrowExpr                       = return ()
+  | k == C.Cursor_CXXNewExpr                         = return ()
+  | k == C.Cursor_CXXDeleteExpr                      = return ()
+  | k == C.Cursor_UnaryExpr                          = return ()
+  | k == C.Cursor_ObjCStringLiteral                  = return () 
+  | k == C.Cursor_ObjCEncodeExpr                     = return () 
+  | k == C.Cursor_ObjCSelectorExpr                   = return () 
+  | k == C.Cursor_ObjCProtocolExpr                   = return () 
+  | k == C.Cursor_ObjCBridgedCastExpr                = return () 
+  | k == C.Cursor_PackExpansionExpr                  = return () 
+  | k == C.Cursor_SizeOfPackExpr                     = return () 
+  | k == C.Cursor_LastExpr                           = return () 
+  | k == C.Cursor_FirstStmt                          = return () 
+  | k == C.Cursor_UnexposedStmt                      = return () 
+  | k == C.Cursor_LabelStmt                          = return () 
+  | k == C.Cursor_CompoundStmt                       = return () 
+  | k == C.Cursor_CaseStmt                           = return () 
+  | k == C.Cursor_DefaultStmt                        = return () 
+  | k == C.Cursor_IfStmt                             = return () 
+  | k == C.Cursor_SwitchStmt                         = return () 
+  | k == C.Cursor_WhileStmt                          = return () 
+  | k == C.Cursor_DoStmt                             = return () 
+  | k == C.Cursor_ForStmt                            = return () 
+  | k == C.Cursor_GotoStmt                           = return () 
+  | k == C.Cursor_IndirectGotoStmt                   = return () 
+  | k == C.Cursor_ContinueStmt                       = return () 
+  | k == C.Cursor_BreakStmt                          = return () 
+  | k == C.Cursor_ReturnStmt                         = return () 
+  | k == C.Cursor_AsmStmt                            = return () 
+  | k == C.Cursor_ObjCAtTryStmt                      = return () 
+  | k == C.Cursor_ObjCAtCatchStmt                    = return () 
+  | k == C.Cursor_ObjCAtFinallyStmt                  = return () 
+  | k == C.Cursor_ObjCAtThrowStmt                    = return () 
+  | k == C.Cursor_ObjCAtSynchronizedStmt             = return () 
+  | k == C.Cursor_ObjCAutoreleasePoolStmt            = return () 
+  | k == C.Cursor_ObjCForCollectionStmt              = return () 
+  | k == C.Cursor_CXXCatchStmt                       = return () 
+  | k == C.Cursor_CXXTryStmt                         = return () 
+  | k == C.Cursor_CXXForRangeStmt                    = return () 
+  | k == C.Cursor_SEHTryStmt                         = return () 
+  | k == C.Cursor_SEHExceptStmt                      = return () 
+  | k == C.Cursor_SEHFinallyStmt                     = return () 
+  | k == C.Cursor_NullStmt                           = return () 
+  | k == C.Cursor_DeclStmt                           = return () 
+  | k == C.Cursor_LastStmt                           = return () 
+  | k == C.Cursor_TranslationUnit                    = return () 
+  | k == C.Cursor_FirstAttr                          = return () 
+  | k == C.Cursor_UnexposedAttr                      = return () 
+  | k == C.Cursor_IBActionAttr                       = return () 
+  | k == C.Cursor_IBOutletAttr                       = return () 
+  | k == C.Cursor_IBOutletCollectionAttr             = return () 
+  | k == C.Cursor_CXXFinalAttr                       = return () 
+  | k == C.Cursor_CXXOverrideAttr                    = return () 
+  | k == C.Cursor_AnnotateAttr                       = return () 
+  | k == C.Cursor_LastAttr                           = return () 
+  | k == C.Cursor_PreprocessingDirective             = return () 
+  | k == C.Cursor_MacroDefinition                    = visitReferences tu loc k c >> visitDefinitions tu loc k c
+  | k == C.Cursor_MacroExpansion                     = visitReferences tu loc k c
+  | k == C.Cursor_MacroInstantiation                 = visitReferences tu loc k c
+  | k == C.Cursor_InclusionDirective                 = visitInclusions tu loc k c
+  | k == C.Cursor_FirstPreprocessing                 = return ()
+  | k == C.Cursor_LastPreprocessing                  = return ()
+  | otherwise                                        = return ()  -- TODO: Log an error here.
 
-    when (cKind == C.Cursor_InclusionDirective) $
-      visitInclusions tu loc cKind cursor
-
-    when ((cKind `elem` refKinds) || cursorIsDef || cursorIsRef || cursorIsDecl) $
-      visitReferences tu loc cKind cursor
-    
-    when (cKind `elem` overrideKinds) $
-      visitOverrides cursor
-
-    when (cKind == C.Cursor_ClassDecl) $ do
-      -- Record class inheritance ("overrides").
-      kids <- TV.getChildren cursor
-      DVS.mapM_ (classVisitor cursor) kids
-
-    when ((cKind `elem` defKinds) || cursorIsDef || cursorIsPV) $
-      visitDefinitions tu loc cKind cursor
-    
-    -- Recurse (most of the time).
-    let recurse = DVS.mapM_ (defsVisitor tu) =<< TV.getChildren cursor
-    case cKind of
-      C.Cursor_MacroDefinition  -> return ()
-      C.Cursor_FunctionDecl     -> analysisScope recurse
-      C.Cursor_FunctionTemplate -> analysisScope recurse
-      C.Cursor_CXXMethod        -> analysisScope recurse
-      C.Cursor_Constructor      -> analysisScope recurse
-      C.Cursor_Destructor       -> analysisScope recurse
-      C.Cursor_StructDecl       -> analysisScope recurse
-      C.Cursor_UnionDecl        -> analysisScope recurse
-      C.Cursor_ClassDecl        -> analysisScope recurse
-      C.Cursor_EnumDecl         -> analysisScope recurse
-      C.Cursor_ClassTemplate    -> analysisScope recurse
-      C.Cursor_ClassTemplatePartialSpecialization
-                                -> analysisScope recurse
-      _                         -> recurse
+doNothing :: C.CursorKind -> Analysis s ()
+doNothing _ = return ()
+{-# NOINLINE doNothing #-}
 
 sendRPC :: RPC () -> Analysis s ()
+{-
 sendRPC req = do
   ctx <- lift get
   liftIO $ runRPC req (asConn ctx)
+-}
+sendRPC _ = return ()
 
 queryRPC :: RPC a -> Analysis s a
 queryRPC req = do
@@ -236,7 +450,7 @@ visitInclusions tu loc cKind cursor = do
 
   -- Determine the context.
   ctxC <- getContext tu cursor
-  ctxUSR <- XRef.getUSR ctxC >>= CS.unsafeUnpackByteString
+  ctxUSRHash <- getUSRHash ctxC
 
   -- Record.
   refId <- refHash incFileHash loc
@@ -249,7 +463,7 @@ visitInclusions tu loc cKind cursor = do
                                    (toSourceKind cKind)
                                    0
                                    0
-                                   (hash ctxUSR)
+                                   ctxUSRHash
                                    incFileHash
   sendUpdate (DBUpdateRef reference)
       
@@ -270,7 +484,7 @@ visitReferences tu loc cKind cursor = do
   unless (defIsNull && refIsNull) $ do
     -- Prefer definitions to references when available.
     let referToC = if defIsNull then refC else defC
-    referToUSR <- XRef.getUSR referToC >>= CS.unsafeUnpackByteString
+    referToUSRHash <- getUSRHash referToC
 
     -- Determine the end of the extent of this cursor.
     extent <- C.getExtent cursor
@@ -278,8 +492,9 @@ visitReferences tu loc cKind cursor = do
     (_, endLn, endCol, _) <- Source.getSpellingLocation endLoc
 
     -- Determine the context.
-    ctxC <- getContext tu cursor
-    ctxUSR <- XRef.getUSR ctxC >>= CS.unsafeUnpackByteString
+    ctxC <- getContext tu cKind cursor
+    ctxUSRHash <- getUSRHash ctxC
+    let ctxUSRHash = 0
 
     -- Special analysis for CallExprs.
     refKind <- if cKind == C.Cursor_CallExpr then analyzeCall cursor
@@ -288,7 +503,6 @@ visitReferences tu loc cKind cursor = do
                                                 else return 0
 
     -- Record location of reference for declaration lookups.
-    let referToUSRHash = hash referToUSR
     declHash <- if refIsNull
                 then return 0
                 else refHash referToUSRHash =<< getCursorLocation refC
@@ -304,8 +518,8 @@ visitReferences tu loc cKind cursor = do
                                      refKind
                                      viaUSRHash
                                      declHash
-                                     (hash ctxUSR)
-                                     (hash referToUSR)
+                                     ctxUSRHash
+                                     referToUSRHash
     sendUpdate (DBUpdateRef reference)
     
 visitOverrides :: C.Cursor -> Analysis s ()
@@ -314,58 +528,66 @@ visitOverrides cursor = do
   -- TODO: I seem to recall that in C++11 you can override
   -- constructors. Add support for that if so.
   overrides <- C.getOverriddenCursors cursor
-  overrideUSRs <- mapM (CS.unsafeUnpackByteString <=< XRef.getUSR) overrides
-  usr <- XRef.getUSR cursor >>= CS.unsafeUnpackByteString
-  forM_ overrideUSRs $ \oUSR -> do
-    let !override = Override (hash usr) (hash oUSR)
+  overrideUSRHashes <- mapM getUSRHash overrides
+  usrHash <- getUSRHash cursor
+  forM_ overrideUSRHashes $ \oUSRHash -> do
+    let !override = Override usrHash oUSRHash
     sendUpdate (DBUpdateOverride override)
 
 visitDefinitions :: TranslationUnit -> TULocation -> C.CursorKind -> C.Cursor -> Analysis s ()
 visitDefinitions tu loc cKind cursor = do
   -- Record definitions.
   -- TODO: Support labels.
-  usr <- XRef.getUSR cursor >>= CS.unsafeUnpackByteString
+  usrHash <- getUSRHash cursor
   name <- fqn cursor
   let kind = toSourceKind cKind
 
   -- Determine the context.
   ctxC <- getContext' tu cursor
-  ctxUSR <- XRef.getUSR ctxC >>= CS.unsafeUnpackByteString
+  ctxUSRHash <- getUSRHash ctxC
 
   let !def = DefUpdate name
-                       (hash usr)
+                       usrHash
                        (tlFileHash loc)
                        (tlLine loc)
                        (tlCol loc)
                        kind
-                       (hash ctxUSR)
+                       ctxUSRHash
   sendUpdate (DBUpdateDef def)
 
-classVisitor :: C.Cursor -> C.Cursor -> Analysis s ()
-classVisitor thisClassC cursor = do
-  cKind <- C.getKind cursor
-  case cKind of
-    C.Cursor_CXXBaseSpecifier -> do
-      thisClassUSR <- XRef.getUSR thisClassC >>= CS.unsafeUnpackByteString
-      defC <- C.getDefinition cursor
-      baseUSR <- XRef.getUSR defC >>= CS.unsafeUnpackByteString
-      let !override = Override (hash thisClassUSR) (hash baseUSR)
-      sendUpdate (DBUpdateOverride override)
-    _ -> return ()
+visitClassOverrides :: C.Cursor -> Analysis s ()
+visitClassOverrides thisClassC = do
+    -- Record class inheritance ("overrides").
+    kids <- TV.getChildren thisClassC
+    DVS.mapM_ go kids
+  where
+    go cursor = do
+      cKind <- C.getKind cursor
+      case cKind of
+        C.Cursor_CXXBaseSpecifier -> do
+          thisClassUSRHash <- getUSRHash thisClassC
+          defC <- C.getDefinition cursor
+          baseUSRHash <- getUSRHash defC
+          let !override = Override thisClassUSRHash baseUSRHash
+          sendUpdate (DBUpdateOverride override)
+        _ -> return ()
 
-type FileCache = Map.IntMap (Bool, Int)
+getUSRHash :: C.Cursor -> Analysis s Int
+getUSRHash cursor = do
+  ctx <- lift get
+  cursorHash <- fromIntegral <$> C.getHash cursor
+  let hashCache = asUSRHashCache ctx
 
-data TULocation = TULocation
-  { tlShouldIndex :: Bool
-  , tlFileHash    :: SourceFileHash
-  , tlLine        :: SourceLine
-  , tlCol         :: SourceCol
-  } deriving (Eq, Show)
-
+  case Map.lookup cursorHash hashCache of
+    Just usrHash -> return usrHash
+    Nothing      -> do !usrHash <- hash <$> (XRef.getUSR cursor >>= CS.unsafeUnpackByteString)
+                       let !newCache = Map.insert cursorHash usrHash hashCache
+                       lift $ put $! ctx { asUSRHashCache = newCache }
+                       return usrHash
+    
 getCursorLocation :: C.Cursor -> Analysis s TULocation
 getCursorLocation cursor = do
-  loc <- C.getLocation cursor
-  (mayF, ln, col, _) <- Source.getSpellingLocation loc
+  (mayF, ln, col, _) <- C.getSpellingLocation cursor
   case mayF of
     Just f  -> do (shouldIndex, filenameHash) <- lookupFile f
                   return $ TULocation shouldIndex filenameHash ln col
@@ -373,10 +595,10 @@ getCursorLocation cursor = do
 
 getCursorLocation' :: C.Cursor -> Clang s SourceLocation
 getCursorLocation' cursor = do
-  loc <- C.getLocation cursor
-  (f, ln, col, _) <- Source.getSpellingLocation loc
-  file <- case f of Just f' -> File.getName f' >>= CS.unsafeUnpackByteString
-                    Nothing -> return ""
+  (mayF, ln, col, _) <- C.getSpellingLocation cursor
+  file <- case mayF of
+    Just f -> File.getName f >>= CS.unsafeUnpackByteString
+    Nothing -> return ""
   return $ SourceLocation file ln col
   
 lookupFile :: File.File -> Analysis s (Bool, SourceFileHash)
@@ -412,8 +634,7 @@ callBaseUSRHash = go
   where
     go = return . hash
          -- <=< (\x -> (liftIO . putStrLn $ "Got base USR: " ++ (show x)) >> return x)
-         <=< CS.unsafeUnpackByteString
-         <=< XRef.getUSR
+         <=< getUSRHash
          <=< C.getTypeDeclaration
          <=< underlyingType
          <=< C.getBaseExpression
