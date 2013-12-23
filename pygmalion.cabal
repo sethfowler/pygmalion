@@ -139,6 +139,7 @@ executable pygindex-clang
                  ,  MissingH
                  ,  mtl
                  ,  pygmalion
+                 ,  safe
                  ,  transformers
                  ,  unix
                  ,  utf8-string
