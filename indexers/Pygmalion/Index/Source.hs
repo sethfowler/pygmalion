@@ -79,7 +79,7 @@ vecSize = 1000 -- 100000
 runSourceAnalyses :: CommandInfo -> RPCConnection -> IO ()
 runSourceAnalyses ci conn = do
   initialVec <- liftIO $ V.unsafeNew vecSize
-  let initialState = AnalysisState conn Set.empty Map.empty Map.empty [] initialVec 0
+  let !initialState = AnalysisState conn Set.empty Map.empty Map.empty [] initialVec 0
   result <- try $ runAnalysis initialState $ withTranslationUnit ci $ \tu -> do
                     logDiagnostics tu
                     inclusionsAnalysis (hash $ ciSourceFile ci) tu
@@ -98,7 +98,7 @@ displayAST ci = do
 
 inclusionsAnalysis :: SourceFileHash -> TranslationUnit -> Analysis s ()
 inclusionsAnalysis sfHash tu = do
-    ctx <- lift get
+    !ctx <- lift get
     incs <- TV.getInclusions tu
     incs' <- mapM toInclusion $ DVS.toList incs
     dirtyIncs <- queryRPC $ rpcUpdateAndFindDirtyInclusions sfHash incs'
@@ -161,7 +161,7 @@ defsVisitor parent cursor = do
   -- TODO: What to do about inclusions that aren't normal inclusions?
   -- Ones that are intended to be multiply included, etc?
   when (tlShouldIndex loc) $ do
-    cKind <- C.getKind cursor
+    let !cKind = C.getKind cursor
     scope <- updatedCPPScope parent cursor
     route loc scope cKind cursor
     
@@ -177,7 +177,7 @@ fastVisitor :: C.ParentedCursor -> Analysis s ()
 fastVisitor (C.ParentedCursor parent cursor) = do
   loc <- getCursorLocation cursor
   when (tlShouldIndex loc) $ do
-    cKind <- C.getKind cursor
+    let !cKind = C.getKind cursor
     scope <- updatedCPPScope parent cursor
     route loc scope cKind cursor
 
@@ -338,6 +338,9 @@ route loc s k c
   | k == C.Cursor_InclusionDirective                 = visitInclusions loc s k c
   | k == C.Cursor_FirstPreprocessing                 = return ()
   | k == C.Cursor_LastPreprocessing                  = return ()
+  | k == C.Cursor_ModuleImportDecl                   = return ()
+  | k == C.Cursor_FirstExtraDecl                     = return ()
+  | k == C.Cursor_LastExtraDecl                      = return ()
   | otherwise                                        = return ()  -- TODO: Log an error here.
 
 doNothing :: C.CursorKind -> Analysis s ()
@@ -393,9 +396,9 @@ visitReferences loc scope cKind cursor = do
   -- represented as CallExprs with no children.
   -- TODO: Support LabelRefs.
   defC <- C.getDefinition cursor
-  defIsNull <- C.isNullCursor defC
   refC <- C.getReferenced cursor
-  refIsNull <- C.isNullCursor refC
+  let !defIsNull = C.isNullCursor defC
+      !refIsNull = C.isNullCursor refC
 
   unless (defIsNull && refIsNull) $ do
     -- Prefer definitions to references when available.
@@ -451,8 +454,8 @@ visitDefinitions loc scope cKind cursor = do
   -- TODO: Support labels.
   usrHash <- getUSRHash cursor
   name <- cursorName cursor
-  let fqn = csScopeName scope <::> name
-  let kind = toSourceKind cKind
+  let !fqn = csScopeName scope <::> name
+  let !kind = toSourceKind cKind
 
   let !def = DefUpdate fqn
                        usrHash
@@ -470,7 +473,7 @@ visitClassOverrides thisClassC = do
     DVS.mapM_ go kids
   where
     go cursor = do
-      cKind <- C.getKind cursor
+      let !cKind = C.getKind cursor
       case cKind of
         C.Cursor_CXXBaseSpecifier -> do
           thisClassUSRHash <- getUSRHash thisClassC
@@ -482,9 +485,9 @@ visitClassOverrides thisClassC = do
 
 getUSRHash :: C.Cursor -> Analysis s Int
 getUSRHash cursor = do
-  ctx <- lift get
-  cursorHash <- fromIntegral <$> C.getHash cursor
-  let hashCache = asUSRHashCache ctx
+  !ctx <- lift get
+  let !cursorHash = hash cursor
+      hashCache = asUSRHashCache ctx
 
   case Map.lookup cursorHash hashCache of
     Just usrHash -> return usrHash
@@ -511,7 +514,7 @@ getCursorLocation' cursor = do
   
 lookupFile :: File.File -> Analysis s (Bool, SourceFileHash)
 lookupFile file = do
-  ctx <- lift get
+  !ctx <- lift get
   fileObjHash <- File.hashFile file  -- This is a hash of the file _object_, not the name.
   let fileCache = asFileCache ctx
 
@@ -531,7 +534,7 @@ analyzeCall c = do
 
   if isDynamicCall then do
     baseExpr <- C.getBaseExpression c
-    baseExprKind <- C.getKind baseExpr
+    let !baseExprKind = C.getKind baseExpr
     isVirtual <- isVirtualCall baseExprKind baseExpr
     return $ if isVirtual then DynamicCallExpr else CallExpr
   else 
@@ -557,15 +560,15 @@ refHash usrHash loc = return refHash'
 updatedCPPScope :: C.Cursor -> C.Cursor -> Analysis s CPPScope
 updatedCPPScope parent cursor = do
   ctx <- lift get
-  cursorHash <- fromIntegral <$> C.getHash cursor
-  parentHash <- fromIntegral <$> C.getHash parent
+  let !cursorHash = hash cursor
+  let !parentHash = hash parent
 
   -- Pop to parent scope.
-  let poppedStack = dropWhile ((parentHash /=) . csNodeHash) (asCPPScopeStack ctx)
-      parentScope = Safe.headDef (CPPScope 0 0 "") poppedStack
+  let !poppedStack = dropWhile ((parentHash /=) . csNodeHash) (asCPPScopeStack ctx)
+      !parentScope = Safe.headDef (CPPScope 0 0 "") poppedStack
 
   -- Push new scope.
-  cKind <- C.getKind cursor
+  let !cKind = C.getKind cursor
   (scopeHash, scopeName) <- case cKind of
     C.Cursor_FunctionDecl -> newScopeName parentScope cursor
     C.Cursor_CXXMethod    -> newScopeName parentScope cursor
@@ -579,7 +582,7 @@ updatedCPPScope parent cursor = do
     _                     -> return (csScopeUSRHash parentScope,
                                      csScopeName parentScope)
 
-  let newStack = (CPPScope cursorHash scopeHash scopeName) : poppedStack
+  let !newStack = (CPPScope cursorHash scopeHash scopeName) : poppedStack
   lift $ put $! ctx { asCPPScopeStack = newStack }
   return parentScope
 
@@ -679,7 +682,7 @@ dumpSubtree cursor = do
           -- Get metadata.
           name <- C.getDisplayName c >>= CS.unpack
           usr <- XRef.getUSR c >>= CS.unpack
-          cKind <- C.getKind c
+          let cKind = C.getKind c
           kind <- C.getCursorKindSpelling cKind >>= CS.unpack
 
           -- Get definition metadata.
@@ -702,7 +705,7 @@ dumpSubtree cursor = do
           when (cKind == C.Cursor_CallExpr) $ do
             baseExpr <- C.getBaseExpression c
             baseName <- C.getDisplayName baseExpr >>= CS.unpack
-            baseExprKind <- C.getKind baseExpr
+            let baseExprKind = C.getKind baseExpr
             baseType <- C.getType baseExpr
             baseTypeKind <- T.getKind baseType 
             uType <- underlyingType baseExpr
@@ -929,3 +932,6 @@ toSourceKind C.Cursor_MacroInstantiation                 = MacroInstantiation
 toSourceKind C.Cursor_InclusionDirective                 = InclusionDirective
 toSourceKind C.Cursor_FirstPreprocessing                 = FirstPreprocessing
 toSourceKind C.Cursor_LastPreprocessing                  = LastPreprocessing
+toSourceKind C.Cursor_ModuleImportDecl                   = ModuleImportDecl
+toSourceKind C.Cursor_FirstExtraDecl                     = FirstExtraDecl
+toSourceKind C.Cursor_LastExtraDecl                      = LastExtraDecl

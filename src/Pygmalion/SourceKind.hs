@@ -165,7 +165,10 @@ data SourceKind = UnexposedDecl
                 | SourceFile  -- Pygmalion custom kind.
                 | FirstPreprocessing
                 | LastPreprocessing
-                deriving (Enum, Eq, Ord, Read, Show)
+                | ModuleImportDecl
+                | FirstExtraDecl
+                | LastExtraDecl
+                  deriving (Enum, Eq, Ord, Read, Show)
 
 instance Serialize SourceKind where
   put = put . fromEnum
