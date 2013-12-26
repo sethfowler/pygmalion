@@ -33,7 +33,7 @@ import Data.Typeable
 import qualified Data.Vector as VV
 import qualified Data.Vector.Mutable as V
 import qualified Data.Vector.Storable as DVS
-import qualified Safe as Safe
+import qualified Safe
 
 import Data.Bool.Predicate
 import Pygmalion.Core
@@ -52,10 +52,10 @@ data CPPScope = CPPScope
   }
   
 data TULocation = TULocation
-  { tlShouldIndex :: Bool
-  , tlFileHash    :: SourceFileHash
-  , tlLine        :: SourceLine
-  , tlCol         :: SourceCol
+  { tlShouldIndex :: !Bool
+  , tlFileHash    :: !SourceFileHash
+  , tlLine        :: !SourceLine
+  , tlCol         :: !SourceCol
   } deriving (Eq, Show)
 
 data AnalysisState = AnalysisState
@@ -81,10 +81,9 @@ runSourceAnalyses ci conn = do
   initialVec <- liftIO $ V.unsafeNew vecSize
   let !initialState = AnalysisState conn Set.empty Map.empty Map.empty [] initialVec 0
   result <- try $ runAnalysis initialState $ withTranslationUnit ci $ \tu -> do
-                    logDiagnostics tu
-                    inclusionsAnalysis (hash $ ciSourceFile ci) tu
-                    --addFileDefs conn ci dirtyFiles
-                    analysisScope (defsAnalysis tu)
+                    clangScope $ logDiagnostics tu
+                    clangScope $ inclusionsAnalysis (hash $ ciSourceFile ci) tu
+                    analysisScope $ defsAnalysis tu
   case result of
     Right _ -> return ()
     Left (ClangException e) -> void $ logWarn ("Clang exception: " ++ e)
@@ -121,33 +120,27 @@ inclusionsAnalysis sfHash tu = do
       return $ Inclusion inc (hash filename)
 
 analysisScope :: (forall s. Analysis s ()) -> Analysis s' ()
-analysisScope = clangScope
-{-
 analysisScope f = clangScope $ do
   f
-  ctx <- lift get
+  !ctx <- lift get
   when (asUpdateCount ctx > 0) $ do
     finishedVec <- liftIO $ VV.unsafeFreeze $ V.unsafeSlice 0 (asUpdateCount ctx) (asUpdates ctx)
     sendRPC $ rpcSendUpdates finishedVec
     newVec <- liftIO $ V.unsafeNew vecSize
     lift $ put $! ctx { asUpdates = newVec, asUpdateCount = 0 }
--}
 
 sendUpdate :: DBUpdate -> Analysis s ()
-sendUpdate _ = return ()
-{-
 sendUpdate up = do
-  ctx <- lift $ get
+  !ctx <- lift $ get
   liftIO $ V.unsafeWrite (asUpdates ctx) (asUpdateCount ctx) up
-  let newCount = (asUpdateCount ctx) + 1
+  let !newCount = (asUpdateCount ctx) + 1
   if (newCount == vecSize)
      then do finishedVec <- liftIO $ VV.unsafeFreeze (asUpdates ctx)
              sendRPC $ rpcSendUpdates finishedVec
              newVec <- liftIO $ V.unsafeNew vecSize
              lift $ put $! ctx { asUpdates = newVec, asUpdateCount = 0 }
-             liftIO $ putStrLn $ "Overflowed vector and had to send early"
+             --liftIO $ putStrLn "Overflowed vector and had to send early"
      else lift $ put $! ctx { asUpdateCount = newCount }
--}
 
 defsAnalysis :: TranslationUnit -> Analysis s ()
 defsAnalysis tu = do
@@ -163,7 +156,7 @@ defsVisitor parent cursor = do
   when (tlShouldIndex loc) $ do
     let !cKind = C.getKind cursor
     scope <- updatedCPPScope parent cursor
-    route loc scope cKind cursor
+    route loc scope cursor cKind
     
     -- Recurse (most of the time).
     let recurse     = DVS.mapM_ (defsVisitor cursor) =<< TV.getChildren cursor
@@ -179,181 +172,68 @@ fastVisitor (C.ParentedCursor parent cursor) = do
   when (tlShouldIndex loc) $ do
     let !cKind = C.getKind cursor
     scope <- updatedCPPScope parent cursor
-    route loc scope cKind cursor
+    route loc scope cursor cKind
 
-route :: TULocation -> CPPScope -> C.CursorKind -> C.Cursor -> Analysis s ()
-route loc s k c
-  | k == C.Cursor_UnexposedDecl                      = return ()
-  | k == C.Cursor_StructDecl                         = visitReferences loc s k c >> visitClassOverrides c >> visitDefinitions loc s k c
-  | k == C.Cursor_UnionDecl                          = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_ClassDecl                          = visitReferences loc s k c >> visitClassOverrides c >> visitDefinitions loc s k c
-  | k == C.Cursor_EnumDecl                           = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_FieldDecl                          = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_EnumConstantDecl                   = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_FunctionDecl                       = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_VarDecl                            = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_ParmDecl                           = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_ObjCInterfaceDecl                  = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_ObjCCategoryDecl                   = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_ObjCProtocolDecl                   = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_ObjCPropertyDecl                   = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_ObjCIvarDecl                       = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_ObjCInstanceMethodDecl             = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_ObjCClassMethodDecl                = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_ObjCImplementationDecl             = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_ObjCCategoryImplDecl               = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_TypedefDecl                        = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_CXXMethod                          = visitReferences loc s k c >> visitOverrides c >> visitDefinitions loc s k c
-  | k == C.Cursor_Namespace                          = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_LinkageSpec                        = return ()
-  | k == C.Cursor_Constructor                        = visitReferences loc s k c >> visitOverrides c >> visitDefinitions loc s k c
-  | k == C.Cursor_Destructor                         = visitReferences loc s k c >> visitOverrides c >> visitDefinitions loc s k c
-  | k == C.Cursor_ConversionFunction                 = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_TemplateTypeParameter              = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_NonTypeTemplateParameter           = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_TemplateTemplateParameter          = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_FunctionTemplate                   = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_ClassTemplate                      = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_ClassTemplatePartialSpecialization = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_NamespaceAlias                     = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_UsingDirective                     = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_UsingDeclaration                   = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_TypeAliasDecl                      = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_ObjCSynthesizeDecl                 = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_ObjCDynamicDecl                    = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_CXXAccessSpecifier                 = return ()
-  | k == C.Cursor_FirstDecl                          = return ()
-  | k == C.Cursor_LastDecl                           = return ()
-  | k == C.Cursor_FirstRef                           = return ()
-  | k == C.Cursor_ObjCSuperClassRef                  = visitReferences loc s k c
-  | k == C.Cursor_ObjCProtocolRef                    = visitReferences loc s k c
-  | k == C.Cursor_ObjCClassRef                       = visitReferences loc s k c
-  | k == C.Cursor_TypeRef                            = visitReferences loc s k c
-  | k == C.Cursor_CXXBaseSpecifier                   = return ()
-  | k == C.Cursor_TemplateRef                        = visitReferences loc s k c
-  | k == C.Cursor_NamespaceRef                       = visitReferences loc s k c
-  | k == C.Cursor_MemberRef                          = visitReferences loc s k c
-  | k == C.Cursor_LabelRef                           = visitReferences loc s k c
-  | k == C.Cursor_OverloadedDeclRef                  = visitReferences loc s k c
-  | k == C.Cursor_LastRef                            = return ()
-  | k == C.Cursor_FirstInvalid                       = return ()
-  | k == C.Cursor_InvalidFile                        = return ()
-  | k == C.Cursor_NoDeclFound                        = return ()
-  | k == C.Cursor_NotImplemented                     = return ()
-  | k == C.Cursor_InvalidCode                        = return ()
-  | k == C.Cursor_LastInvalid                        = return ()
-  | k == C.Cursor_FirstExpr                          = return ()
-  | k == C.Cursor_UnexposedExpr                      = return ()
-  | k == C.Cursor_DeclRefExpr                        = visitReferences loc s k c
-  | k == C.Cursor_MemberRefExpr                      = visitReferences loc s k c
-  | k == C.Cursor_CallExpr                           = visitReferences loc s k c
-  | k == C.Cursor_ObjCMessageExpr                    = visitReferences loc s k c
-  | k == C.Cursor_BlockExpr                          = return ()
-  | k == C.Cursor_IntegerLiteral                     = return ()
-  | k == C.Cursor_FloatingLiteral                    = return ()
-  | k == C.Cursor_ImaginaryLiteral                   = return ()
-  | k == C.Cursor_StringLiteral                      = return ()
-  | k == C.Cursor_CharacterLiteral                   = return ()
-  | k == C.Cursor_ParenExpr                          = return ()
-  | k == C.Cursor_UnaryOperator                      = return ()
-  | k == C.Cursor_ArraySubscriptExpr                 = return ()
-  | k == C.Cursor_BinaryOperator                     = return ()
-  | k == C.Cursor_CompoundAssignOperator             = return ()
-  | k == C.Cursor_ConditionalOperator                = return ()
-  | k == C.Cursor_CStyleCastExpr                     = return ()
-  | k == C.Cursor_CompoundLiteralExpr                = return ()
-  | k == C.Cursor_InitListExpr                       = return ()
-  | k == C.Cursor_AddrLabelExpr                      = return ()
-  | k == C.Cursor_StmtExpr                           = return ()
-  | k == C.Cursor_GenericSelectionExpr               = return ()
-  | k == C.Cursor_GNUNullExpr                        = return ()
-  | k == C.Cursor_CXXStaticCastExpr                  = return ()
-  | k == C.Cursor_CXXDynamicCastExpr                 = return ()
-  | k == C.Cursor_CXXReinterpretCastExpr             = return ()
-  | k == C.Cursor_CXXConstCastExpr                   = return ()
-  | k == C.Cursor_CXXFunctionalCastExpr              = return ()
-  | k == C.Cursor_CXXTypeidExpr                      = return ()
-  | k == C.Cursor_CXXBoolLiteralExpr                 = return ()
-  | k == C.Cursor_CXXNullPtrLiteralExpr              = return ()
-  | k == C.Cursor_CXXThisExpr                        = return ()
-  | k == C.Cursor_CXXThrowExpr                       = return ()
-  | k == C.Cursor_CXXNewExpr                         = return ()
-  | k == C.Cursor_CXXDeleteExpr                      = return ()
-  | k == C.Cursor_UnaryExpr                          = return ()
-  | k == C.Cursor_ObjCStringLiteral                  = return () 
-  | k == C.Cursor_ObjCEncodeExpr                     = return () 
-  | k == C.Cursor_ObjCSelectorExpr                   = return () 
-  | k == C.Cursor_ObjCProtocolExpr                   = return () 
-  | k == C.Cursor_ObjCBridgedCastExpr                = return () 
-  | k == C.Cursor_PackExpansionExpr                  = return () 
-  | k == C.Cursor_SizeOfPackExpr                     = return () 
-  | k == C.Cursor_LastExpr                           = return () 
-  | k == C.Cursor_FirstStmt                          = return () 
-  | k == C.Cursor_UnexposedStmt                      = return () 
-  | k == C.Cursor_LabelStmt                          = return () 
-  | k == C.Cursor_CompoundStmt                       = return () 
-  | k == C.Cursor_CaseStmt                           = return () 
-  | k == C.Cursor_DefaultStmt                        = return () 
-  | k == C.Cursor_IfStmt                             = return () 
-  | k == C.Cursor_SwitchStmt                         = return () 
-  | k == C.Cursor_WhileStmt                          = return () 
-  | k == C.Cursor_DoStmt                             = return () 
-  | k == C.Cursor_ForStmt                            = return () 
-  | k == C.Cursor_GotoStmt                           = return () 
-  | k == C.Cursor_IndirectGotoStmt                   = return () 
-  | k == C.Cursor_ContinueStmt                       = return () 
-  | k == C.Cursor_BreakStmt                          = return () 
-  | k == C.Cursor_ReturnStmt                         = return () 
-  | k == C.Cursor_AsmStmt                            = return () 
-  | k == C.Cursor_ObjCAtTryStmt                      = return () 
-  | k == C.Cursor_ObjCAtCatchStmt                    = return () 
-  | k == C.Cursor_ObjCAtFinallyStmt                  = return () 
-  | k == C.Cursor_ObjCAtThrowStmt                    = return () 
-  | k == C.Cursor_ObjCAtSynchronizedStmt             = return () 
-  | k == C.Cursor_ObjCAutoreleasePoolStmt            = return () 
-  | k == C.Cursor_ObjCForCollectionStmt              = return () 
-  | k == C.Cursor_CXXCatchStmt                       = return () 
-  | k == C.Cursor_CXXTryStmt                         = return () 
-  | k == C.Cursor_CXXForRangeStmt                    = return () 
-  | k == C.Cursor_SEHTryStmt                         = return () 
-  | k == C.Cursor_SEHExceptStmt                      = return () 
-  | k == C.Cursor_SEHFinallyStmt                     = return () 
-  | k == C.Cursor_NullStmt                           = return () 
-  | k == C.Cursor_DeclStmt                           = return () 
-  | k == C.Cursor_LastStmt                           = return () 
-  | k == C.Cursor_TranslationUnit                    = return () 
-  | k == C.Cursor_FirstAttr                          = return () 
-  | k == C.Cursor_UnexposedAttr                      = return () 
-  | k == C.Cursor_IBActionAttr                       = return () 
-  | k == C.Cursor_IBOutletAttr                       = return () 
-  | k == C.Cursor_IBOutletCollectionAttr             = return () 
-  | k == C.Cursor_CXXFinalAttr                       = return () 
-  | k == C.Cursor_CXXOverrideAttr                    = return () 
-  | k == C.Cursor_AnnotateAttr                       = return () 
-  | k == C.Cursor_LastAttr                           = return () 
-  | k == C.Cursor_PreprocessingDirective             = return () 
-  | k == C.Cursor_MacroDefinition                    = visitReferences loc s k c >> visitDefinitions loc s k c
-  | k == C.Cursor_MacroExpansion                     = visitReferences loc s k c
-  | k == C.Cursor_MacroInstantiation                 = visitReferences loc s k c
-  | k == C.Cursor_InclusionDirective                 = visitInclusions loc s k c
-  | k == C.Cursor_FirstPreprocessing                 = return ()
-  | k == C.Cursor_LastPreprocessing                  = return ()
-  | k == C.Cursor_ModuleImportDecl                   = return ()
-  | k == C.Cursor_FirstExtraDecl                     = return ()
-  | k == C.Cursor_LastExtraDecl                      = return ()
-  | otherwise                                        = return ()  -- TODO: Log an error here.
-
-doNothing :: C.CursorKind -> Analysis s ()
-doNothing _ = return ()
-{-# NOINLINE doNothing #-}
+route :: TULocation -> CPPScope -> C.Cursor -> C.CursorKind -> Analysis s ()
+route loc s c k@C.Cursor_StructDecl                         = visitReferences loc s k c >> visitClassOverrides c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_UnionDecl                          = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_ClassDecl                          = visitReferences loc s k c >> visitClassOverrides c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_EnumDecl                           = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_FieldDecl                          = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_EnumConstantDecl                   = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_FunctionDecl                       = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_VarDecl                            = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_ParmDecl                           = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_ObjCInterfaceDecl                  = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_ObjCCategoryDecl                   = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_ObjCProtocolDecl                   = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_ObjCPropertyDecl                   = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_ObjCIvarDecl                       = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_ObjCInstanceMethodDecl             = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_ObjCClassMethodDecl                = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_ObjCImplementationDecl             = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_ObjCCategoryImplDecl               = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_TypedefDecl                        = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_CXXMethod                          = visitReferences loc s k c >> visitOverrides c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_Namespace                          = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_Constructor                        = visitReferences loc s k c >> visitOverrides c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_Destructor                         = visitReferences loc s k c >> visitOverrides c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_ConversionFunction                 = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_TemplateTypeParameter              = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_NonTypeTemplateParameter           = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_TemplateTemplateParameter          = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_FunctionTemplate                   = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_ClassTemplate                      = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_ClassTemplatePartialSpecialization = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_NamespaceAlias                     = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_UsingDirective                     = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_UsingDeclaration                   = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_TypeAliasDecl                      = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_ObjCSynthesizeDecl                 = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_ObjCDynamicDecl                    = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_ObjCSuperClassRef                  = visitReferences loc s k c
+route loc s c k@C.Cursor_ObjCProtocolRef                    = visitReferences loc s k c
+route loc s c k@C.Cursor_ObjCClassRef                       = visitReferences loc s k c
+route loc s c k@C.Cursor_TypeRef                            = visitReferences loc s k c
+route loc s c k@C.Cursor_TemplateRef                        = visitReferences loc s k c
+route loc s c k@C.Cursor_NamespaceRef                       = visitReferences loc s k c
+route loc s c k@C.Cursor_MemberRef                          = visitReferences loc s k c
+route loc s c k@C.Cursor_LabelRef                           = visitReferences loc s k c
+route loc s c k@C.Cursor_OverloadedDeclRef                  = visitReferences loc s k c
+route loc s c k@C.Cursor_DeclRefExpr                        = visitReferences loc s k c
+route loc s c k@C.Cursor_MemberRefExpr                      = visitReferences loc s k c
+route loc s c k@C.Cursor_CallExpr                           = visitReferences loc s k c
+route loc s c k@C.Cursor_ObjCMessageExpr                    = visitReferences loc s k c
+route loc s c k@C.Cursor_MacroDefinition                    = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@C.Cursor_MacroExpansion                     = visitReferences loc s k c
+route loc s c k@C.Cursor_MacroInstantiation                 = visitReferences loc s k c
+route loc s c k@C.Cursor_InclusionDirective                 = visitInclusions loc s k c
+route _ _ _ _                                               = return ()
 
 sendRPC :: RPC () -> Analysis s ()
-{-
 sendRPC req = do
   ctx <- lift get
   liftIO $ runRPC req (asConn ctx)
--}
-sendRPC _ = return ()
 
 queryRPC :: RPC a -> Analysis s a
 queryRPC req = do
@@ -397,8 +277,8 @@ visitReferences loc scope cKind cursor = do
   -- TODO: Support LabelRefs.
   defC <- C.getDefinition cursor
   refC <- C.getReferenced cursor
-  let !defIsNull = C.isNullCursor defC
-      !refIsNull = C.isNullCursor refC
+  let !defIsNull = C.isInvalid (C.getKind defC)
+      !refIsNull = C.isInvalid (C.getKind refC)
 
   unless (defIsNull && refIsNull) $ do
     -- Prefer definitions to references when available.
@@ -593,15 +473,6 @@ newScopeName parentScope cursor = do
   let parentName = csScopeName parentScope
   return (usrHash, parentName <::> name)
 
-{-
-fqn :: C.Cursor -> Analysis s Identifier 
-fqn cursor = (B.intercalate "::" . reverse) <$> go cursor
-  where go c = do isNull <- C.isNullCursor c
-                  isTU <- C.getKind c >>= C.isTranslationUnit
-                  if isNull || isTU then return [] else go' c
-        go' c =  (:) <$> cursorName c <*> (C.getSemanticParent c >>= go)
--}
-
 (<::>) :: BU.ByteString -> BU.ByteString -> BU.ByteString
 (<::>) a b = if B.null a
                 then b
@@ -611,39 +482,6 @@ cursorName :: C.Cursor -> Analysis s BU.ByteString
 cursorName c = C.getDisplayName c >>= CS.unsafeUnpackByteString >>= anonymize
   where anonymize s | B.null s  = return "<anonymous>"
                     | otherwise = return s
-
-{-
-getContext :: TranslationUnit -> C.Cursor -> Analysis s C.Cursor
-getContext tu cursor = do
-    isNull <- C.isNullCursor cursor
-    cKind <- C.getKind cursor
-    go cursor cKind isNull
-  where
-    go c _ isNull | isNull = return c
-    go c k _ | k `elem` [C.Cursor_FunctionDecl, C.Cursor_CXXMethod, C.Cursor_Constructor, C.Cursor_Destructor, C.Cursor_TranslationUnit, C.Cursor_ClassDecl, C.Cursor_StructDecl, C.Cursor_EnumDecl, C.Cursor_Namespace] = return c
-    go c k _ | k == C.Cursor_MacroExpansion = do
-      extent <- C.getExtent c
-      loc <- Source.getStart extent
-      (f, ln, col, _) <- Source.getSpellingLocation loc
-      case f of
-         Nothing -> return c
-         Just file -> do newLoc <- Source.getLocation tu file ln col
-                         srcCursor <- Source.getCursor tu newLoc
-                         srcCKind <- C.getKind srcCursor
-                         case srcCKind of
-                           C.Cursor_MacroExpansion -> return c  -- Will loop infinitely otherwise.
-                           _                       -> getContext tu srcCursor
-    go c _ _ = C.getSemanticParent c >>= getContext tu
-
-getContext' :: TranslationUnit -> C.Cursor -> Analysis s C.Cursor
-getContext' tu cursor = do
-  isNull <- C.isNullCursor cursor
-  cKind <- C.getKind cursor
-  case (isNull, cKind) of
-    (True, _)                         -> return cursor
-    (False, C.Cursor_TranslationUnit) -> return cursor
-    (False, _)                        -> C.getSemanticParent cursor >>= getContext tu
--}
 
 logDiagnostics :: TranslationUnit -> Analysis s ()
 logDiagnostics tu = do
@@ -763,7 +601,7 @@ withTranslationUnit :: ClangBase m => CommandInfo
                     -> (forall s. TranslationUnit -> ClangT s m a) -> m a
 withTranslationUnit ci f = 
     withCreateIndex False False $ \index -> do
-      clangIncludePath <- liftIO $ libclangIncludePath
+      clangIncludePath <- liftIO libclangIncludePath
       let clangIncludeArg = "-I" ++ clangIncludePath
       let args = (clangIncludeArg : map BU.toString (ciArgs ci))
       setGlobalOptions index GlobalOpt_ThreadBackgroundPriorityForAll
