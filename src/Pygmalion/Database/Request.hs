@@ -37,7 +37,6 @@ data DBRequest = DBGetCommandInfo !SourceFile (Response (Maybe CommandInfo, Mayb
                | DBGetInclusions !SourceFile (Response [SourceFile])
                | DBGetIncluders !SourceFile (Response [SourceFile])
                | DBGetDirectIncluders !SourceFile (Response [SourceFile])
-               -- | DBGetIncluderInfo SourceFile (Response [CommandInfo])
                | DBGetInclusionHierarchy !SourceFile (Response String)
                | DBGetCallers !SourceLocation (Response [Invocation])
                | DBGetCallees !SourceLocation (Response [DefInfo])
@@ -48,8 +47,6 @@ data DBRequest = DBGetCommandInfo !SourceFile (Response (Maybe CommandInfo, Mayb
                | DBGetReferenced !SourceLocation (Response (Maybe SourceReferenced))
                | DBGetDeclReferenced !SourceLocation (Response [DefInfo])
                | DBGetHierarchy !SourceLocation (Response String)
-               -- | DBUpdateAndFindDirtyInclusions SourceFileHash [Inclusion]
-               --                                  (Response [SourceFileHash])
                | DBShutdown
                  deriving (Show)
 

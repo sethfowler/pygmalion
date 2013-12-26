@@ -13,7 +13,6 @@ module Pygmalion.Database.IO
 , updateInclusion
 , getInclusions
 , getIncluders
---, getIncluderInfo
 , getDirectIncluders
 , getDirectIncluderHashes
 , getDirectInclusions
@@ -58,17 +57,6 @@ import Pygmalion.Database.Orphans ()
 import Pygmalion.Dot
 import Pygmalion.Log
 
-{-
- - Summary of database changes and new tables that we need:
- - * Remove the old before inserting the new (see below).
- -
- - One last note: we need to keep in mind that we need to be able to _remove_
- - things for all these tables. The database update model needs to move from an
- - "insert only" approach to a "remove the old and insert the new" approach. It
- - causes more database churn, but I don't see an alternative if we don't want
- - the user to have to periodically wipe out their database.
- -}
-
 -- General database manipulation functions. These are thin wrappers around the
 -- underlying database implementation that also verify that the database is
 -- configured according to the correct schema and enable foreign keys.
@@ -77,15 +65,9 @@ data DBHandle = DBHandle
     , beginTransactionStmt            :: Statement
     , endTransactionStmt              :: Statement
     , updateInclusionStmt             :: Statement
-    --, updateInclusionsClosureStmt     :: Statement
-    --, postUpdateInclusionsClosureStmt :: Statement
     , resetInclusionsStmt             :: Statement
-    --, postResetInclusionsStmt         :: Statement
-    --, getInclusionsStmt               :: Statement
     , getDirectInclusionsStmt         :: Statement
     , getDirectInclusionHashesStmt    :: Statement
-    --, getIncludersStmt                :: Statement
-    --, getIncluderInfoStmt             :: Statement
     , getDirectIncludersStmt          :: Statement
     , getDirectIncluderHashesStmt     :: Statement
     , updateSourceFileStmt            :: Statement
@@ -131,8 +113,6 @@ endTransaction :: DBHandle -> IO ()
 endTransaction h = execStatement h endTransactionStmt ()
 
 resetMetadata :: DBHandle -> SourceFile -> IO ()
-resetMetadata _ _ = return ()
-{-
 resetMetadata h sf = do
   resetInclusions h sf
   resetOverrides h sf
@@ -140,7 +120,6 @@ resetMetadata h sf = do
   -- We need to reset definitions last since the rest of the reset code
   -- sometimes refers to the definitions table.
   resetDefs h sf
--}
 
 openDB :: FilePath -> IO DBHandle
 openDB db = labeledCatch "openDB" $ do
@@ -150,15 +129,9 @@ openDB db = labeledCatch "openDB" $ do
   DBHandle c <$> openStatement c (mkQueryT beginTransactionSQL)
              <*> openStatement c (mkQueryT endTransactionSQL)
              <*> openStatement c (mkQueryT updateInclusionSQL)
-             -- <*> openStatement c (mkQueryT updateInclusionsClosureSQL)
-             -- <*> openStatement c (mkQueryT postUpdateInclusionsClosureSQL)
              <*> openStatement c (mkQueryT resetInclusionsSQL)
-             -- <*> openStatement c (mkQueryT postResetInclusionsSQL)
-             -- <*> openStatement c (mkQueryT getInclusionsSQL)
              <*> openStatement c (mkQueryT getDirectInclusionsSQL)
              <*> openStatement c (mkQueryT getDirectInclusionHashesSQL)
-             -- <*> openStatement c (mkQueryT getIncludersSQL)
-             -- <*> openStatement c (mkQueryT getIncluderInfoSQL)
              <*> openStatement c (mkQueryT getDirectIncludersSQL)
              <*> openStatement c (mkQueryT getDirectIncluderHashesSQL)
              <*> openStatement c (mkQueryT updateSourceFileSQL)
@@ -191,15 +164,9 @@ closeDB h = do
   closeStatement (beginTransactionStmt h)
   closeStatement (endTransactionStmt h)
   closeStatement (updateInclusionStmt h)
-  -- closeStatement (updateInclusionsClosureStmt h)
-  -- closeStatement (postUpdateInclusionsClosureStmt h)
   closeStatement (resetInclusionsStmt h)
-  -- closeStatement (postResetInclusionsStmt h)
-  -- closeStatement (getInclusionsStmt h)
   closeStatement (getDirectInclusionsStmt h)
   closeStatement (getDirectInclusionHashesStmt h)
-  -- closeStatement (getIncludersStmt h)
-  --closeStatement (getIncluderInfoStmt h)
   closeStatement (getDirectIncludersStmt h)
   closeStatement (getDirectIncluderHashesStmt h)
   closeStatement (updateSourceFileStmt h)
@@ -356,7 +323,7 @@ getAllFiles h = query_ (conn h) (mkQueryT sql)
 defineInclusionsTable :: Connection -> IO ()
 defineInclusionsTable c = do
     execute_ c (mkQueryT sql)
-    --execute_ c (mkQueryT indexSQL)
+    execute_ c (mkQueryT indexSQL)
   where
     sql = T.concat [ "create table if not exists Inclusions( "
                    , "Inclusion integer not null,            "
@@ -385,20 +352,6 @@ resetInclusionsSQL = "delete from Inclusions where Includer = ?"
 getInclusions :: DBHandle -> SourceFile -> IO [SourceFile]
 getInclusions = getDirectInclusions  -- TODO FIXME
 
-{-
-getInclusions :: DBHandle -> SourceFile -> IO [SourceFile]
-getInclusions h sf = do
-  is <- execQuery h getInclusionsStmt (Only $ hash sf)
-  return $ map unwrapSourceFile is
-
-getInclusionsSQL :: T.Text
-getInclusionsSQL = T.concat
-  [ "select F.Name                           "
-  , "from InclusionsClosure as I             "
-  , "join Files as F on I.Inclusion = F.Hash "
-  , "where I.Includer = ?" ]
--}
-
 getDirectInclusions :: DBHandle -> SourceFile -> IO [SourceFile]
 getDirectInclusions h sf = do
   is <- execQuery h getDirectInclusionsStmt (Only $ hash sf)
@@ -421,36 +374,6 @@ getDirectInclusionHashesSQL = "select Inclusion from Inclusions where Includer =
 
 getIncluders :: DBHandle -> SourceFile -> IO [SourceFile]
 getIncluders = getDirectIncluders  -- TODO FIXME
-
-{-
-getIncluders :: DBHandle -> SourceFile -> IO [SourceFile]
-getIncluders h sf = do
-  is <- execQuery h getIncludersStmt (Only $ hash sf)
-  return $ map unwrapSourceFile is
-
-getIncludersSQL :: T.Text
-getIncludersSQL = T.concat
-  [ "select F.Name                          "
-  , "from InclusionsClosure as I            "
-  , "join Files as F on I.Includer = F.Hash "
-  , "where I.Inclusion = ?"                 ]
--}
-
-{-
-getIncluderInfo :: DBHandle -> SourceFile -> IO [CommandInfo]
-getIncluderInfo h sf = execQuery h getIncluderInfoStmt (Only $ hash sf)
-
-getIncluderInfoSQL :: T.Text
-getIncluderInfoSQL = T.concat
-  [ "select F.Name, W.Path, C.Command, A.Args, S.Language, S.LastMTime, S.LastIndexed "
-  , "from Inclusions as I                                                             "
-  , "join SourceFiles as S on I.Includer = S.File                                     "
-  , "join Files as F on S.File = F.Hash                                               "
-  , "join Paths as W on S.WorkingPath = W.Hash                                        "
-  , "join BuildCommands as C on S.BuildCommand = C.Hash                               "
-  , "join BuildArgs as A on S.BuildArgs = A.Hash                                      "
-  , "where I.Inclusion = ?" ]
--}
 
 getDirectIncluders :: DBHandle -> SourceFile -> IO [SourceFile]
 getDirectIncluders h sf = do
@@ -562,7 +485,6 @@ updateSourceFileSQL = T.concat
 updateSourceFile :: DBHandle -> CommandInfo -> IO ()
 updateSourceFile h CommandInfo {..} = do
   let sfHash = hash ciSourceFile
-  --execStatement h updateFileStmt (ciSourceFile, sfHash, mtime)
   let wdHash = hash ciWorkingPath
   execStatement h insertPathStmt (ciWorkingPath, wdHash)
   let cmdHash = hash ciCommand
@@ -621,8 +543,8 @@ getSimilarCommandInfoSQL = T.concat
 defineDefinitionsTable :: Connection -> IO ()
 defineDefinitionsTable c = do
     execute_ c (mkQueryT sql)
-    --execute_ c (mkQueryT indexSQL)
-    --execute_ c (mkQueryT indexSQL')
+    execute_ c (mkQueryT indexSQL)
+    execute_ c (mkQueryT indexSQL')
   where
     sql = T.concat [ "create table if not exists Definitions(      "
                    , "USRHash integer primary key unique not null, "
@@ -686,7 +608,7 @@ getDefSQL = T.concat
 defineOverridesTable :: Connection -> IO ()
 defineOverridesTable c = do
     execute_ c (mkQueryT sql)
-    --execute_ c (mkQueryT indexSQL)
+    execute_ c (mkQueryT indexSQL)
   where
     sql = T.concat [ "create table if not exists Overrides(           "
                    , "Definition integer primary key unique not null, "
@@ -815,9 +737,9 @@ getMembersSQL = T.concat
 defineReferencesTable :: Connection -> IO ()
 defineReferencesTable c = do
     execute_ c (mkQueryT sql)
-    --execute_ c (mkQueryT indexSQL)
-    --execute_ c (mkQueryT indexSQL')
-    --execute_ c (mkQueryT indexSQL'')
+    execute_ c (mkQueryT indexSQL)
+    execute_ c (mkQueryT indexSQL')
+    execute_ c (mkQueryT indexSQL'')
   where
     sql = T.concat [ "create table if not exists Refs(           "
                    , "RefId integer unique primary key not null, "

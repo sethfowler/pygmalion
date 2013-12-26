@@ -8,7 +8,6 @@ module Pygmalion.Database.Manager
 
 import Control.Applicative
 import Control.Concurrent.STM
---import Control.Monad
 import Control.Monad.Reader
 import Data.Hashable (hash)
 import qualified Data.Vector as V
@@ -32,9 +31,9 @@ runDatabaseManager updateChan queryChan ekg = do
     go !ctx = 
            do !item <- atomically $ readFromChannels updateChan queryChan
               case item of
-                Left ups         -> return () >> go ctx {- routeUpdates ctx (reverse ups) >> go ctx -}
+                Left ups         -> routeUpdates ctx (reverse ups) >> go ctx
                 Right DBShutdown -> logInfo "Shutting down DB thread"
-                Right req        -> return () >> go ctx {- runReaderT (route req) ctx >> go ctx -}
+                Right req        -> runReaderT (route req) ctx >> go ctx
                 
 readFromChannels :: DBUpdateChan -> DBQueryChan -> STM (Either [V.Vector DBUpdate] DBRequest)
 readFromChannels updateChan queryChan = readQueryChan `orElse` readUpdateChan
@@ -71,7 +70,6 @@ route (DBGetDefinition !sl !v)                   = query "definition" getDef sl 
 route (DBGetInclusions !sf !v)                   = query "inclusions" getInclusions sf v
 route (DBGetIncluders !sf !v)                    = query "includers" getIncluders sf v
 route (DBGetDirectIncluders !sf !v)              = query "direct includers" getDirectIncluders sf v
---route (DBGetIncluderInfo !sf !v)                 = query "includer info" getIncluderInfo sf v
 route (DBGetInclusionHierarchy !sf !v)           = query "inclusion hierarchy"
                                                          getInclusionHierarchy sf v
 route (DBGetCallers !sl !v)                      = query "callers" getCallers sl v
