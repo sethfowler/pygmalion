@@ -47,6 +47,7 @@ data DBRequest = DBGetCommandInfo !SourceFile (Response (Maybe CommandInfo, Mayb
                | DBGetReferenced !SourceLocation (Response (Maybe SourceReferenced))
                | DBGetDeclReferenced !SourceLocation (Response [DefInfo])
                | DBGetHierarchy !SourceLocation (Response String)
+               | DBCommitStagedUpdates (Response ())
                | DBShutdown
                  deriving (Show)
 

@@ -30,16 +30,18 @@ runIdleManager cf idleChan idxStream dbUpdateChan dbQueryChan = forever $ do
   -- Start the idle timer once activity stops.
   waitForAllEmpty idxStream dbUpdateChan dbQueryChan
   logDebug "Starting the idle timer..."
-  timer <- oneShotTimer (onIdle idleChan) (sDelay . idleDelay $ cf)
+  timer <- oneShotTimer (onIdle idleChan dbQueryChan) (sDelay . idleDelay $ cf)
 
   -- Wait for activity and stop the idle timer.
   waitForAnyNonempty idxStream dbUpdateChan dbQueryChan
   logDebug "Stopping the idle timer..."
   stopTimer timer
   
-onIdle :: IdleChan -> IO ()
-onIdle idleChan = do
+onIdle :: IdleChan -> DBQueryChan -> IO ()
+onIdle idleChan dbQueryChan = do
     logInfo "Returned to idle."
+    logInfo "Committing staged updates..."
+    callLenChan dbQueryChan DBCommitStagedUpdates
     go
   where
     go = do !req <- readLenChan idleChan
@@ -67,12 +69,12 @@ waitForAllEmpty idxStream dbUpdateChan dbQueryChan = liftIO $ atomically $ do
   check (isUpdateChanEmpty && isQueryChanEmpty)
 
 waitForAnyNonempty :: MonadIO m => IndexStream -> DBUpdateChan -> DBQueryChan -> m ()
-waitForAnyNonempty idxStream dbUpdateChan dbQueryChan = liftIO $ atomically $ do
+waitForAnyNonempty idxStream dbUpdateChan _ = liftIO $ atomically $ do
   idxPending <- readTMVar (isPending idxStream)
   Pair idxCurrent _ <- readTMVar (isCurrent idxStream)
   isUpdateChanEmpty <- isEmptyUpdateChan dbUpdateChan
-  isQueryChanEmpty <- isEmptyLenChan' dbQueryChan
+  --isQueryChanEmpty <- isEmptyLenChan' dbQueryChan
   check $ not (Map.null idxPending &&
                Set.null idxCurrent &&
-               isUpdateChanEmpty &&
-               isQueryChanEmpty)
+               isUpdateChanEmpty)
+               -- && isQueryChanEmpty)

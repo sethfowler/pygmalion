@@ -54,9 +54,9 @@ routeUpdates ctx upList = do
         V.forM_ ups $ \up ->
           runReaderT (routeUpdate up) ctx
   where
-    routeUpdate (DBUpdateDef !di)         = update "definition" updateDef di
-    routeUpdate (DBUpdateRef !rf)         = update "reference" updateReference rf
-    routeUpdate (DBUpdateOverride !ov)    = update "override" updateOverride ov
+    routeUpdate (DBUpdateDef !di)         = update "definition" stageDefUpdate di
+    routeUpdate (DBUpdateRef !rf)         = update "reference" stageReferenceUpdate rf
+    routeUpdate (DBUpdateOverride !ov)    = update "override" stageOverrideUpdate ov
     routeUpdate (DBUpdateCommandInfo !ci) = update "command info" updateSourceFile ci
     routeUpdate (DBUpdateFile !sf !t !vh) = update3 "file" updateFile sf t vh
     routeUpdate (DBUpdateInclusion !ic)   = update "inclusion" updateInclusion ic
@@ -80,8 +80,15 @@ route (DBGetRefs !usr !v)                        = query "references" getReferen
 route (DBGetReferenced !sl !v)                   = query "referenced" getReferenced sl v
 route (DBGetDeclReferenced !sl !v)               = query "decl referenced" getDeclReferenced sl v
 route (DBGetHierarchy !sl !v)                    = query "hierarchy" getHierarchy sl v
+route (DBCommitStagedUpdates !v)                 = commit v
 route (DBShutdown)                               = error "Should not route DBShutdown"
 
+commit :: Response () -> DB ()
+commit r = do
+  h <- dbHandle <$> ask
+  lift $ commitStagedUpdates h
+  sendResponse r ()
+  
 update :: Show a => String -> (DBHandle -> a -> IO ()) -> a -> DB ()
 update item f x = do
   h <- dbHandle <$> ask

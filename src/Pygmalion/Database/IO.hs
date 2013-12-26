@@ -6,6 +6,7 @@ module Pygmalion.Database.IO
 , withTransaction
 , beginTransaction
 , endTransaction
+, commitStagedUpdates
 , resetMetadata
 , updateFile
 , getLastMTime
@@ -23,8 +24,10 @@ module Pygmalion.Database.IO
 , getCommandInfo
 , getSimilarCommandInfo
 , updateDef
+, stageDefUpdate
 , getDef
 , updateOverride
+, stageOverrideUpdate
 , getOverrided
 , getOverriders
 , getMembers
@@ -32,6 +35,7 @@ module Pygmalion.Database.IO
 , getCallers
 , getCallees
 , updateReference
+, stageReferenceUpdate
 , getDeclReferenced
 , getReferenced
 , getReferences
@@ -74,9 +78,11 @@ data DBHandle = DBHandle
     , getCommandInfoStmt              :: Statement
     , getSimilarCommandInfoStmt       :: Statement
     , updateDefStmt                   :: Statement
+    , stageDefUpdateStmt              :: Statement
     , resetDefsStmt                   :: Statement
     , getDefStmt                      :: Statement
     , updateOverrideStmt              :: Statement
+    , stageOverrideUpdateStmt         :: Statement
     , resetOverridesStmt              :: Statement
     , getOverridedStmt                :: Statement
     , getOverridersStmt               :: Statement
@@ -84,6 +90,7 @@ data DBHandle = DBHandle
     , getCallersStmt                  :: Statement
     , getCalleesStmt                  :: Statement
     , updateReferenceStmt             :: Statement
+    , stageReferenceUpdateStmt        :: Statement
     , resetReferencesStmt             :: Statement
     , getDeclReferencedStmt           :: Statement
     , getDeclsReferencedInFileStmt    :: Statement
@@ -112,6 +119,19 @@ beginTransaction h = execStatement h beginTransactionStmt ()
 endTransaction :: DBHandle -> IO ()
 endTransaction h = execStatement h endTransactionStmt ()
 
+commitStagedUpdates :: DBHandle -> IO ()
+commitStagedUpdates h = do
+  let c = conn h
+  execute_ c "replace into Definitions select * from DefinitionsStaging"
+  execute_ c "replace into Overrides select * from OverridesStaging"
+  execute_ c "replace into Refs select * from RefsStaging"
+  execute_ c "drop table DefinitionsStaging"
+  execute_ c "drop table OverridesStaging"
+  execute_ c "drop table RefsStaging"
+  defineDefinitionsStagingTable c
+  defineOverridesStagingTable c
+  defineReferencesStagingTable c
+ 
 resetMetadata :: DBHandle -> SourceFile -> IO ()
 resetMetadata h sf = do
   resetInclusions h sf
@@ -138,9 +158,11 @@ openDB db = labeledCatch "openDB" $ do
              <*> openStatement c (mkQueryT getCommandInfoSQL)
              <*> openStatement c (mkQueryT getSimilarCommandInfoSQL)
              <*> openStatement c (mkQueryT updateDefSQL)
+             <*> openStatement c (mkQueryT stageDefUpdateSQL)
              <*> openStatement c (mkQueryT resetDefsSQL)
              <*> openStatement c (mkQueryT getDefSQL)
              <*> openStatement c (mkQueryT updateOverrideSQL)
+             <*> openStatement c (mkQueryT stageOverrideUpdateSQL)
              <*> openStatement c (mkQueryT resetOverridesSQL)
              <*> openStatement c (mkQueryT getOverridedSQL)
              <*> openStatement c (mkQueryT getOverridersSQL)
@@ -148,6 +170,7 @@ openDB db = labeledCatch "openDB" $ do
              <*> openStatement c (mkQueryT getCallersSQL)
              <*> openStatement c (mkQueryT getCalleesSQL)
              <*> openStatement c (mkQueryT updateReferenceSQL)
+             <*> openStatement c (mkQueryT stageReferenceUpdateSQL)
              <*> openStatement c (mkQueryT resetReferencesSQL)
              <*> openStatement c (mkQueryT getDeclReferencedSQL)
              <*> openStatement c (mkQueryT getDeclsReferencedInFileSQL)
@@ -173,9 +196,11 @@ closeDB h = do
   closeStatement (getCommandInfoStmt h)
   closeStatement (getSimilarCommandInfoStmt h)
   closeStatement (updateDefStmt h)
+  closeStatement (stageDefUpdateStmt h)
   closeStatement (resetDefsStmt h)
   closeStatement (getDefStmt h)
   closeStatement (updateOverrideStmt h)
+  closeStatement (stageOverrideUpdateStmt h)
   closeStatement (resetOverridesStmt h)
   closeStatement (getOverridedStmt h)
   closeStatement (getOverridersStmt h)
@@ -183,6 +208,7 @@ closeDB h = do
   closeStatement (getCallersStmt h)
   closeStatement (getCalleesStmt h)
   closeStatement (updateReferenceStmt h)
+  closeStatement (stageReferenceUpdateStmt h)
   closeStatement (resetReferencesStmt h)
   closeStatement (getDeclReferencedStmt h)
   closeStatement (getDeclsReferencedInFileStmt h)
@@ -557,6 +583,19 @@ defineDefinitionsTable c = do
     indexSQL = "create index if not exists DefsFileIndex on Definitions(File)"
     indexSQL' = "create index if not exists DefsContextIndex on Definitions(Context)"
 
+defineDefinitionsStagingTable :: Connection -> IO ()
+defineDefinitionsStagingTable c = do
+    execute_ c (mkQueryT sql)
+  where
+    sql = T.concat [ "create table if not exists DefinitionsStaging( "
+                   , "USRHash integer not null,                      "
+                   , "Name text not null,                            "
+                   , "File integer not null,                         "
+                   , "Line integer not null,                         "
+                   , "Col integer not null,                          "
+                   , "Kind integer not null,                         "
+                   , "Context integer not null)" ]
+
 updateDef :: DBHandle -> DefUpdate -> IO ()
 updateDef h (DefUpdate n usrHash sfHash l c k ctx) = do
     let kind = fromEnum k
@@ -565,6 +604,17 @@ updateDef h (DefUpdate n usrHash sfHash l c k ctx) = do
 updateDefSQL :: T.Text
 updateDefSQL = T.concat
   [ "replace into Definitions                             "
+  , "(USRHash, Name, File, Line, Col, Kind, Context) "
+  , "values (?, ?, ?, ?, ?, ?, ?)" ]
+
+stageDefUpdate :: DBHandle -> DefUpdate -> IO ()
+stageDefUpdate h (DefUpdate n usrHash sfHash l c k ctx) = do
+    let kind = fromEnum k
+    execStatement h stageDefUpdateStmt (usrHash, n, sfHash, l, c, kind, ctx)
+
+stageDefUpdateSQL :: T.Text
+stageDefUpdateSQL = T.concat
+  [ "insert into DefinitionsStaging                  "
   , "(USRHash, Name, File, Line, Col, Kind, Context) "
   , "values (?, ?, ?, ?, ?, ?, ?)" ]
 
@@ -638,6 +688,14 @@ defineOverridesTable c = do
                    , "Overrided integer not null)" ]
     indexSQL = "create index if not exists OverridesOverridedIndex on Overrides(Overrided)"
 
+defineOverridesStagingTable :: Connection -> IO ()
+defineOverridesStagingTable c = do
+    execute_ c (mkQueryT sql)
+  where
+    sql = T.concat [ "create table if not exists OverridesStaging(           "
+                   , "Definition integer not null, "
+                   , "Overrided integer not null)" ]
+
 updateOverride :: DBHandle -> Override -> IO ()
 updateOverride h (Override defUSRHash overrideUSRHash) =
     execStatement h updateOverrideStmt (defUSRHash, overrideUSRHash)
@@ -645,6 +703,15 @@ updateOverride h (Override defUSRHash overrideUSRHash) =
 updateOverrideSQL :: T.Text
 updateOverrideSQL = T.concat
   [ "replace into Overrides (Definition, Overrided) "
+  , "values (?, ?)" ]
+
+stageOverrideUpdate :: DBHandle -> Override -> IO ()
+stageOverrideUpdate h (Override defUSRHash overrideUSRHash) =
+    execStatement h stageOverrideUpdateStmt (defUSRHash, overrideUSRHash)
+
+stageOverrideUpdateSQL :: T.Text
+stageOverrideUpdateSQL = T.concat
+  [ "insert into OverridesStaging (Definition, Overrided) "
   , "values (?, ?)" ]
 
 resetOverrides :: DBHandle -> SourceFile -> IO ()
@@ -780,6 +847,23 @@ defineReferencesTable c = do
     indexSQL' = "create index if not exists RefsRefIndex on Refs(Ref)"
     indexSQL'' = "create index if not exists RefsRefContextIndex on Refs(RefContext)"
 
+defineReferencesStagingTable :: Connection -> IO ()
+defineReferencesStagingTable c = do
+    execute_ c (mkQueryT sql)
+  where
+    sql = T.concat [ "create table if not exists RefsStaging( "
+                   , "RefId integer not null,                 "
+                   , "File integer not null,                  "
+                   , "Line integer not null,                  "
+                   , "Col integer not null,                   "
+                   , "EndLine integer not null,               "
+                   , "EndCol integer not null,                "
+                   , "RefKind integer not null,               "
+                   , "RefVia integer not null,                "
+                   , "RefDecl integer not null,               "
+                   , "RefContext integer not null,            "
+                   , "Ref integer not null)" ]
+
 updateReference :: DBHandle -> ReferenceUpdate -> IO ()
 updateReference h ReferenceUpdate {..} = do
   let kind = fromEnum rfuKind
@@ -787,10 +871,25 @@ updateReference h ReferenceUpdate {..} = do
                                        rfuEndLine, rfuEndCol, kind,
                                        rfuViaHash, rfuDeclHash,
                                        rfuContextHash, rfuUSRHash)
-  
+ 
 updateReferenceSQL :: T.Text
 updateReferenceSQL = T.concat
   [ "replace into Refs                            "
+  , " (RefId, File, Line, Col, EndLine, EndCol,   "
+  , "  RefKind, RefVia, RefDecl, RefContext, Ref) "
+  , "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)" ]
+
+stageReferenceUpdate :: DBHandle -> ReferenceUpdate -> IO ()
+stageReferenceUpdate h ReferenceUpdate {..} = do
+  let kind = fromEnum rfuKind
+  execStatement h stageReferenceUpdateStmt (rfuId, rfuFileHash, rfuLine, rfuCol,
+                                            rfuEndLine, rfuEndCol, kind,
+                                            rfuViaHash, rfuDeclHash,
+                                            rfuContextHash, rfuUSRHash)
+ 
+stageReferenceUpdateSQL :: T.Text
+stageReferenceUpdateSQL = T.concat
+  [ "insert into RefsStaging                      "
   , " (RefId, File, Line, Col, EndLine, EndCol,   "
   , "  RefKind, RefVia, RefDecl, RefContext, Ref) "
   , "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)" ]
@@ -978,8 +1077,11 @@ ensureSchema c = defineMetadataTable c
               >> defineBuildArgsTable c
               >> defineSourceFilesTable c
               >> defineDefinitionsTable c
+              >> defineDefinitionsStagingTable c
               >> defineOverridesTable c
+              >> defineOverridesStagingTable c
               >> defineReferencesTable c
+              >> defineReferencesStagingTable c
               >> ensureVersion c
 
 ensureVersion :: Connection -> IO ()
