@@ -95,8 +95,7 @@ sendUpdates ctx !ups !upn = do
 -}
 
 sendUpdates :: RPCServerContext -> VV.Vector DBUpdate -> IO ()
---sendUpdates ctx !ups = pushUpdate (rsDBUpdateChan ctx) ups
-sendUpdates _ _ = return ()
+sendUpdates ctx !ups = pushUpdate (rsDBUpdateChan ctx) ups
 
 data RPCServerContext = RPCServerContext
   { rsThread       :: !ThreadId
