@@ -4,6 +4,7 @@
 module Pygmalion.Database.Manager
 ( runDatabaseManager
 , ensureDB
+, ensureStagingDB
 ) where
 
 import Control.Applicative

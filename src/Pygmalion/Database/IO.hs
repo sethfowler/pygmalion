@@ -2,6 +2,7 @@
 
 module Pygmalion.Database.IO
 ( ensureDB
+, ensureStagingDB
 , withDB
 , withTransaction
 , beginTransaction
@@ -122,15 +123,15 @@ endTransaction h = execStatement h endTransactionStmt ()
 commitStagedUpdates :: DBHandle -> IO ()
 commitStagedUpdates h = do
   let c = conn h
-  execute_ c "replace into Definitions select * from DefinitionsStaging"
-  execute_ c "replace into Overrides select * from OverridesStaging"
-  execute_ c "replace into Refs select * from RefsStaging"
-  execute_ c "drop table DefinitionsStaging"
-  execute_ c "drop table OverridesStaging"
-  execute_ c "drop table RefsStaging"
-  defineDefinitionsStagingTable c
-  defineOverridesStagingTable c
-  defineReferencesStagingTable c
+  execute_ c "replace into Definitions select * from Staging.DefinitionsStaging"
+  execute_ c "replace into Overrides select * from Staging.OverridesStaging"
+  execute_ c "replace into Refs select * from Staging.RefsStaging"
+  execute_ c "drop table Staging.DefinitionsStaging"
+  execute_ c "drop table Staging.OverridesStaging"
+  execute_ c "drop table Staging.RefsStaging"
+  defineDefinitionsStagingTable' c
+  defineOverridesStagingTable' c
+  defineReferencesStagingTable' c
  
 resetMetadata :: DBHandle -> SourceFile -> IO ()
 resetMetadata h sf = do
@@ -146,6 +147,7 @@ openDB db = labeledCatch "openDB" $ do
   c <- open db
   tuneDB c
   ensureSchema c
+  execute_ c (mkQueryT $ T.concat ["attach database \"", T.pack stagingDBFile, "\" as Staging"])
   DBHandle c <$> openStatement c (mkQueryT beginTransactionSQL)
              <*> openStatement c (mkQueryT endTransactionSQL)
              <*> openStatement c (mkQueryT updateInclusionSQL)
@@ -220,6 +222,13 @@ closeDB h = do
   closeStatement (insertCommandStmt h)
   closeStatement (insertArgsStmt h)
   close (conn h)
+
+ensureStagingDB :: IO ()
+ensureStagingDB = do
+  c <- open stagingDBFile
+  tuneDB c
+  ensureSchema c
+  close c
 
 enableTracing :: Connection -> IO ()
 enableTracing c = setTrace c (Just $ logDebug . T.unpack)
@@ -596,6 +605,19 @@ defineDefinitionsStagingTable c = do
                    , "Kind integer not null,                         "
                    , "Context integer not null)" ]
 
+defineDefinitionsStagingTable' :: Connection -> IO ()
+defineDefinitionsStagingTable' c = do
+    execute_ c (mkQueryT sql)
+  where
+    sql = T.concat [ "create table if not exists Staging.DefinitionsStaging( "
+                   , "USRHash integer not null,                      "
+                   , "Name text not null,                            "
+                   , "File integer not null,                         "
+                   , "Line integer not null,                         "
+                   , "Col integer not null,                          "
+                   , "Kind integer not null,                         "
+                   , "Context integer not null)" ]
+
 updateDef :: DBHandle -> DefUpdate -> IO ()
 updateDef h (DefUpdate n usrHash sfHash l c k ctx) = do
     let kind = fromEnum k
@@ -614,7 +636,7 @@ stageDefUpdate h (DefUpdate n usrHash sfHash l c k ctx) = do
 
 stageDefUpdateSQL :: T.Text
 stageDefUpdateSQL = T.concat
-  [ "insert into DefinitionsStaging                  "
+  [ "insert into Staging.DefinitionsStaging          "
   , "(USRHash, Name, File, Line, Col, Kind, Context) "
   , "values (?, ?, ?, ?, ?, ?, ?)" ]
 
@@ -696,6 +718,14 @@ defineOverridesStagingTable c = do
                    , "Definition integer not null, "
                    , "Overrided integer not null)" ]
 
+defineOverridesStagingTable' :: Connection -> IO ()
+defineOverridesStagingTable' c = do
+    execute_ c (mkQueryT sql)
+  where
+    sql = T.concat [ "create table if not exists Staging.OverridesStaging( "
+                   , "Definition integer not null, "
+                   , "Overrided integer not null)" ]
+
 updateOverride :: DBHandle -> Override -> IO ()
 updateOverride h (Override defUSRHash overrideUSRHash) =
     execStatement h updateOverrideStmt (defUSRHash, overrideUSRHash)
@@ -711,7 +741,7 @@ stageOverrideUpdate h (Override defUSRHash overrideUSRHash) =
 
 stageOverrideUpdateSQL :: T.Text
 stageOverrideUpdateSQL = T.concat
-  [ "insert into OverridesStaging (Definition, Overrided) "
+  [ "insert into Staging.OverridesStaging (Definition, Overrided) "
   , "values (?, ?)" ]
 
 resetOverrides :: DBHandle -> SourceFile -> IO ()
@@ -864,6 +894,23 @@ defineReferencesStagingTable c = do
                    , "RefContext integer not null,            "
                    , "Ref integer not null)" ]
 
+defineReferencesStagingTable' :: Connection -> IO ()
+defineReferencesStagingTable' c = do
+    execute_ c (mkQueryT sql)
+  where
+    sql = T.concat [ "create table if not exists Staging.RefsStaging( "
+                   , "RefId integer not null,                 "
+                   , "File integer not null,                  "
+                   , "Line integer not null,                  "
+                   , "Col integer not null,                   "
+                   , "EndLine integer not null,               "
+                   , "EndCol integer not null,                "
+                   , "RefKind integer not null,               "
+                   , "RefVia integer not null,                "
+                   , "RefDecl integer not null,               "
+                   , "RefContext integer not null,            "
+                   , "Ref integer not null)" ]
+
 updateReference :: DBHandle -> ReferenceUpdate -> IO ()
 updateReference h ReferenceUpdate {..} = do
   let kind = fromEnum rfuKind
@@ -889,7 +936,7 @@ stageReferenceUpdate h ReferenceUpdate {..} = do
  
 stageReferenceUpdateSQL :: T.Text
 stageReferenceUpdateSQL = T.concat
-  [ "insert into RefsStaging                      "
+  [ "insert into Staging.RefsStaging              "
   , " (RefId, File, Line, Col, EndLine, EndCol,   "
   , "  RefKind, RefVia, RefDecl, RefContext, Ref) "
   , "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)" ]

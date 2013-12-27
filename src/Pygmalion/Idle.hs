@@ -42,6 +42,7 @@ onIdle idleChan dbQueryChan = do
     logInfo "Returned to idle."
     logInfo "Committing staged updates..."
     callLenChan dbQueryChan DBCommitStagedUpdates
+    logInfo "Staged updates committed."
     go
   where
     go = do !req <- readLenChan idleChan

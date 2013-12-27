@@ -37,6 +37,7 @@ main = do
   ekg <- EKG.forkServer "localhost" 8000
 
   -- Initialize the database and file metadata.
+  ensureStagingDB
   ensureDB
   logInfo "Reading file metadata from database..."
   metadata <- readMetadata
