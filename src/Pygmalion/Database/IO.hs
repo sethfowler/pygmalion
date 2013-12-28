@@ -555,7 +555,7 @@ defineDefinitionsTable c = do
                    , "Kind integer not null,                       "
                    , "Context integer not null)" ]
     indexSQL = "create index if not exists DefsFileIndex on Definitions(File)"
-    indexSQL' = "create index if not exists DefsFileIndex on Definitions(Context)"
+    indexSQL' = "create index if not exists DefsContextIndex on Definitions(Context)"
 
 updateDef :: DBHandle -> DefUpdate -> IO ()
 updateDef h (DefUpdate n usrHash sfHash l c k ctx) = do
