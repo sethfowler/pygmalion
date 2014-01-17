@@ -123,9 +123,9 @@ endTransaction h = execStatement h endTransactionStmt ()
 commitStagedUpdates :: DBHandle -> IO ()
 commitStagedUpdates h = do
   let c = conn h
-  execute_ c "replace into Definitions select * from Staging.DefinitionsStaging"
-  execute_ c "replace into Overrides select * from Staging.OverridesStaging"
-  execute_ c "replace into Refs select * from Staging.RefsStaging"
+  execute_ c "replace into Definitions select * from Staging.DefinitionsStaging order by USRHash asc"
+  execute_ c "replace into Overrides select * from Staging.OverridesStaging order by Definition asc"
+  execute_ c "replace into Refs select * from Staging.RefsStaging order by RefId asc"
   execute_ c "drop table Staging.DefinitionsStaging"
   execute_ c "drop table Staging.OverridesStaging"
   execute_ c "drop table Staging.RefsStaging"
@@ -147,7 +147,7 @@ openDB db = labeledCatch "openDB" $ do
   c <- open db
   tuneDB c
   ensureSchema c
-  execute_ c (mkQueryT $ T.concat ["attach database \"", T.pack stagingDBFile, "\" as Staging"])
+  execute_ c (mkQueryT $ T.concat ["attach database '", T.pack stagingDBFile, "' as Staging"])
   DBHandle c <$> openStatement c (mkQueryT beginTransactionSQL)
              <*> openStatement c (mkQueryT endTransactionSQL)
              <*> openStatement c (mkQueryT updateInclusionSQL)

@@ -268,7 +268,7 @@ indexExecutable  = "pygindex-clang"
 pygmalionDir, dbFile, stagingDBFile, configFile, socketFile, compileCommandsFile, tagsFile :: FilePath
 pygmalionDir        = ".pygmalion"
 dbFile              = pygmalionDir </> "index.sqlite"
-stagingDBFile       = pygmalionDir </> "staging-index.sqlite"
+stagingDBFile       = "file::memory:"
 configFile          = pygmalionDir </> "pygmalion.yaml"
 socketFile          = pygmalionDir </> "socket"
 compileCommandsFile = "compile_commands.json"
