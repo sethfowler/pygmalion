@@ -29,6 +29,7 @@ import Pygmalion.Index.Manager
 import Pygmalion.Index.Request
 import Pygmalion.Index.Stream
 import Pygmalion.Log
+import Pygmalion.Metadata
 import Pygmalion.RPC.Request
 
 runRPCServer :: Config -> IndexStream -> DBUpdateChan -> DBQueryChan -> IdleChan -> IO ()
@@ -110,8 +111,8 @@ type RPCServer a = ReaderT RPCServerContext IO a
 route :: RPCRequest -> RPCServer (Maybe ByteString)
 route (RPCIndexCommand ci mtime)             = sendIndex_ $ indexRequestForCommand ci mtime
 route (RPCIndexFile sf mtime)                = sendIndex_ $ indexRequestForUpdate sf mtime
-route (RPCGetCommandInfo sf)                 = sendQuery $ DBGetCommandInfo sf
-route (RPCGetSimilarCommandInfo sf)          = sendQuery $ DBGetSimilarCommandInfo sf
+route (RPCGetCommandInfo sf)                 = doGetCommandInfo sf
+route (RPCGetSimilarCommandInfo sf)          = doGetSimilarCommandInfo sf
 route (RPCGetDefinition sl)                  = sendQuery $ DBGetDefinition sl
 route (RPCGetCallers sl)                     = sendQuery $ DBGetCallers sl
 route (RPCGetCallees sl)                     = sendQuery $ DBGetCallees sl
@@ -145,6 +146,20 @@ sendQuery !req = do
   result <- callLenChan (rsDBQueryChan ctx) req
   return . Just $! encode (RPCOK result)
 
+doGetCommandInfo :: SourceFile -> RPCServer (Maybe ByteString)
+doGetCommandInfo !sf = do
+  ctx <- ask
+  mayMetadata <- lift $ atomically $ getFileMetadata (rsIndexStream ctx) sf
+  return . Just $! encode (RPCOK $ fmap fmCommandInfo mayMetadata)
+
+doGetSimilarCommandInfo :: SourceFile -> RPCServer (Maybe ByteString)
+doGetSimilarCommandInfo !sf = do
+  ctx <- ask
+  mayMetadata <- lift $ atomically $ getFileMetadata (rsIndexStream ctx) sf
+  case mayMetadata of
+    Just _  -> return . Just $! encode (RPCOK $ fmap fmCommandInfo mayMetadata)
+    Nothing -> sendQuery $ DBGetSimilarCommandInfo sf
+  
 doUpdateInclusions :: SourceFileHash -> [Inclusion] -> RPCServer (Maybe ByteString)
 doUpdateInclusions !s !is = do
   ctx <- ask
