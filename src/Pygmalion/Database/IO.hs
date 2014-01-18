@@ -123,12 +123,18 @@ endTransaction h = execStatement h endTransactionStmt ()
 commitStagedUpdates :: DBHandle -> IO ()
 commitStagedUpdates h = do
   let c = conn h
+  dropDefinitionsIndexes c
+  dropOverridesIndexes c
+  dropReferencesIndexes c
   execute_ c "replace into Definitions select * from Staging.DefinitionsStaging order by USRHash asc"
   execute_ c "replace into Overrides select * from Staging.OverridesStaging order by Definition asc"
   execute_ c "replace into Refs select * from Staging.RefsStaging order by RefId asc"
   execute_ c "drop table Staging.DefinitionsStaging"
   execute_ c "drop table Staging.OverridesStaging"
   execute_ c "drop table Staging.RefsStaging"
+  createDefinitionsIndexes c
+  createOverridesIndexes c
+  createReferencesIndexes c
   defineDefinitionsStagingTable' c
   defineOverridesStagingTable' c
   defineReferencesStagingTable' c
@@ -578,8 +584,7 @@ getSimilarCommandInfoSQL = T.concat
 defineDefinitionsTable :: Connection -> IO ()
 defineDefinitionsTable c = do
     execute_ c (mkQueryT sql)
-    execute_ c (mkQueryT indexSQL)
-    execute_ c (mkQueryT indexSQL')
+    createDefinitionsIndexes c
   where
     sql = T.concat [ "create table if not exists Definitions(      "
                    , "USRHash integer primary key unique not null, "
@@ -589,8 +594,22 @@ defineDefinitionsTable c = do
                    , "Col integer not null,                        "
                    , "Kind integer not null,                       "
                    , "Context integer not null)" ]
+
+createDefinitionsIndexes :: Connection -> IO ()
+createDefinitionsIndexes c = do
+    execute_ c (mkQueryT indexSQL)
+    execute_ c (mkQueryT indexSQL')
+  where
     indexSQL = "create index if not exists DefsFileIndex on Definitions(File)"
     indexSQL' = "create index if not exists DefsContextIndex on Definitions(Context)"
+
+dropDefinitionsIndexes :: Connection -> IO ()
+dropDefinitionsIndexes c = do
+    execute_ c (mkQueryT indexSQL)
+    execute_ c (mkQueryT indexSQL')
+  where
+    indexSQL = "drop index if exists DefsFileIndex"
+    indexSQL' = "drop index if exists DefsContextIndex"
 
 defineDefinitionsStagingTable :: Connection -> IO ()
 defineDefinitionsStagingTable c = do
@@ -703,12 +722,21 @@ getDefSQL = T.concat
 defineOverridesTable :: Connection -> IO ()
 defineOverridesTable c = do
     execute_ c (mkQueryT sql)
-    execute_ c (mkQueryT indexSQL)
+    createOverridesIndexes c
   where
     sql = T.concat [ "create table if not exists Overrides(           "
                    , "Definition integer primary key unique not null, "
                    , "Overrided integer not null)" ]
+
+createOverridesIndexes :: Connection -> IO ()
+createOverridesIndexes c = execute_ c (mkQueryT indexSQL)
+  where
     indexSQL = "create index if not exists OverridesOverridedIndex on Overrides(Overrided)"
+
+dropOverridesIndexes :: Connection -> IO ()
+dropOverridesIndexes c = execute_ c (mkQueryT indexSQL)
+  where
+    indexSQL = "drop index if exists OverridesOverridedIndex"
 
 defineOverridesStagingTable :: Connection -> IO ()
 defineOverridesStagingTable c = do
@@ -857,9 +885,7 @@ getMembersSQL = T.concat
 defineReferencesTable :: Connection -> IO ()
 defineReferencesTable c = do
     execute_ c (mkQueryT sql)
-    execute_ c (mkQueryT indexSQL)
-    execute_ c (mkQueryT indexSQL')
-    execute_ c (mkQueryT indexSQL'')
+    createReferencesIndexes c
   where
     sql = T.concat [ "create table if not exists Refs(           "
                    , "RefId integer unique primary key not null, "
@@ -873,9 +899,26 @@ defineReferencesTable c = do
                    , "RefDecl integer not null,                  "
                    , "RefContext integer not null,               "
                    , "Ref integer not null)" ]
+
+createReferencesIndexes :: Connection -> IO ()
+createReferencesIndexes c = do
+    execute_ c (mkQueryT indexSQL)
+    execute_ c (mkQueryT indexSQL')
+    execute_ c (mkQueryT indexSQL'')
+  where
     indexSQL = "create index if not exists RefsFileIndex on Refs(File)"
     indexSQL' = "create index if not exists RefsRefIndex on Refs(Ref)"
     indexSQL'' = "create index if not exists RefsRefContextIndex on Refs(RefContext)"
+
+dropReferencesIndexes :: Connection -> IO ()
+dropReferencesIndexes c = do
+    execute_ c (mkQueryT indexSQL)
+    execute_ c (mkQueryT indexSQL')
+    execute_ c (mkQueryT indexSQL'')
+  where
+    indexSQL = "drop index if exists RefsFileIndex"
+    indexSQL' = "drop index if exists RefsRefIndex"
+    indexSQL'' = "drop index if exists RefsRefContextIndex"
 
 defineReferencesStagingTable :: Connection -> IO ()
 defineReferencesStagingTable c = do
