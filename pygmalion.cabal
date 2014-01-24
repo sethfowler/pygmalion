@@ -46,6 +46,7 @@ library
                    timers,
                    transformers,
                    tuple,
+                   unix,
                    unordered-containers,
                    utf8-string,
                    vector,

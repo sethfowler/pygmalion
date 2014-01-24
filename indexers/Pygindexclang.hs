@@ -21,10 +21,11 @@ main = do
     nice 10
     parseArgs args
   case result of
-    Left e   -> logError $ "While indexing with arguments "
-                        ++ (show args)
-                        ++ " process threw exception "
-                        ++ (show (e :: SomeException))
+    Left e   -> do pid <- getProcessID
+                   logError $ show pid ++ ": While indexing with arguments "
+                           ++ (show args)
+                           ++ " process threw exception "
+                           ++ (show (e :: SomeException))
     Right () -> return ()
 
 parseArgs :: [String] -> IO ()

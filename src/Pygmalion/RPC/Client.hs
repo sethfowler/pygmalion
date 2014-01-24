@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable, OverloadedStrings #-}
+{-# LANGUAGE DeriveDataTypeable, ForeignFunctionInterface, OverloadedStrings #-}
 
 module Pygmalion.RPC.Client
 ( RPC
@@ -46,6 +46,7 @@ import Data.Typeable
 import qualified Data.Vector as V
 import Network.Socket
 import System.IO.Error
+import System.Posix.Process (getProcessID)
 import System.Timeout
 
 import Pygmalion.Config
@@ -64,8 +65,18 @@ openRPCRaw path = getSocket path
 
 closeRPC :: RPCConnection -> IO ()
 closeRPC conn = do
+  -- Notify the server that nothing else is coming.
   runRPC rpcDone conn
-  sClose conn
+
+  -- sClose (really the underlying 'close' system call) can sometimes block,
+  -- locking up the thread permanently. Once GHC 7.8 arrives with
+  -- 'interruptible' foreign imports, we'll be able to use timeout,
+  -- but until that time the safest approach appears to be to shutdown
+  -- but not close the socket. This leaks a file descriptor, but
+  -- that's OK, since pygmalion currently only opens one RPC
+  -- connection per process.
+  --sClose conn
+  ensureSocketShutdown =<< try (shutdown conn ShutdownBoth)
 
 withRPC :: Config -> (RPCConnection -> IO a) -> IO a
 withRPC config = bracket (openRPC config) closeRPC
@@ -167,14 +178,14 @@ callRPC req conn = liftIO $ do
 callRPC_ :: RPCRequest -> RPCConnection -> RPC ()
 callRPC_ req conn = liftIO timedConduit
   where
-    timedConduit = ensureCompleted =<< timeout 100000000 conduit 
+    timedConduit = ensureCompleted =<< timeout 100000000 conduit
     conduit = process $$ sinkSocket conn
     process = yield (encode req)
 
 callRPCInfallible_ :: RPCRequest -> RPCConnection -> RPC ()
 callRPCInfallible_ req conn = liftIO $ catchIOError timedConduit (const $ return ())
   where
-    timedConduit = ensureCompleted =<< timeout 100000000 conduit 
+    timedConduit = ensureCompleted =<< timeout 100000000 conduit
     conduit = process $$ sinkSocket conn
     process = yield (encode req)
 
@@ -199,6 +210,12 @@ callRPCWaitForever req conn = liftIO $ do
 ensureCompleted :: Maybe a -> IO a
 ensureCompleted (Just a) = return a
 ensureCompleted _        = throw $ RPCException "Connection to server timed out"
+
+ensureSocketShutdown :: Either SomeException () -> IO ()
+ensureSocketShutdown (Left e) = do pid <- getProcessID
+                                   putStrLn $ show pid ++ ": Exception on RPC socket shutdown: "
+                                           ++ show (e :: SomeException) ++ ")"
+ensureSocketShutdown _        = return ()
 
 data RPCException = RPCException String
   deriving (Show, Typeable)
