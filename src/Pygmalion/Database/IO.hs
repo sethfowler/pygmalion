@@ -2,7 +2,6 @@
 
 module Pygmalion.Database.IO
 ( ensureDB
-, ensureStagingDB
 , withDB
 , withTransaction
 , beginTransaction
@@ -154,6 +153,7 @@ openDB db = labeledCatch "openDB" $ do
   tuneDB c
   ensureSchema c
   execute_ c (mkQueryT $ T.concat ["attach database '", T.pack stagingDBFile, "' as Staging"])
+  ensureStagingSchema c
   DBHandle c <$> openStatement c (mkQueryT beginTransactionSQL)
              <*> openStatement c (mkQueryT endTransactionSQL)
              <*> openStatement c (mkQueryT updateInclusionSQL)
@@ -229,12 +229,14 @@ closeDB h = do
   closeStatement (insertArgsStmt h)
   close (conn h)
 
+{-
 ensureStagingDB :: IO ()
 ensureStagingDB = do
   c <- open stagingDBFile
   tuneDB c
   ensureSchema c
   close c
+-}
 
 enableTracing :: Connection -> IO ()
 enableTracing c = setTrace c (Just $ logDebug . T.unpack)
@@ -1167,12 +1169,14 @@ ensureSchema c = defineMetadataTable c
               >> defineBuildArgsTable c
               >> defineSourceFilesTable c
               >> defineDefinitionsTable c
-              >> defineDefinitionsStagingTable c
               >> defineOverridesTable c
-              >> defineOverridesStagingTable c
               >> defineReferencesTable c
-              >> defineReferencesStagingTable c
               >> ensureVersion c
+
+ensureStagingSchema :: Connection -> IO ()
+ensureStagingSchema c = defineDefinitionsStagingTable' c
+                     >> defineOverridesStagingTable' c
+                     >> defineReferencesStagingTable' c
 
 ensureVersion :: Connection -> IO ()
 ensureVersion c = getDBVersion c >>= checkVersion
