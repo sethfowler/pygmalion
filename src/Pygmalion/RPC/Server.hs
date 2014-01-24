@@ -148,17 +148,25 @@ sendQuery !req = do
 
 doGetCommandInfo :: SourceFile -> RPCServer (Maybe ByteString)
 doGetCommandInfo !sf = do
-  ctx <- ask
-  mayMetadata <- lift $ atomically $ getFileMetadata (rsIndexStream ctx) sf
-  return . Just $! encode (RPCOK $ fmap fmCommandInfo mayMetadata)
-
-doGetSimilarCommandInfo :: SourceFile -> RPCServer (Maybe ByteString)
-doGetSimilarCommandInfo !sf = do
+  logDebug $ "Looking up command info for " ++ show sf
   ctx <- ask
   mayMetadata <- lift $ atomically $ getFileMetadata (rsIndexStream ctx) sf
   case mayMetadata of
-    Just _  -> return . Just $! encode (RPCOK $ fmap fmCommandInfo mayMetadata)
-    Nothing -> sendQuery $ DBGetSimilarCommandInfo sf
+    Just m  -> do logDebug $ "Lookup successful: " ++ show m
+                  return . Just $! encode (RPCOK $ fmCommandInfo m)
+    Nothing -> do logDebug "Lookup failed"
+                  return . Just $! encode (RPCOK (Nothing :: Maybe CommandInfo))
+
+doGetSimilarCommandInfo :: SourceFile -> RPCServer (Maybe ByteString)
+doGetSimilarCommandInfo !sf = do
+  logDebug $ "Looking up similar command info for " ++ show sf
+  ctx <- ask
+  mayMetadata <- lift $ atomically $ getFileMetadata (rsIndexStream ctx) sf
+  case mayMetadata of
+    Just m  -> do logDebug $ "Lookup successful: " ++ show m
+                  return . Just $! encode (RPCOK $ fmCommandInfo m)
+    Nothing -> do logDebug "Lookup failed; will try database..."
+                  sendQuery $ DBGetSimilarCommandInfo sf
   
 doUpdateInclusions :: SourceFileHash -> [Inclusion] -> RPCServer (Maybe ByteString)
 doUpdateInclusions !s !is = do
