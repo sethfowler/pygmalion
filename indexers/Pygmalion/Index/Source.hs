@@ -322,9 +322,9 @@ visitOverrides cursor = do
   -- TODO: I seem to recall that in C++11 you can override
   -- constructors. Add support for that if so.
   overrides <- C.getOverriddenCursors cursor
-  overrideUSRHashes <- mapM getUSRHash overrides
+  overrideUSRHashes <- DVS.mapM getUSRHash overrides
   usrHash <- getUSRHash cursor
-  forM_ overrideUSRHashes $ \oUSRHash -> do
+  DVS.forM_ overrideUSRHashes $ \oUSRHash -> do
     let !override = Override usrHash oUSRHash
     sendUpdate (DBUpdateOverride override)
 
@@ -601,12 +601,10 @@ withTranslationUnit :: ClangBase m => CommandInfo
                     -> (forall s. TranslationUnit -> ClangT s m a) -> m a
 withTranslationUnit ci f = 
     withCreateIndex False False $ \index -> do
-      clangIncludePath <- liftIO libclangIncludePath
-      let clangIncludeArg = "-I" ++ clangIncludePath
-      let args = (clangIncludeArg : map BU.toString (ciArgs ci))
       setGlobalOptions index GlobalOpt_ThreadBackgroundPriorityForAll
       withParse index (Just . unSourceFile $ sf) args [] [TranslationUnit_DetailedPreprocessingRecord] f bail
   where
+    args = map BU.toString (ciArgs ci)
     sf = ciSourceFile ci
     bail = throw . ClangException $ "Libclang couldn't parse " ++ unSourceFile sf
 
@@ -667,6 +665,7 @@ toSourceKind C.Cursor_NamespaceRef                       = NamespaceRef
 toSourceKind C.Cursor_MemberRef                          = MemberRef
 toSourceKind C.Cursor_LabelRef                           = LabelRef
 toSourceKind C.Cursor_OverloadedDeclRef                  = OverloadedDeclRef
+toSourceKind C.Cursor_VariableRef                        = VariableRef
 toSourceKind C.Cursor_LastRef                            = LastRef
 toSourceKind C.Cursor_FirstInvalid                       = FirstInvalid
 toSourceKind C.Cursor_InvalidFile                        = InvalidFile
@@ -719,6 +718,9 @@ toSourceKind C.Cursor_ObjCProtocolExpr                   = ObjCProtocolExpr
 toSourceKind C.Cursor_ObjCBridgedCastExpr                = ObjCBridgedCastExpr
 toSourceKind C.Cursor_PackExpansionExpr                  = PackExpansionExpr
 toSourceKind C.Cursor_SizeOfPackExpr                     = SizeOfPackExpr
+toSourceKind C.Cursor_LambdaExpr                         = LambdaExpr
+toSourceKind C.Cursor_ObjCBoolLiteralExpr                = ObjCBoolLiteralExpr
+toSourceKind C.Cursor_ObjCSelfExpr                       = ObjCSelfExpr
 toSourceKind C.Cursor_LastExpr                           = LastExpr
 toSourceKind C.Cursor_FirstStmt                          = FirstStmt
 toSourceKind C.Cursor_UnexposedStmt                      = UnexposedStmt
@@ -736,6 +738,7 @@ toSourceKind C.Cursor_IndirectGotoStmt                   = IndirectGotoStmt
 toSourceKind C.Cursor_ContinueStmt                       = ContinueStmt
 toSourceKind C.Cursor_BreakStmt                          = BreakStmt
 toSourceKind C.Cursor_ReturnStmt                         = ReturnStmt
+toSourceKind C.Cursor_GCCAsmStmt                         = GCCAsmStmt
 toSourceKind C.Cursor_AsmStmt                            = AsmStmt
 toSourceKind C.Cursor_ObjCAtTryStmt                      = ObjCAtTryStmt
 toSourceKind C.Cursor_ObjCAtCatchStmt                    = ObjCAtCatchStmt
@@ -750,8 +753,10 @@ toSourceKind C.Cursor_CXXForRangeStmt                    = CXXForRangeStmt
 toSourceKind C.Cursor_SEHTryStmt                         = SEHTryStmt
 toSourceKind C.Cursor_SEHExceptStmt                      = SEHExceptStmt
 toSourceKind C.Cursor_SEHFinallyStmt                     = SEHFinallyStmt
+toSourceKind C.Cursor_MSAsmStmt                          = MSAsmStmt
 toSourceKind C.Cursor_NullStmt                           = NullStmt
 toSourceKind C.Cursor_DeclStmt                           = DeclStmt
+toSourceKind C.Cursor_OMPParallelDirective               = OMPParallelDirective
 toSourceKind C.Cursor_LastStmt                           = LastStmt
 toSourceKind C.Cursor_TranslationUnit                    = TranslationUnit
 toSourceKind C.Cursor_FirstAttr                          = FirstAttr
@@ -762,6 +767,8 @@ toSourceKind C.Cursor_IBOutletCollectionAttr             = IBOutletCollectionAtt
 toSourceKind C.Cursor_CXXFinalAttr                       = CXXFinalAttr
 toSourceKind C.Cursor_CXXOverrideAttr                    = CXXOverrideAttr
 toSourceKind C.Cursor_AnnotateAttr                       = AnnotateAttr
+toSourceKind C.Cursor_AsmLabelAttr                       = AsmLabelAttr
+toSourceKind C.Cursor_PackedAttr                         = PackedAttr
 toSourceKind C.Cursor_LastAttr                           = LastAttr
 toSourceKind C.Cursor_PreprocessingDirective             = PreprocessingDirective
 toSourceKind C.Cursor_MacroDefinition                    = MacroDefinition

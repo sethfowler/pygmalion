@@ -60,6 +60,7 @@ data SourceKind = UnexposedDecl
                 | MemberRef
                 | LabelRef
                 | OverloadedDeclRef
+                | VariableRef
                 | LastRef
                 | FirstInvalid
                 | InvalidFile
@@ -113,6 +114,9 @@ data SourceKind = UnexposedDecl
                 | ObjCBridgedCastExpr
                 | PackExpansionExpr
                 | SizeOfPackExpr
+                | LambdaExpr
+                | ObjCBoolLiteralExpr
+                | ObjCSelfExpr
                 | LastExpr
                 | FirstStmt
                 | UnexposedStmt
@@ -130,6 +134,7 @@ data SourceKind = UnexposedDecl
                 | ContinueStmt
                 | BreakStmt
                 | ReturnStmt
+                | GCCAsmStmt
                 | AsmStmt
                 | ObjCAtTryStmt
                 | ObjCAtCatchStmt
@@ -144,8 +149,10 @@ data SourceKind = UnexposedDecl
                 | SEHTryStmt
                 | SEHExceptStmt
                 | SEHFinallyStmt
+                | MSAsmStmt
                 | NullStmt
                 | DeclStmt
+                | OMPParallelDirective
                 | LastStmt
                 | TranslationUnit
                 | FirstAttr
@@ -156,6 +163,8 @@ data SourceKind = UnexposedDecl
                 | CXXFinalAttr
                 | CXXOverrideAttr
                 | AnnotateAttr
+                | AsmLabelAttr
+                | PackedAttr
                 | LastAttr
                 | PreprocessingDirective
                 | MacroDefinition
