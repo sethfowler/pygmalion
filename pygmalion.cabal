@@ -136,7 +136,7 @@ executable pygindex-clang
                  ,  containers
                  ,  directory
                  ,  hashable
-                 ,  LibClang >= 0.2
+                 ,  LibClang >= 3.4.0 && < 3.5
                  ,  MissingH
                  ,  mtl
                  ,  pygmalion
