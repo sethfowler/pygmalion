@@ -2,6 +2,7 @@
 
 module Pygmalion.Index.Command
 ( getCommandInfo
+, mkCommandInfo
 ) where
 
 import Control.Applicative
@@ -25,6 +26,17 @@ getCommandInfo cmd args = do
                   (B.fromString cmd)
                   finalArgs
                   (inferLang args sf)
+
+mkCommandInfo :: String -> String -> [String] -> Maybe CommandInfo
+mkCommandInfo wd cmd args = mci
+    where finalArgs = map B.fromString . absArgs wd . filterArgs $ args
+          mci = find hasSourceExtension args >>= 
+                absNormPath wd >>= \sf ->
+                    return $ CommandInfo (mkSourceFile sf)
+                                         (B.fromString wd)
+                                         (B.fromString cmd)
+                                         finalArgs
+                                         (inferLang args sf)
 
 inferLang :: [String] -> String -> Language
 inferLang as f = fromMaybe UnknownLanguage $ inferLangFromArgs as <|>

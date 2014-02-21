@@ -1,10 +1,11 @@
-{-# LANGUAGE OverloadedStrings, ViewPatterns #-}
+{-# LANGUAGE OverloadedStrings, ViewPatterns, ScopedTypeVariables #-}
 
 import Control.Concurrent.Async
 import Control.Exception (catch, SomeException)
 import Control.Monad
 import Control.Monad.Trans (liftIO)
 import qualified Data.ByteString.UTF8 as B
+import qualified Data.ByteString.Lazy as BS
 import Data.List (intercalate, isPrefixOf, sortBy)
 import Data.Maybe
 import Safe (readMay)
@@ -14,6 +15,9 @@ import System.Exit
 import System.IO (withFile, IOMode(ReadWriteMode))
 import System.Path
 import System.Process
+import Data.Aeson
+import qualified Data.Text as Text
+import Control.Applicative
 
 import Pygmalion.Config
 import Pygmalion.Core
@@ -41,6 +45,7 @@ usage = do
   putStrLn   " stop-server                Terminates the pygmalion daemon."
   putStrLn   " init                       Initializes a pygmalion index rooted at"
   putStrLn   "                            the current directory."
+  putStrLn   " import-cdb [file]          Import a cmake generated compilation database"
   putStrLn   " index ([file]|[command])   Manually request indexing. If a single"
   putStrLn   "                            argument is provided, it's interpreted"
   putStrLn   "                            as a file to index using the default"
@@ -84,6 +89,7 @@ parseConfiglessArgs _          c = c
 parseArgs :: Config -> FilePath -> [String] -> IO ()
 parseArgs _ _  ["start-server"] = startServer
 parseArgs c _  ["stop-server"] = stopServer c
+parseArgs c _  ("import-cdb" : file : []) = importCDB c file
 parseArgs c wd ("index" : file : []) = indexFile c (asSourceFile wd file)
 parseArgs c _  ("index" : cmd : args) = indexCommand c cmd args
 parseArgs c _  ("make" : cmd : args) = makeCommand c cmd args
@@ -129,16 +135,39 @@ initialize = do
   createDirectoryIfMissing True pygmalionDir
   withFile configFile ReadWriteMode (\_ -> return ())
 
+newtype CmdInfo = CmdInfo { unCmdInfo :: CommandInfo }
+
+instance FromJSON CmdInfo where
+    parseJSON (Object v) = do
+      (cmd : args) <- (map Text.unpack . Text.splitOn " ") <$>
+                      v .: "command"
+      wd <- v .: "directory"
+      maybe mzero (return . CmdInfo) $  mkCommandInfo wd cmd args
+    parseJSON _ = mzero
+
+importCDB :: Config -> String -> IO ()
+importCDB cf cdb = do
+  let complainAndExit :: SomeException -> IO (BS.ByteString)
+      complainAndExit _ = error $ "Cannot open file " ++ cdb
+  mes :: Maybe [CmdInfo] <- decode <$> 
+                            BS.readFile cdb `catch` complainAndExit
+  case mes of
+    Just es -> mapM_ (indexCommand_ cf . Just . unCmdInfo) es
+    Nothing -> return ()
+
 indexCommand :: Config -> String -> [String] -> IO ()
 indexCommand cf cmd args = do
   mayCI <- getCommandInfo cmd args
-  case mayCI of
-    Just ci -> do let sf = ciSourceFile ci
-                  mayMTime <- getMTime sf
-                  case mayMTime of
-                    Just mtime -> withRPC cf $ runRPC (rpcIndexCommand ci mtime)
-                    Nothing    -> putStrLn $ "Couldn't read file " ++ show sf
-    Nothing -> return ()  -- Couldn't parse command. Very likely a linker command.
+  indexCommand_ cf mayCI
+
+indexCommand_ :: Config -> Maybe CommandInfo -> IO ()
+indexCommand_ cf (Just ci) = do
+    let sf = ciSourceFile ci
+    mayMTime <- getMTime sf
+    case mayMTime of
+      Just mtime -> withRPC cf $ runRPC (rpcIndexCommand ci mtime)
+      Nothing    -> putStrLn $ "Couldn't read file " ++ show sf
+indexCommand_ _ _ = return ()
 
 indexFile :: Config -> SourceFile -> IO ()
 indexFile cf f = do

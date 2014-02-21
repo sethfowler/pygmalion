@@ -2,3 +2,6 @@ dist
 pygmalion.sqlite
 compile_commands.json
 cabal-dev
+.cabal-sandbox/
+TAGS
+cabal.sandbox.config
