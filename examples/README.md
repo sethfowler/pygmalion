@@ -4,8 +4,6 @@ tools.
 * `pygmalion.yaml.default` shows all of Pygmalion's configuration options and
   their default values.
 
-* `pygmalion.yaml.ccache` shows how to configure Pygmalion to build with `ccache`.
-
 * `vimrc.example` shows how to integrate Pygmalion with `vim`. (This will
   eventually get turned into a fully-fledged plugin.)
 

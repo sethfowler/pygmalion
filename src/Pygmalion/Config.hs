@@ -38,7 +38,7 @@ data Config = Config
 
 defaultConfig :: Config
 defaultConfig = Config
-  { makeCmd    = ""
+  { makeCmd    = "make"
   , idxCmd     = "pygindex-clang"
   , idxThreads = 4
   , genCDB     = False

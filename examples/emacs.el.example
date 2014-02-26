@@ -9,7 +9,7 @@
 
 (defun pygmalion-command (cmd)
   (compilation-start
-    (concat "pygmalion "
+    (concat "pyg "
             cmd
             " "
             (buffer-file-name)
@@ -20,14 +20,14 @@
 
 (defun pygmalion-file-command (cmd)
   (compilation-start
-    (concat "pygmalion "
+    (concat "pyg "
             cmd
             " "
             (buffer-file-name))))
 
 (defun pygmalion-dot-command (cmd)
   (compilation-start
-    (concat "pygmalion "
+    (concat "pyg "
             cmd
             " "
             (buffer-file-name)
@@ -43,7 +43,7 @@
 
 (defun pygmalion-file-dot-command (cmd)
   (compilation-start
-    (concat "pygmalion "
+    (concat "pyg "
             cmd
             " "
             (buffer-file-name)
@@ -93,7 +93,7 @@ White space here is any of: space, tab, emacs newline (line feed, ASCII 10)."
           (split-string
            (trim-string
             (shell-command-to-string
-              (concat "pygmalion compile-flags " (buffer-file-name))))
+              (concat "pyg compile-flags " (buffer-file-name))))
            " ")))
   (irony-reload-flags))
 

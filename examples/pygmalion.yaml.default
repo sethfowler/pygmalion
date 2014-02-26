@@ -2,16 +2,35 @@
 # this is the same result you'd get if you had a totally blank configuration
 # file. If you don't include a certain setting in your configuration file, it
 # will receive its default value.
-make: make CC="$(idx) $(idxargs) $(cc) $(ccargs)" CXX="$(idx) $(idxargs) $(cpp) $(cppargs)" $(makeargs)
-# Note that the full flexibility of 'make' is usually not necessary. For most users, 'makeArgs' is enough.
-# For example, to execute the equivalent of 'make -f client.mk' you would use:
-# makeArgs: "-f client.mk"
-makeArgs:
-cc: clang
-ccArgs:
-cpp: clang++
-cppArgs:
-indexingThreads: 4  # Use 0 for 'use every core'.
+
+# Note that you can use $(args) and $(projectroot) in the value of 'make'.
+# To have 'pyg make' change to the root of your project and run './build' with
+# whatever arguments you specified on the commandline, use:
+#
+# make: cd $(projectroot) && ./build $(args)
+#
+# If you don't add $(args) to the value of 'make', it automatically gets added
+# to the end, so you could've written the above as:
+#
+# make: cd $(projectroot) && ./build
+make: make
+
+# Number of threads to use for indexing. Indexing threads are run with very low
+# priority, so having several threads shouldn't slow you down too much. Use '0'
+# to use every core.
+indexingThreads: 4
+
+# Whether Pygmalion should automatically generate a compilation database after
+# indexing. This will cause a lot of disk activity for large projects, so don't
+# enable it unless you want to use a tool that needs it.
 compilationDatabase: false
+
+# Whether Pygmalion should automatically generate a ctags file for your project
+# after indexing. This will cause a tremendous amount of disk activity for large
+# projects, so don't enable it unless you want to use a tool that needs it.
 tags: false
+
+# How verbose Pygmalion's logging should be. Valid values are "debug", "info",
+# "notice", "warning", "error", "critical", "alert", and "emergency". In
+# practice, you should use either "debug", "info", or "warning".
 logLevel: info

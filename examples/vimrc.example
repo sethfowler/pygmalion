@@ -13,20 +13,20 @@
 " <Leader>pI  - Display the files which include this file.
 " <Leader>pih - Display the inclusion hierarchy of this file.
 
-command! PygGoToDefinition cexpr system('pygmalion definition ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
-command! PygGoToDeclaration cexpr system('pygmalion declaration ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
-command! PygCallers cexpr system('pygmalion callers ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
-command! PygCallees cexpr system('pygmalion callees ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
-command! PygBases cexpr system('pygmalion bases ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
-command! PygOverrides cexpr system('pygmalion overrides ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
-command! PygMembers cexpr system('pygmalion members ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
-command! PygReferences cexpr system('pygmalion references ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
-command! PygHierarchy cexpr system('pygmalion hierarchy ' .expand('%:p') . ' ' . line('.') . ' ' . col('.') . ' \| dot -Tpdf > /tmp/pygmalion.hierarchy.pdf && open /tmp/pygmalion.hierarchy.pdf')
-command! PygInclusions cexpr system('pygmalion inclusions ' .expand('%:p'))
-command! PygIncluders cexpr system('pygmalion includers ' .expand('%:p'))
-command! PygInclusionHierarchy cexpr system('pygmalion inclusion-hierarchy ' .expand('%:p') . ' \| dot -Tpdf > /tmp/pygmalion.inclusion-hierarchy.pdf && open /tmp/pygmalion.inclusion-hierarchy.pdf')
+command! PygGoToDefinition cexpr system('pyg definition ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
+command! PygGoToDeclaration cexpr system('pyg declaration ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
+command! PygCallers cexpr system('pyg callers ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
+command! PygCallees cexpr system('pyg callees ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
+command! PygBases cexpr system('pyg bases ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
+command! PygOverrides cexpr system('pyg overrides ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
+command! PygMembers cexpr system('pyg members ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
+command! PygReferences cexpr system('pyg references ' .expand('%:p') . ' ' . line('.') . ' ' . col('.'))
+command! PygHierarchy cexpr system('pyg hierarchy ' .expand('%:p') . ' ' . line('.') . ' ' . col('.') . ' \| dot -Tpdf > /tmp/pygmalion.hierarchy.pdf && open /tmp/pygmalion.hierarchy.pdf')
+command! PygInclusions cexpr system('pyg inclusions ' .expand('%:p'))
+command! PygIncluders cexpr system('pyg includers ' .expand('%:p'))
+command! PygInclusionHierarchy cexpr system('pyg inclusion-hierarchy ' .expand('%:p') . ' \| dot -Tpdf > /tmp/pygmalion.inclusion-hierarchy.pdf && open /tmp/pygmalion.inclusion-hierarchy.pdf')
 
-augroup pygmalion
+augroup pyg
   au BufEnter *.c,*.cpp,*.C,*.h,*.hpp,*.H  nnoremap <buffer><silent> <Leader>] :PygGoToDefinition<CR>
   au BufEnter *.c,*.cpp,*.C,*.h,*.hpp,*.H  nnoremap <buffer><silent> <Leader>[ <C-O>
   au BufEnter *.c,*.cpp,*.C,*.h,*.hpp,*.H  nnoremap <buffer><silent> <Leader>pd :PygGoToDeclaration<CR>

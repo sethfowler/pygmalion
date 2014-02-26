@@ -1,7 +1,7 @@
 import os
 
 def FlagsForFile( filename ):
-  cmd = 'pygmalion compile-flags ' + filename
+  cmd = 'pyg compile-flags ' + filename
   pygflags = os.popen(cmd).read().strip().split(' ')
 
   return {

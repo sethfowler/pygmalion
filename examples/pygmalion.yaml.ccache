@@ -1,5 +1,0 @@
-# This is an example of how to configure pygmalion to work with ccache.
-cc: ccache
-ccArgs: gcc
-cpp: ccache
-cppArgs: g++
