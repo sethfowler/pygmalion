@@ -9,6 +9,7 @@ module Pygmalion.Config
 import Control.Applicative
 import Control.Monad
 import Data.Int
+import Data.List (isInfixOf)
 import Data.Yaml
 import qualified Data.ByteString as B
 import System.Directory (doesFileExist, getCurrentDirectory)
@@ -18,31 +19,13 @@ import Text.Libyaml (Event(..))
 import Pygmalion.Core
 import Pygmalion.Log
 
--- The make command is a shell command specified as a format string
+-- The make command (mkCmd) is a shell command specified as a format string
 -- with the following substitutions:
--- $(idx)      - The indexer.
--- $(idxargs)  - Arguments for the indexer.
--- $(cc)       - The C compiler.
--- $(ccargs)   - Arguments for the C compiler.
--- $(cpp)      - The C++ compiler.
--- $(cppargs)  - Arguments for the C++ compiler.
--- $(makeargs) - Arguments for make.
---
--- A default format string for GNU make is below.
--- For CMake, this would work:
--- cmake $(makeargs)
---   -DCMAKE_C_COMPILER="$(idx)"
---   -DCMAKE_C_FLAGS="$(idxargs) $(cc) $(ccargs)"
---   -DCMAKE_CXX_COMPILER="$(idx)"
---   -DCMAKE_CXX_FLAGS="$(idxargs) $(cxx) $(cxxargs)"
+-- $(args)         - The commandline arguments to 'pyg make'.
+-- $(projectroot)  - The root directory of the project.
 
 data Config = Config
   { makeCmd    :: String   -- Format string for the make command. See above.
-  , makeArgs   :: String   -- Format string for the make command. See above.
-  , ccCmd      :: String   -- C compiler executable to use.
-  , ccArgs     :: String   -- Extra C compiler args, if any.
-  , cppCmd     :: String   -- C++ compiler executable to use.
-  , cppArgs    :: String   -- Extra C++ compiler args, if any.
   , idxCmd     :: String   -- Indexer command to use. INTERNAL USE ONLY. (For now.)
   , idxThreads :: Int      -- Number of indexing threads to run.
   , genCDB     :: Bool     -- If true, pygmake generates a CDB automatically.
@@ -55,13 +38,7 @@ data Config = Config
 
 defaultConfig :: Config
 defaultConfig = Config
-  { makeCmd    = "make CC=\"$(idx) $(idxargs) $(cc) $(ccargs)\" " ++
-                 "CXX=\"$(idx) $(idxargs) $(cpp) $(cppargs)\" $(makeargs)"
-  , makeArgs   = ""
-  , ccCmd      = "clang"
-  , ccArgs     = ""
-  , cppCmd     = "clang++"
-  , cppArgs    = ""
+  { makeCmd    = ""
   , idxCmd     = "pygindex-clang"
   , idxThreads = 4
   , genCDB     = False
@@ -87,11 +64,6 @@ instance FromJSON Priority where
 instance FromJSON Config where
   parseJSON (Object o) =
     Config <$> o .:? "make"                .!= makeCmd defaultConfig
-           <*> o .:? "makeArgs"            .!= makeArgs defaultConfig
-           <*> o .:? "cc"                  .!= ccCmd defaultConfig
-           <*> o .:? "ccArgs"              .!= ccArgs defaultConfig
-           <*> o .:? "cpp"                 .!= cppCmd defaultConfig
-           <*> o .:? "cppArgs"             .!= cppArgs defaultConfig
            <*> o .:? "indexer"             .!= idxCmd defaultConfig
            <*> o .:? "indexingThreads"     .!= idxThreads defaultConfig
            <*> o .:? "compilationDatabase" .!= genCDB defaultConfig
@@ -127,11 +99,17 @@ checkError ex = reportError . show $ ex
 checkConfig :: Config -> IO Config
 checkConfig = return  -- We don't do any checks right now.
 
+addArgs :: String -> String
+addArgs cmd | null cmd                  = "$(args)"
+            | "$(args)" `isInfixOf` cmd = cmd
+            | otherwise                 = cmd ++ " $(args)"
+
 getConfiguration :: IO Config
 getConfiguration = do
   (dir, confFile, sock) <- findConfigFile =<< getCurrentDirectory
   result <- decodeEither' <$> B.readFile confFile
   conf <- either checkError checkConfig result
   return $ conf { projectDir = dir,
-                  socketPath = sock
+                  socketPath = sock,
+                  makeCmd = addArgs (makeCmd conf)
                 }

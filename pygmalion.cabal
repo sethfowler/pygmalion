@@ -31,6 +31,7 @@ library
                    ghc-prim,
                    graphviz,
                    hashable >= 1.1.2.5 && < 1.2,
+                   hslibvoyeur,
                    hslogger,
                    json,
                    mtl,
@@ -69,6 +70,7 @@ library
                    Pygmalion.Idle,
                    Pygmalion.JSON,
                    Pygmalion.Log,
+                   Pygmalion.Make,
                    Pygmalion.Metadata,
                    Pygmalion.RPC.Client,
                    Pygmalion.RPC.Request,
@@ -78,7 +80,7 @@ library
                    Pygmalion.Database.Orphans
   hs-source-dirs:  src
 
-executable pygmalion
+executable pyg
   ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N
   main-is:        Pygmalion.hs 
   build-depends:  base >= 4,
@@ -89,17 +91,6 @@ executable pygmalion
                   pygmalion,
                   safe,
                   utf8-string,
-                  MissingH
-  hs-source-dirs: tools
-
-executable pygmake
-  ghc-options:    -Wall -O -threaded -rtsopts -with-rtsopts=-N
-  main-is:        Pygmake.hs 
-  build-depends:  base >= 4,
-                  async,
-                  process,
-                  pygmalion,
-                  text,
                   MissingH
   hs-source-dirs: tools
 

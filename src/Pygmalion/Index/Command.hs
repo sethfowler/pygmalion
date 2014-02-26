@@ -8,15 +8,13 @@ import Control.Applicative
 import qualified Data.ByteString.UTF8 as B
 import Data.List
 import Data.Maybe
-import System.Directory
 import System.Path
 
 import Pygmalion.Core
 import Pygmalion.Index.Extension
 
-getCommandInfo :: String -> [String] -> IO (Maybe CommandInfo)
-getCommandInfo cmd args = do
-    wd <- getCurrentDirectory
+getCommandInfo :: String -> [String] -> String -> IO (Maybe CommandInfo)
+getCommandInfo cmd args wd = do
     let sourceFile = find hasSourceExtension args >>= absNormPath wd
     let finalArgs = map B.fromString . absArgs wd . filterArgs $ args
     return $ flip fmap sourceFile $ \sf ->

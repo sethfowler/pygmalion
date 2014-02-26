@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings, ViewPatterns #-}
 
-import Control.Concurrent.Async
 import Control.Exception (catch, SomeException)
 import Control.Monad
 import Control.Monad.Trans (liftIO)
@@ -18,8 +17,8 @@ import System.Process
 import Pygmalion.Config
 import Pygmalion.Core
 import Pygmalion.File
-import Pygmalion.Index.Command
 import Pygmalion.Log
+import Pygmalion.Make
 import Pygmalion.RPC.Client
 --import Pygmalion.JSON
 
@@ -41,6 +40,8 @@ usage = do
   putStrLn   " stop-server                Terminates the pygmalion daemon."
   putStrLn   " init                       Initializes a pygmalion index rooted at"
   putStrLn   "                            the current directory."
+  putStrLn   " make [command]             Runs the provided command, observes the calls to"
+  putStrLn   "                            compilers it makes, and indexes the compiled files."
   putStrLn   " index ([file]|[command])   Manually request indexing. If a single"
   putStrLn   "                            argument is provided, it's interpreted"
   putStrLn   "                            as a file to index using the default"
@@ -48,8 +49,6 @@ usage = do
   putStrLn   "                            interpreted as a compiler invocation"
   putStrLn   "                            (e.g. 'clang -c file.c') and the compiler"
   putStrLn   "                            flags to use will be extracted appropriately."
-  putStrLn   " make [command]             Both requests indexing and executes the"
-  putStrLn   "                            provided command."
   putStrLn   " wait                       Blocks until all previous requests have been"
   putStrLn   "                            handled by the pygmalion daemon."
   putStrLn   " generate-compile-commands  Prints a clang compilation database."
@@ -85,8 +84,8 @@ parseArgs :: Config -> FilePath -> [String] -> IO ()
 parseArgs _ _  ["start-server"] = startServer
 parseArgs c _  ["stop-server"] = stopServer c
 parseArgs c wd ("index" : file : []) = indexFile c (asSourceFile wd file)
-parseArgs c _  ("index" : cmd : args) = indexCommand c cmd args
-parseArgs c _  ("make" : cmd : args) = makeCommand c cmd args
+parseArgs c _  ("index" : cmd : args) = indexUserCommand c cmd args
+parseArgs c _  ("make" : args) = makeCommand c args
 parseArgs c _  ("wait" : []) = waitForServer c
 parseArgs c _  ["generate-compile-commands"] = printCDB c
 parseArgs c wd ["compile-flags", f] = printFlags c (asSourceFile wd f)
@@ -129,17 +128,6 @@ initialize = do
   createDirectoryIfMissing True pygmalionDir
   withFile configFile ReadWriteMode (\_ -> return ())
 
-indexCommand :: Config -> String -> [String] -> IO ()
-indexCommand cf cmd args = do
-  mayCI <- getCommandInfo cmd args
-  case mayCI of
-    Just ci -> do let sf = ciSourceFile ci
-                  mayMTime <- getMTime sf
-                  case mayMTime of
-                    Just mtime -> withRPC cf $ runRPC (rpcIndexCommand ci mtime)
-                    Nothing    -> putStrLn $ "Couldn't read file " ++ show sf
-    Nothing -> return ()  -- Couldn't parse command. Very likely a linker command.
-
 indexFile :: Config -> SourceFile -> IO ()
 indexFile cf f = do
   mayMTime <- getMTime f
@@ -147,19 +135,23 @@ indexFile cf f = do
     Just mtime -> withRPC cf $ runRPC (rpcIndexFile f mtime)
     Nothing    -> putStrLn $ "Couldn't read file " ++ show f
 
-makeCommand :: Config -> String -> [String] -> IO ()
-makeCommand cf cmd args = do
-    void $ concurrently invoke (indexCommand cf cmd args `catch` ignoreRPCFailure)
-  where
-    invoke = do
-      (_, _, _, handle) <- createProcess (proc cmd args)
-      code <- waitForProcess handle
-      case code of
-        ExitSuccess -> return ()
-        _           -> liftIO $ bailWith' code $ queryExecutable ++ ": Command failed"
+makeCommand :: Config -> [String] -> IO ()
+makeCommand cf args = do
+    let cmd = if null args then "" else head args
+        args' = if null args then [] else tail args
+        
+    -- Make sure pygd is running.
+    (withRPC cf $ runRPC rpcPing) `catch` handleRPCFailure
 
-ignoreRPCFailure :: SomeException -> IO ()
-ignoreRPCFailure _ = return ()  -- Silently ignore failure.
+    -- Observe the build process.
+    code <- observeMake cf cmd args'
+    case code of
+      ExitSuccess -> return ()
+      _           -> liftIO $ bailWith' code $ queryExecutable ++ ": Command failed"
+  where
+    handleRPCFailure :: SomeException -> IO ()
+    handleRPCFailure _ = putStrLn $ "Can't connect to pygd. "
+                                 ++ "Build information will not be recorded."
 
 waitForServer :: Config -> IO ()
 waitForServer cf = withRPC cf $ runRPC (rpcWait)
