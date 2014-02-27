@@ -33,7 +33,6 @@ module Pygmalion.Core
 , unSourceFile
 --, unSourceFileText
 , queryExecutable
-, makeExecutable
 , daemonExecutable
 , indexExecutable
 , pygmalionDir
@@ -256,9 +255,8 @@ instance FromRow SourceReference where
 type SourceContext = B.ByteString
 
 -- Tool names.
-queryExecutable, makeExecutable, daemonExecutable, indexExecutable :: String
-queryExecutable  = "pygmalion"
-makeExecutable   = "pygmake"
+queryExecutable, daemonExecutable, indexExecutable :: String
+queryExecutable  = "pyg"
 daemonExecutable = "pygd"
 indexExecutable  = "pygindex-clang"
 

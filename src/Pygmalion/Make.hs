@@ -60,9 +60,14 @@ expandedCommand cf cmd args = replace "$(projectroot)" (projectDir cf)
                             . replace "$(args)" (join " " (cmd : args))
                             . makeCmd $ cf
 
+compilers :: [B.ByteString]
+compilers = ["clang", "clang++", "gcc", "g++", "ccache"]
+
 execHandler :: Config -> IORef Set.IntSet -> ObserveExecHandler
 execHandler cf badPids path argv _ wd pid ppid =
-  when ("clang" `B.isSuffixOf` path || "gcc" `B.isSuffixOf` path) $ do
+  -- TODO: Should extract just filename instead of using isSuffixOf.
+  -- TODO: Not sure ccache handling here is sufficient.
+  when (any (`B.isSuffixOf` path) compilers) $ do
     badPidSet <- readIORef badPids
     unless ((fromIntegral pid `Set.member` badPidSet) ||
             (fromIntegral ppid `Set.member` badPidSet)) $ do
