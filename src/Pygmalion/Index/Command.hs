@@ -15,8 +15,8 @@ import Pygmalion.Index.Extension
 
 getCommandInfo :: String -> [String] -> String -> IO (Maybe CommandInfo)
 getCommandInfo cmd args wd = do
-    let sourceFile = find hasSourceExtension args >>= absNormPath wd
-    let finalArgs = map B.fromString . absArgs wd . filterArgs $ args
+    let sourceFile = findSourceFile args >>= absNormPath wd
+    let finalArgs = map B.fromString . addStdlibArg . absArgs wd . filterArgs $ args
     return $ flip fmap sourceFile $ \sf ->
       CommandInfo (mkSourceFile sf)
                   (B.fromString wd)
@@ -37,6 +37,12 @@ inferLangFromArgs ("-x" : "c++-header" : _)     = Just CPPLanguage
 inferLangFromArgs ("-x" : "c++-cpp-output" : _) = Just CPPLanguage
 inferLangFromArgs (_ : as)                      = inferLangFromArgs as
 inferLangFromArgs []                            = Nothing
+
+findSourceFile :: [String] -> Maybe String
+findSourceFile [] = Nothing
+findSourceFile ("-main-file-name" : _ : as) = findSourceFile as
+findSourceFile (a : as) | hasSourceExtension a = Just a
+                        | otherwise = findSourceFile as
 
 -- We need to filter arguments that cause dependency files to be generated,
 -- as they'll gum up the works when we use libclang to analyze files later.
@@ -79,6 +85,18 @@ absArgs wd ((stripPrefix "-isysroot" -> Just p) : as) = ("-isysroot" ++ (cleanPa
 absArgs wd ((stripPrefix "--sysroot=" -> Just p) : as) = ("--sysroot=" ++ (cleanPath wd p)) : absArgs wd as
 absArgs wd (a : as) = a : absArgs wd as
 absArgs _ [] = []
+
+-- On OS X 10.9, Apple decided to put libstdc++'s headers in
+-- /usr/include/c++/4.2.1, but libc++'s headers only in
+-- /Library/Developer/CommandLineTools/usr/lib/c++/v1. Since the
+-- latter is not a standard location, attempts to use libc++ will fail
+-- with missing header errors unless we manually add the appropriate
+-- directory to the include search path. Rather than support that,
+-- though, at the moment I fall back to forcing libstdc++, because
+-- unfortunately given the choice libclang will default to libc++.
+-- TODO: Make this more robust.
+addStdlibArg :: [String] -> [String]
+addStdlibArg as = "-stdlib=libstdc++" : as
 
 cleanPath :: FilePath -> FilePath -> FilePath
 cleanPath _ p@('=' : _) = p  -- Ignore bizarre GCC sysroot syntax.

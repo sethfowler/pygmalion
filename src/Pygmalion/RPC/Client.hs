@@ -7,6 +7,7 @@ module Pygmalion.RPC.Client
 , openRPCRaw
 , closeRPC
 , withRPC
+, withRPC'
 , withRPCRaw
 , runRPC
 , rpcStop
@@ -77,6 +78,15 @@ closeRPC conn = do
   -- connection per process.
   --sClose conn
   ensureSocketShutdown =<< try (shutdown conn ShutdownBoth)
+
+closeRPC' :: RPCConnection -> IO ()
+closeRPC' conn = do
+  -- Notify the server that nothing else is coming.
+  runRPC rpcDone conn
+  sClose conn
+
+withRPC' :: Config -> (RPCConnection -> IO a) -> IO a
+withRPC' config = bracket (openRPC config) closeRPC'
 
 withRPC :: Config -> (RPCConnection -> IO a) -> IO a
 withRPC config = bracket (openRPC config) closeRPC
@@ -212,10 +222,13 @@ ensureCompleted (Just a) = return a
 ensureCompleted _        = throw $ RPCException "Connection to server timed out"
 
 ensureSocketShutdown :: Either SomeException () -> IO ()
+{-
 ensureSocketShutdown (Left e) = do pid <- getProcessID
                                    putStrLn $ show pid ++ ": Exception on RPC socket shutdown: "
                                            ++ show (e :: SomeException) ++ ")"
 ensureSocketShutdown _        = return ()
+-}
+ensureSocketShutdown _ = return ()
 
 data RPCException = RPCException String
   deriving (Show, Typeable)
