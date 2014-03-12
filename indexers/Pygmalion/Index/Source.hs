@@ -95,7 +95,7 @@ displayAST ci = do
     Right _                 -> return ()
     Left (ClangException e) -> logWarn ("Clang exception: " ++ e )
 
-inclusionsAnalysis :: SourceFileHash -> TranslationUnit -> Analysis s ()
+inclusionsAnalysis :: SourceFileHash -> TranslationUnit s' -> Analysis s ()
 inclusionsAnalysis sfHash tu = do
     !ctx <- lift get
     incs <- TV.getInclusions tu
@@ -142,13 +142,13 @@ sendUpdate up = do
              --liftIO $ putStrLn "Overflowed vector and had to send early"
      else lift $ put $! ctx { asUpdateCount = newCount }
 
-defsAnalysis :: TranslationUnit -> Analysis s ()
+defsAnalysis :: TranslationUnit s' -> Analysis s ()
 defsAnalysis tu = do
   cursor <- getCursor tu
   kids <- TV.getChildren cursor
   DVS.mapM_ (defsVisitor cursor) kids
 
-defsVisitor :: C.Cursor -> C.Cursor -> Analysis s ()
+defsVisitor :: C.Cursor s' -> C.Cursor s'' -> Analysis s ()
 defsVisitor parent cursor = do
   loc <- getCursorLocation cursor
   -- TODO: What to do about inclusions that aren't normal inclusions?
@@ -160,13 +160,13 @@ defsVisitor parent cursor = do
     
     -- Recurse (most of the time).
     let recurse     = DVS.mapM_ (defsVisitor cursor) =<< TV.getChildren cursor
-        fastRecurse = DVS.mapM_ (fastVisitor) =<< TV.getParentedDescendants cursor
+        fastRecurse = DVS.mapM_ fastVisitor =<< TV.getParentedDescendants cursor
     case cKind of
       C.Cursor_MacroDefinition  -> return ()
       C.Cursor_Namespace        -> analysisScope recurse
       _                         -> analysisScope fastRecurse
 
-fastVisitor :: C.ParentedCursor -> Analysis s ()
+fastVisitor :: C.ParentedCursor s' -> Analysis s ()
 fastVisitor (C.ParentedCursor parent cursor) = do
   loc <- getCursorLocation cursor
   when (tlShouldIndex loc) $ do
@@ -174,7 +174,7 @@ fastVisitor (C.ParentedCursor parent cursor) = do
     scope <- updatedCPPScope parent cursor
     route loc scope cursor cKind
 
-route :: TULocation -> CPPScope -> C.Cursor -> C.CursorKind -> Analysis s ()
+route :: TULocation -> CPPScope -> C.Cursor s' -> C.CursorKind -> Analysis s ()
 route loc s c k@C.Cursor_StructDecl                         = visitReferences loc s k c >> visitClassOverrides c >> visitDefinitions loc s k c
 route loc s c k@C.Cursor_UnionDecl                          = visitReferences loc s k c >> visitDefinitions loc s k c
 route loc s c k@C.Cursor_ClassDecl                          = visitReferences loc s k c >> visitClassOverrides c >> visitDefinitions loc s k c
@@ -226,7 +226,6 @@ route loc s c k@C.Cursor_CallExpr                           = visitReferences lo
 route loc s c k@C.Cursor_ObjCMessageExpr                    = visitReferences loc s k c
 route loc s c k@C.Cursor_MacroDefinition                    = visitReferences loc s k c >> visitDefinitions loc s k c
 route loc s c k@C.Cursor_MacroExpansion                     = visitReferences loc s k c
-route loc s c k@C.Cursor_MacroInstantiation                 = visitReferences loc s k c
 route loc s c k@C.Cursor_InclusionDirective                 = visitInclusions loc s k c
 route _ _ _ _                                               = return ()
 
@@ -240,7 +239,7 @@ queryRPC req = do
   ctx <- lift get
   liftIO $ runRPC req (asConn ctx)
 
-visitInclusions :: TULocation -> CPPScope -> C.CursorKind -> C.Cursor -> Analysis s ()
+visitInclusions :: TULocation -> CPPScope -> C.CursorKind -> C.Cursor s' -> Analysis s ()
 visitInclusions loc scope cKind cursor = do
   -- Record inclusion directives.
   incFile <- C.getIncludedFile cursor
@@ -266,7 +265,7 @@ visitInclusions loc scope cKind cursor = do
                                    incFileHash
   sendUpdate (DBUpdateRef reference)
       
-visitReferences :: TULocation -> CPPScope -> C.CursorKind -> C.Cursor -> Analysis s ()
+visitReferences :: TULocation -> CPPScope -> C.CursorKind -> C.Cursor s' -> Analysis s ()
 visitReferences loc scope cKind cursor = do
   -- Record references.
   -- TODO: Ignore CallExpr children that start at the same
@@ -316,7 +315,7 @@ visitReferences loc scope cKind cursor = do
                                      referToUSRHash
     sendUpdate (DBUpdateRef reference)
     
-visitOverrides :: C.Cursor -> Analysis s ()
+visitOverrides :: C.Cursor s' -> Analysis s ()
 visitOverrides cursor = do
   -- Record method overrides.
   -- TODO: I seem to recall that in C++11 you can override
@@ -328,7 +327,7 @@ visitOverrides cursor = do
     let !override = Override usrHash oUSRHash
     sendUpdate (DBUpdateOverride override)
 
-visitDefinitions :: TULocation -> CPPScope -> C.CursorKind -> C.Cursor -> Analysis s ()
+visitDefinitions :: TULocation -> CPPScope -> C.CursorKind -> C.Cursor s' -> Analysis s ()
 visitDefinitions loc scope cKind cursor = do
   -- Record definitions.
   -- TODO: Support labels.
@@ -346,7 +345,7 @@ visitDefinitions loc scope cKind cursor = do
                        (csScopeUSRHash scope)
   sendUpdate (DBUpdateDef def)
 
-visitClassOverrides :: C.Cursor -> Analysis s ()
+visitClassOverrides :: C.Cursor s' -> Analysis s ()
 visitClassOverrides thisClassC = do
     -- Record class inheritance ("overrides").
     kids <- TV.getChildren thisClassC
@@ -363,7 +362,7 @@ visitClassOverrides thisClassC = do
           sendUpdate (DBUpdateOverride override)
         _ -> return ()
 
-getUSRHash :: C.Cursor -> Analysis s Int
+getUSRHash :: C.Cursor s' -> Analysis s Int
 getUSRHash cursor = do
   !ctx <- lift get
   let !cursorHash = hash cursor
@@ -376,7 +375,7 @@ getUSRHash cursor = do
                        lift $ put $! ctx { asUSRHashCache = newCache }
                        return usrHash
     
-getCursorLocation :: C.Cursor -> Analysis s TULocation
+getCursorLocation :: C.Cursor s' -> Analysis s TULocation
 getCursorLocation cursor = do
   (mayF, ln, col, _) <- C.getSpellingLocation cursor
   case mayF of
@@ -384,7 +383,7 @@ getCursorLocation cursor = do
                   return $ TULocation shouldIndex filenameHash ln col
     Nothing -> return $ TULocation False 0 ln col
 
-getCursorLocation' :: C.Cursor -> Clang s SourceLocation
+getCursorLocation' :: C.Cursor s' -> Clang s SourceLocation
 getCursorLocation' cursor = do
   (mayF, ln, col, _) <- C.getSpellingLocation cursor
   file <- case mayF of
@@ -392,7 +391,7 @@ getCursorLocation' cursor = do
     Nothing -> return ""
   return $ SourceLocation file ln col
   
-lookupFile :: File.File -> Analysis s (Bool, SourceFileHash)
+lookupFile :: File.File s' -> Analysis s (Bool, SourceFileHash)
 lookupFile file = do
   !ctx <- lift get
   fileObjHash <- File.hashFile file  -- This is a hash of the file _object_, not the name.
@@ -408,7 +407,7 @@ lookupFile file = do
       lift $ put $! ctx { asFileCache = newCache }
       return (shouldIndex, filenameHash)
   
-analyzeCall :: C.Cursor -> Analysis s SourceKind
+analyzeCall :: C.Cursor s' -> Analysis s SourceKind
 analyzeCall c = do
   isDynamicCall <- C.isDynamicCall c
 
@@ -420,7 +419,7 @@ analyzeCall c = do
   else 
     return CallExpr
 
-callBaseUSRHash :: C.Cursor -> Analysis s USRHash
+callBaseUSRHash :: C.Cursor s' -> Analysis s USRHash
 callBaseUSRHash = go
   where
     go = return . hash
@@ -437,7 +436,7 @@ refHash usrHash loc = return refHash'
                        `hashWithSalt` tlLine loc
                        `hashWithSalt` tlCol loc
                       
-updatedCPPScope :: C.Cursor -> C.Cursor -> Analysis s CPPScope
+updatedCPPScope :: C.Cursor s' -> C.Cursor s'' -> Analysis s CPPScope
 updatedCPPScope parent cursor = do
   ctx <- lift get
   let !cursorHash = hash cursor
@@ -466,7 +465,7 @@ updatedCPPScope parent cursor = do
   lift $ put $! ctx { asCPPScopeStack = newStack }
   return parentScope
 
-newScopeName :: CPPScope -> C.Cursor -> Analysis s (Int, BU.ByteString)
+newScopeName :: CPPScope -> C.Cursor s' -> Analysis s (Int, BU.ByteString)
 newScopeName parentScope cursor = do
   name <- cursorName cursor
   usrHash <- getUSRHash cursor
@@ -478,12 +477,12 @@ newScopeName parentScope cursor = do
                 then b
                 else B.intercalate "::" [a, b]
 
-cursorName :: C.Cursor -> Analysis s BU.ByteString
+cursorName :: C.Cursor s' -> Analysis s BU.ByteString
 cursorName c = C.getDisplayName c >>= CS.unsafeUnpackByteString >>= anonymize
   where anonymize s | B.null s  = return "<anonymous>"
                     | otherwise = return s
 
-logDiagnostics :: TranslationUnit -> Analysis s ()
+logDiagnostics :: TranslationUnit s' -> Analysis s ()
 logDiagnostics tu = do
     opts <- Diag.defaultDisplayOptions
     dias <- Diag.getDiagnostics tu
@@ -495,79 +494,81 @@ logDiagnostics tu = do
   where
     isError = (== Diag.Diagnostic_Error) .||. (== Diag.Diagnostic_Fatal)
 
-doDisplayAST :: TranslationUnit -> Clang s ()
+doDisplayAST :: TranslationUnit s -> Clang s ()
 doDisplayAST tu = getCursor tu >>= dumpSubtree
 
-dumpSubtree :: C.Cursor -> Clang s ()
+dumpSubtree :: C.Cursor s' -> Clang s ()
 dumpSubtree cursor = do
     dumpVisitor 0 cursor
     liftIO $ putStrLn "Finished recursing!"
-  where dumpVisitor :: Int -> C.Cursor -> Clang s ()
-        dumpVisitor i c = do dump i c
-                             kids <- TV.getChildren c
-                             DVS.mapM_ (dumpVisitor $ i + 1) kids
-        dump :: Int -> C.Cursor -> Clang s ()
-        dump i c = do
-          -- Get location.
-          loc <- C.getLocation c
-          (_, ln, col, _) <- Source.getSpellingLocation loc
+  where
+    dumpVisitor :: Int -> C.Cursor s' -> Clang s ()
+    dumpVisitor i c = do dump i c
+                         kids <- TV.getChildren c
+                         DVS.mapM_ (dumpVisitor $ i + 1) kids
 
-          -- Get extent.
-          extent <- C.getExtent c
-          (_, startLn, startCol, _) <- Source.getStart extent >>= Source.getSpellingLocation
-          (_, endLn, endCol, _) <- Source.getEnd extent >>= Source.getSpellingLocation
+    dump :: Int -> C.Cursor s' -> Clang s ()
+    dump i c = do
+      -- Get location.
+      loc <- C.getLocation c
+      (_, ln, col, _) <- Source.getSpellingLocation loc
 
-          -- Get metadata.
-          name <- C.getDisplayName c >>= CS.unpack
-          usr <- XRef.getUSR c >>= CS.unpack
-          let cKind = C.getKind c
-          kind <- C.getCursorKindSpelling cKind >>= CS.unpack
+      -- Get extent.
+      extent <- C.getExtent c
+      (_, startLn, startCol, _) <- Source.getStart extent >>= Source.getSpellingLocation
+      (_, endLn, endCol, _) <- Source.getEnd extent >>= Source.getSpellingLocation
 
-          -- Get definition metadata.
-          defCursor <- C.getDefinition c
-          defName <- C.getDisplayName defCursor >>= CS.unpack
-          defUSR <- XRef.getUSR defCursor >>= CS.unpack
-          refCursor <- C.getReferenced c
-          refName <- C.getDisplayName refCursor >>= CS.unpack
-          refUSR <- XRef.getUSR refCursor >>= CS.unpack
-          refLoc <- getCursorLocation' refCursor
-          let refFile = BU.toString $ slFile refLoc
+      -- Get metadata.
+      name <- C.getDisplayName c >>= CS.unpack
+      usr <- XRef.getUSR c >>= CS.unpack
+      let cKind = C.getKind c
+      kind <- C.getCursorKindSpelling cKind >>= CS.unpack
 
-          -- Get type.
-          typ <- C.getType c
-          sTyp <- T.getTypeSpelling typ >>= CS.unpack
-          typKind <- T.getKind typ
-          sTypKind <- T.getTypeKindSpelling typKind >>= CS.unpack
+      -- Get definition metadata.
+      defCursor <- C.getDefinition c
+      defName <- C.getDisplayName defCursor >>= CS.unpack
+      defUSR <- XRef.getUSR defCursor >>= CS.unpack
+      refCursor <- C.getReferenced c
+      refName <- C.getDisplayName refCursor >>= CS.unpack
+      refUSR <- XRef.getUSR refCursor >>= CS.unpack
+      refLoc <- getCursorLocation' refCursor
+      let refFile = BU.toString $ slFile refLoc
 
-          -- Special stuff for CallExpr
-          when (cKind == C.Cursor_CallExpr) $ do
-            baseExpr <- C.getBaseExpression c
-            baseName <- C.getDisplayName baseExpr >>= CS.unpack
-            let baseExprKind = C.getKind baseExpr
-            baseType <- C.getType baseExpr
-            baseTypeKind <- T.getKind baseType 
-            uType <- underlyingType baseExpr
-            uTypeKind <- T.getKind uType
-            isVirtual <- isVirtualCall baseExprKind baseExpr
-            baseTypeSpelling <- T.getTypeSpelling baseType >>= CS.unpack
-            baseKindSpelling <- T.getTypeKindSpelling baseTypeKind >>= CS.unpack
-            uTypeSpelling <- T.getTypeSpelling uType >>= CS.unpack
-            uKindSpelling <- T.getTypeKindSpelling uTypeKind >>= CS.unpack
-            liftIO $ putStrLn $ replicate i ' ' ++ "[==] CallExpr base: " ++ baseName
-                                                ++ " type: " ++ baseTypeSpelling ++ "/" ++ baseKindSpelling
-                                                ++ " utype: " ++ uTypeSpelling ++ "/" ++ uKindSpelling
-                                                ++ " virtual? " ++ show isVirtual
+      -- Get type.
+      typ <- C.getType c
+      sTyp <- T.getTypeSpelling typ >>= CS.unpack
+      typKind <- T.getKind typ
+      sTypKind <- T.getTypeKindSpelling typKind >>= CS.unpack
 
-          -- Display.
-          liftIO $ putStrLn $ replicate i ' ' ++ "[" ++ kind ++ "] " ++ name ++ " (" ++ usr ++ ") " ++
-                              "{" ++ sTyp ++ "/" ++ sTypKind ++ "} @ " ++
-                              "<" ++ show ln ++ "," ++ show col ++ "> " ++
-                              show startLn ++ "," ++ show startCol ++ " -> " ++
-                              show endLn ++ "," ++ show endCol ++ " " ++
-                              "definition [" ++ defName ++ "/" ++ defUSR ++ "] " ++
-                              "reference [" ++ refName ++ "/" ++ refFile ++ "%" ++ refUSR ++ "]"
+      -- Special stuff for CallExpr
+      when (cKind == C.Cursor_CallExpr) $ do
+        baseExpr <- C.getBaseExpression c
+        baseName <- C.getDisplayName baseExpr >>= CS.unpack
+        let baseExprKind = C.getKind baseExpr
+        baseType <- C.getType baseExpr
+        baseTypeKind <- T.getKind baseType 
+        uType <- underlyingType baseExpr
+        uTypeKind <- T.getKind uType
+        isVirtual <- isVirtualCall baseExprKind baseExpr
+        baseTypeSpelling <- T.getTypeSpelling baseType >>= CS.unpack
+        baseKindSpelling <- T.getTypeKindSpelling baseTypeKind >>= CS.unpack
+        uTypeSpelling <- T.getTypeSpelling uType >>= CS.unpack
+        uKindSpelling <- T.getTypeKindSpelling uTypeKind >>= CS.unpack
+        liftIO $ putStrLn $ replicate i ' ' ++ "[==] CallExpr base: " ++ baseName
+                                            ++ " type: " ++ baseTypeSpelling ++ "/" ++ baseKindSpelling
+                                            ++ " utype: " ++ uTypeSpelling ++ "/" ++ uKindSpelling
+                                            ++ " virtual? " ++ show isVirtual
 
-underlyingType :: ClangBase m => C.Cursor -> ClangT s m T.Type
+      -- Display.
+      liftIO $ putStrLn $ replicate i ' ' ++ "[" ++ kind ++ "] " ++ name ++ " (" ++ usr ++ ") " ++
+                          "{" ++ sTyp ++ "/" ++ sTypKind ++ "} @ " ++
+                          "<" ++ show ln ++ "," ++ show col ++ "> " ++
+                          show startLn ++ "," ++ show startCol ++ " -> " ++
+                          show endLn ++ "," ++ show endCol ++ " " ++
+                          "definition [" ++ defName ++ "/" ++ defUSR ++ "] " ++
+                          "reference [" ++ refName ++ "/" ++ refFile ++ "%" ++ refUSR ++ "]"
+
+underlyingType :: ClangBase m => C.Cursor s' -> ClangT s m (T.Type s)
 underlyingType c = do
   t <- C.getType c
   tKind <- T.getKind t
@@ -576,7 +577,7 @@ underlyingType c = do
   else
     return t
     
-isVirtualCall :: ClangBase m => C.CursorKind -> C.Cursor -> ClangT s m Bool
+isVirtualCall :: ClangBase m => C.CursorKind -> C.Cursor s' -> ClangT s m Bool
 isVirtualCall k | k `elem` vcKinds =
     doesRefKindRequireVirtualDispatch <=< baseRefKind
   where
@@ -594,15 +595,21 @@ doesRefKindRequireVirtualDispatch = return . (`elem` vdKinds)
                T.Type_Unexposed,
                T.Type_Invalid]
 
-baseRefKind :: ClangBase m => C.Cursor -> ClangT s m T.TypeKind
+baseRefKind :: ClangBase m => C.Cursor s' -> ClangT s m T.TypeKind
 baseRefKind = T.getKind <=< C.getType <=< C.getReferenced
 
 withTranslationUnit :: ClangBase m => CommandInfo
-                    -> (forall s. TranslationUnit -> ClangT s m a) -> m a
+                    -> (forall s. TranslationUnit s -> ClangT s m a) -> m a
 withTranslationUnit ci f = 
     withCreateIndex False False $ \index -> do
       setGlobalOptions index GlobalOpt_ThreadBackgroundPriorityForAll
-      withParse index (Just . unSourceFile $ sf) args [] [TranslationUnit_DetailedPreprocessingRecord] f bail
+      withParse index
+                (Just $ unSourceFile sf)
+                args
+                VV.empty
+                [TranslationUnit_DetailedPreprocessingRecord]
+                f
+                bail
   where
     args = map BU.toString (ciArgs ci)
     sf = ciSourceFile ci
@@ -652,9 +659,6 @@ toSourceKind C.Cursor_TypeAliasDecl                      = TypeAliasDecl
 toSourceKind C.Cursor_ObjCSynthesizeDecl                 = ObjCSynthesizeDecl
 toSourceKind C.Cursor_ObjCDynamicDecl                    = ObjCDynamicDecl
 toSourceKind C.Cursor_CXXAccessSpecifier                 = CXXAccessSpecifier
-toSourceKind C.Cursor_FirstDecl                          = FirstDecl
-toSourceKind C.Cursor_LastDecl                           = LastDecl
-toSourceKind C.Cursor_FirstRef                           = FirstRef
 toSourceKind C.Cursor_ObjCSuperClassRef                  = ObjCSuperClassRef
 toSourceKind C.Cursor_ObjCProtocolRef                    = ObjCProtocolRef
 toSourceKind C.Cursor_ObjCClassRef                       = ObjCClassRef
@@ -666,14 +670,10 @@ toSourceKind C.Cursor_MemberRef                          = MemberRef
 toSourceKind C.Cursor_LabelRef                           = LabelRef
 toSourceKind C.Cursor_OverloadedDeclRef                  = OverloadedDeclRef
 toSourceKind C.Cursor_VariableRef                        = VariableRef
-toSourceKind C.Cursor_LastRef                            = LastRef
-toSourceKind C.Cursor_FirstInvalid                       = FirstInvalid
 toSourceKind C.Cursor_InvalidFile                        = InvalidFile
 toSourceKind C.Cursor_NoDeclFound                        = NoDeclFound
 toSourceKind C.Cursor_NotImplemented                     = NotImplemented
 toSourceKind C.Cursor_InvalidCode                        = InvalidCode
-toSourceKind C.Cursor_LastInvalid                        = LastInvalid
-toSourceKind C.Cursor_FirstExpr                          = FirstExpr
 toSourceKind C.Cursor_UnexposedExpr                      = UnexposedExpr
 toSourceKind C.Cursor_DeclRefExpr                        = DeclRefExpr
 toSourceKind C.Cursor_MemberRefExpr                      = MemberRefExpr
@@ -721,8 +721,6 @@ toSourceKind C.Cursor_SizeOfPackExpr                     = SizeOfPackExpr
 toSourceKind C.Cursor_LambdaExpr                         = LambdaExpr
 toSourceKind C.Cursor_ObjCBoolLiteralExpr                = ObjCBoolLiteralExpr
 toSourceKind C.Cursor_ObjCSelfExpr                       = ObjCSelfExpr
-toSourceKind C.Cursor_LastExpr                           = LastExpr
-toSourceKind C.Cursor_FirstStmt                          = FirstStmt
 toSourceKind C.Cursor_UnexposedStmt                      = UnexposedStmt
 toSourceKind C.Cursor_LabelStmt                          = LabelStmt
 toSourceKind C.Cursor_CompoundStmt                       = CompoundStmt
@@ -738,7 +736,6 @@ toSourceKind C.Cursor_IndirectGotoStmt                   = IndirectGotoStmt
 toSourceKind C.Cursor_ContinueStmt                       = ContinueStmt
 toSourceKind C.Cursor_BreakStmt                          = BreakStmt
 toSourceKind C.Cursor_ReturnStmt                         = ReturnStmt
-toSourceKind C.Cursor_GCCAsmStmt                         = GCCAsmStmt
 toSourceKind C.Cursor_AsmStmt                            = AsmStmt
 toSourceKind C.Cursor_ObjCAtTryStmt                      = ObjCAtTryStmt
 toSourceKind C.Cursor_ObjCAtCatchStmt                    = ObjCAtCatchStmt
@@ -757,9 +754,7 @@ toSourceKind C.Cursor_MSAsmStmt                          = MSAsmStmt
 toSourceKind C.Cursor_NullStmt                           = NullStmt
 toSourceKind C.Cursor_DeclStmt                           = DeclStmt
 toSourceKind C.Cursor_OMPParallelDirective               = OMPParallelDirective
-toSourceKind C.Cursor_LastStmt                           = LastStmt
 toSourceKind C.Cursor_TranslationUnit                    = TranslationUnit
-toSourceKind C.Cursor_FirstAttr                          = FirstAttr
 toSourceKind C.Cursor_UnexposedAttr                      = UnexposedAttr
 toSourceKind C.Cursor_IBActionAttr                       = IBActionAttr
 toSourceKind C.Cursor_IBOutletAttr                       = IBOutletAttr
@@ -769,14 +764,8 @@ toSourceKind C.Cursor_CXXOverrideAttr                    = CXXOverrideAttr
 toSourceKind C.Cursor_AnnotateAttr                       = AnnotateAttr
 toSourceKind C.Cursor_AsmLabelAttr                       = AsmLabelAttr
 toSourceKind C.Cursor_PackedAttr                         = PackedAttr
-toSourceKind C.Cursor_LastAttr                           = LastAttr
 toSourceKind C.Cursor_PreprocessingDirective             = PreprocessingDirective
 toSourceKind C.Cursor_MacroDefinition                    = MacroDefinition
 toSourceKind C.Cursor_MacroExpansion                     = MacroExpansion
-toSourceKind C.Cursor_MacroInstantiation                 = MacroInstantiation
 toSourceKind C.Cursor_InclusionDirective                 = InclusionDirective
-toSourceKind C.Cursor_FirstPreprocessing                 = FirstPreprocessing
-toSourceKind C.Cursor_LastPreprocessing                  = LastPreprocessing
 toSourceKind C.Cursor_ModuleImportDecl                   = ModuleImportDecl
-toSourceKind C.Cursor_FirstExtraDecl                     = FirstExtraDecl
-toSourceKind C.Cursor_LastExtraDecl                      = LastExtraDecl

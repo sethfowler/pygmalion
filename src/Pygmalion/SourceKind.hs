@@ -47,9 +47,6 @@ data SourceKind = UnexposedDecl
                 | ObjCSynthesizeDecl
                 | ObjCDynamicDecl
                 | CXXAccessSpecifier
-                | FirstDecl
-                | LastDecl
-                | FirstRef
                 | ObjCSuperClassRef
                 | ObjCProtocolRef
                 | ObjCClassRef
@@ -61,14 +58,10 @@ data SourceKind = UnexposedDecl
                 | LabelRef
                 | OverloadedDeclRef
                 | VariableRef
-                | LastRef
-                | FirstInvalid
                 | InvalidFile
                 | NoDeclFound
                 | NotImplemented
                 | InvalidCode
-                | LastInvalid
-                | FirstExpr
                 | UnexposedExpr
                 | DeclRefExpr
                 | MemberRefExpr
@@ -117,8 +110,6 @@ data SourceKind = UnexposedDecl
                 | LambdaExpr
                 | ObjCBoolLiteralExpr
                 | ObjCSelfExpr
-                | LastExpr
-                | FirstStmt
                 | UnexposedStmt
                 | LabelStmt
                 | CompoundStmt
@@ -134,7 +125,6 @@ data SourceKind = UnexposedDecl
                 | ContinueStmt
                 | BreakStmt
                 | ReturnStmt
-                | GCCAsmStmt
                 | AsmStmt
                 | ObjCAtTryStmt
                 | ObjCAtCatchStmt
@@ -153,9 +143,7 @@ data SourceKind = UnexposedDecl
                 | NullStmt
                 | DeclStmt
                 | OMPParallelDirective
-                | LastStmt
                 | TranslationUnit
-                | FirstAttr
                 | UnexposedAttr
                 | IBActionAttr
                 | IBOutletAttr
@@ -165,18 +153,12 @@ data SourceKind = UnexposedDecl
                 | AnnotateAttr
                 | AsmLabelAttr
                 | PackedAttr
-                | LastAttr
                 | PreprocessingDirective
                 | MacroDefinition
                 | MacroExpansion
-                | MacroInstantiation
                 | InclusionDirective
                 | SourceFile  -- Pygmalion custom kind.
-                | FirstPreprocessing
-                | LastPreprocessing
                 | ModuleImportDecl
-                | FirstExtraDecl
-                | LastExtraDecl
                   deriving (Enum, Eq, Ord, Read, Show)
 
 instance Serialize SourceKind where
