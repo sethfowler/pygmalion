@@ -484,7 +484,7 @@ cursorName c = C.getDisplayName c >>= CS.unsafeUnpackByteString >>= anonymize
 
 logDiagnostics :: TranslationUnit s' -> Analysis s ()
 logDiagnostics tu = do
-    opts <- Diag.defaultDisplayOptions
+    opts <- Just <$> Diag.defaultDisplayOptions
     dias <- Diag.getDiagnostics tu
     forM_ dias $ \dia -> do
       severity <- Diag.getSeverity dia
@@ -602,7 +602,7 @@ withTranslationUnit :: ClangBase m => CommandInfo
                     -> (forall s. TranslationUnit s -> ClangT s m a) -> m a
 withTranslationUnit ci f = 
     withCreateIndex False False $ \index -> do
-      setGlobalOptions index GlobalOpt_ThreadBackgroundPriorityForAll
+      setGlobalOptions index globalOpt_ThreadBackgroundPriorityForAll
       withParse index
                 (Just $ unSourceFile sf)
                 args
