@@ -248,205 +248,233 @@ runTests = hspec $ around withPygd $
       (f, 73, 29) `defShouldBe` "main(int, char **)::<anonymous>::anonymous_field [FieldDecl]"
       (f, 74, 29) `defShouldBe` "main(int, char **)::<anonymous>::anonymous_method(int) [CXXMethod]"
 
-    it "finds virtual methods" $ let f = "virtual.cpp" in do
-      index f
+    it "finds virtual methods" $ runPygmalionTest "virtual.cpp" $ do
 
-      -- Instance values.
-      (f, 6, 3) `defShouldBe` "AB [ClassDecl]"
-      (f, 7, 3) `defShouldBe` "main(int, char **)::AB_instance [VarDecl]"
-      (f, 7, 15) `defShouldBe` "AB::A_pure_method() [CXXMethod]"
-      (f, 8, 15) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 11, 3) `defShouldBe` "main(int, char **)::ABC_instance [VarDecl]"
-      (f, 11, 16) `defShouldBe` "ABC::A_pure_method() [CXXMethod]"
-      (f, 12, 16) `defShouldBe` "ABC::AB_method(int) [CXXMethod]"
-      (f, 13, 16) `defShouldBe` "AB [ClassDecl]"
-      (f, 13, 20) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 14, 16) `defShouldBe` "ABC [ClassDecl]"
-      (f, 14, 21) `defShouldBe` "ABC::AB_method(int) [CXXMethod]"
+      line "#include \"virtual.h\""
+      line ""
+      line "int main(int argc, char** argv)"
+      line "{"
+      line "  // Instance values."
+      test "  @AB AB_instance;" [Def "AB [ClassDecl]"]
+      test "  @AB_instance.@A_pure_method();" [Def "main(int, char **)::AB_instance [VarDecl]",
+                                               Def "AB::A_pure_method() [CXXMethod]"]
+      test "  AB_instance.@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  ABC ABC_instance;"
+      test "  @ABC_instance.@A_pure_method();" [Def "main(int, char **)::ABC_instance [VarDecl]",
+                                                Def "ABC::A_pure_method() [CXXMethod]"]
+      test "  ABC_instance.@AB_method(0);" [Def "ABC::AB_method(int) [CXXMethod]"]
+      test "  ABC_instance.@AB::@AB_method(0);" [Def "AB [ClassDecl]",
+                                                 Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABC_instance.@ABC::@AB_method(0);" [Def "ABC [ClassDecl]",
+                                                  Def "ABC::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  // Pointers to instances."
+      test "  @A* A_ptr = new AB;" [Def "A [ClassDecl]"]
+      test "  A_ptr->@A_pure_method();" [Defs ["A::A_pure_method() [CXXMethod]",
+                                               "AB::A_pure_method() [CXXMethod]",
+                                               "ABC::A_pure_method() [CXXMethod]",
+                                               "ABDE::A_pure_method() [CXXMethod]",
+                                               "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  (*A_ptr).@A_pure_method();" [Defs ["A::A_pure_method() [CXXMethod]",
+                                                 "AB::A_pure_method() [CXXMethod]",
+                                                 "ABC::A_pure_method() [CXXMethod]",
+                                                 "ABDE::A_pure_method() [CXXMethod]",
+                                                 "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  A_ptr->@A::@A_pure_method();" [Def "A [ClassDecl]",
+                                             Def "A::A_pure_method() [CXXMethod]"]
+      test "  (*A_ptr).A::@A_pure_method();" [Def "A::A_pure_method() [CXXMethod]"]
+      line ""
+      test "  @AB* AB_ptr = new AB;" [Def "AB [ClassDecl]"]
+      test "  AB_ptr->@A_pure_method();" [Defs ["AB::A_pure_method() [CXXMethod]",
+                                                "ABC::A_pure_method() [CXXMethod]",
+                                                "ABDE::A_pure_method() [CXXMethod]",
+                                                "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  (*AB_ptr).@A_pure_method();" [Defs ["AB::A_pure_method() [CXXMethod]",
+                                                  "ABC::A_pure_method() [CXXMethod]",
+                                                  "ABDE::A_pure_method() [CXXMethod]",
+                                                  "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  AB_ptr->@AB_method(0);" [Defs ["AB::AB_method(int) [CXXMethod]",
+                                             "ABDE::AB_method(int) [CXXMethod]",
+                                             "ABC::AB_method(int) [CXXMethod]",
+                                             "ABDEF::AB_method(int) [CXXMethod]"]]
+      test "  (*AB_ptr).@AB_method(0);" [Defs ["AB::AB_method(int) [CXXMethod]",
+                                               "ABDE::AB_method(int) [CXXMethod]",
+                                               "ABC::AB_method(int) [CXXMethod]",
+                                               "ABDEF::AB_method(int) [CXXMethod]"]]
+      test "  AB_ptr->AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  (*AB_ptr).AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      line ""
+      test "  @ABC* ABC_ptr = new ABC;" [Def "ABC [ClassDecl]"]
+      test "  ABC_ptr->@A_pure_method();" [Def "ABC::A_pure_method() [CXXMethod]"]
+      test "  (*ABC_ptr).@A_pure_method();" [Def "ABC::A_pure_method() [CXXMethod]"]
+      test "  ABC_ptr->@AB_method(0);" [Def "ABC::AB_method(int) [CXXMethod]"]
+      test "  (*ABC_ptr).@AB_method(0);" [Def "ABC::AB_method(int) [CXXMethod]"]
+      test "  ABC_ptr->@AB::@AB_method(0);" [Def "AB [ClassDecl]",
+                                             Def "AB::AB_method(int) [CXXMethod]"]
+      test "  (*ABC_ptr).@AB::@AB_method(0);" [Def "AB [ClassDecl]",
+                                               Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABC_ptr->ABC::@AB_method(0);" [Def "ABC::AB_method(int) [CXXMethod]"]
+      test "  (*ABC_ptr).ABC::@AB_method(0);" [Def "ABC::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  AB* ABC_in_AB_ptr = ABC_ptr;"
+      test "  ABC_in_AB_ptr->@A_pure_method();" [Defs ["AB::A_pure_method() [CXXMethod]",
+                                                       "ABC::A_pure_method() [CXXMethod]",
+                                                       "ABDE::A_pure_method() [CXXMethod]",
+                                                       "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  (*ABC_in_AB_ptr).@A_pure_method();" [Defs ["AB::A_pure_method() [CXXMethod]",
+                                                         "ABC::A_pure_method() [CXXMethod]",
+                                                         "ABDE::A_pure_method() [CXXMethod]",
+                                                         "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  ABC_in_AB_ptr->@AB_method(0);" [Defs ["AB::AB_method(int) [CXXMethod]",
+                                                    "ABDE::AB_method(int) [CXXMethod]",
+                                                    "ABC::AB_method(int) [CXXMethod]",
+                                                    "ABDEF::AB_method(int) [CXXMethod]"]]
+      test "  (*ABC_in_AB_ptr).@AB_method(0);" [Defs ["AB::AB_method(int) [CXXMethod]",
+                                                      "ABDE::AB_method(int) [CXXMethod]",
+                                                      "ABC::AB_method(int) [CXXMethod]",
+                                                      "ABDEF::AB_method(int) [CXXMethod]"]]
+      test "  ABC_in_AB_ptr->AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  (*ABC_in_AB_ptr).AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  // References to instances."
+      test "  @A& A_instance_ref = AB_instance;" [Def "A [ClassDecl]"]
+      test "  A_instance_ref.@A_pure_method();" [Defs ["A::A_pure_method() [CXXMethod]",
+                                                       "AB::A_pure_method() [CXXMethod]",
+                                                       "ABC::A_pure_method() [CXXMethod]",
+                                                       "ABDE::A_pure_method() [CXXMethod]",
+                                                       "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  A_instance_ref.@A::@A_pure_method();" [Def "A [ClassDecl]",
+                                                     Def "A::A_pure_method() [CXXMethod]"]
+      line ""
+      test "  @AB& AB_instance_ref = AB_instance;" [Def "AB [ClassDecl]"]
+      test "  AB_instance_ref.@A_pure_method();" [Defs ["AB::A_pure_method() [CXXMethod]",
+                                                        "ABC::A_pure_method() [CXXMethod]",
+                                                        "ABDE::A_pure_method() [CXXMethod]",
+                                                        "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  AB_instance_ref.@AB_method(0);" [Defs ["AB::AB_method(int) [CXXMethod]",
+                                                     "ABDE::AB_method(int) [CXXMethod]",
+                                                     "ABC::AB_method(int) [CXXMethod]",
+                                                     "ABDEF::AB_method(int) [CXXMethod]"]]
+      test "  AB_instance_ref.AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      line ""
+      test "  @ABC& ABC_instance_ref = ABC_instance;" [Def "ABC [ClassDecl]"]
+      test "  ABC_instance_ref.@A_pure_method();" [Def "ABC::A_pure_method() [CXXMethod]"]
+      test "  ABC_instance_ref.@AB_method(0);" [Def "ABC::AB_method(int) [CXXMethod]"]
+      test "  ABC_instance_ref.@AB::@AB_method(0);" [Def "AB [ClassDecl]",
+                                                     Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABC_instance_ref.@ABC::@AB_method(0);" [Def "ABC [ClassDecl]",
+                                                      Def "ABC::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  AB& ABC_in_AB_ref = ABC_instance;"
+      test "  ABC_in_AB_ref.@A_pure_method();" [Defs ["AB::A_pure_method() [CXXMethod]",
+                                                      "ABC::A_pure_method() [CXXMethod]",
+                                                      "ABDE::A_pure_method() [CXXMethod]",
+                                                      "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  ABC_in_AB_ref.@AB_method(0);" [Defs ["AB::AB_method(int) [CXXMethod]",
+                                                   "ABDE::AB_method(int) [CXXMethod]",
+                                                   "ABC::AB_method(int) [CXXMethod]",
+                                                   "ABDEF::AB_method(int) [CXXMethod]"]]
+      test "  ABC_in_AB_ref.AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  return 0;"
+      line "}"
 
-      -- Pointers to instances.
-      (f, 17, 3) `defShouldBe` "A [ClassDecl]"
-      (f, 18, 10) `defsShouldBe`
-        ["A::A_pure_method() [CXXMethod]",
-         "AB::A_pure_method() [CXXMethod]",
-         "ABC::A_pure_method() [CXXMethod]",
-         "ABDE::A_pure_method() [CXXMethod]",
-         "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 19, 12) `defsShouldBe`
-        ["A::A_pure_method() [CXXMethod]",
-         "AB::A_pure_method() [CXXMethod]",
-         "ABC::A_pure_method() [CXXMethod]",
-         "ABDE::A_pure_method() [CXXMethod]",
-         "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 20, 10) `defShouldBe` "A [ClassDecl]"
-      (f, 20, 13) `defShouldBe` "A::A_pure_method() [CXXMethod]"
-      (f, 21, 15) `defShouldBe` "A::A_pure_method() [CXXMethod]"
-      (f, 23, 3) `defShouldBe` "AB [ClassDecl]"
-      (f, 24, 11) `defsShouldBe`
-        ["AB::A_pure_method() [CXXMethod]",
-         "ABC::A_pure_method() [CXXMethod]",
-         "ABDE::A_pure_method() [CXXMethod]",
-         "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 25, 13) `defsShouldBe`
-        ["AB::A_pure_method() [CXXMethod]",
-         "ABC::A_pure_method() [CXXMethod]",
-         "ABDE::A_pure_method() [CXXMethod]",
-         "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 26, 11) `defsShouldBe`
-        ["AB::AB_method(int) [CXXMethod]",
-         "ABDE::AB_method(int) [CXXMethod]",
-         "ABC::AB_method(int) [CXXMethod]",
-         "ABDEF::AB_method(int) [CXXMethod]"]
-      (f, 27, 13) `defsShouldBe`
-        ["AB::AB_method(int) [CXXMethod]",
-         "ABDE::AB_method(int) [CXXMethod]",
-         "ABC::AB_method(int) [CXXMethod]",
-         "ABDEF::AB_method(int) [CXXMethod]"]
-      (f, 28, 15) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 28, 17) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 31, 3) `defShouldBe` "ABC [ClassDecl]"
-      (f, 32, 12) `defShouldBe` "ABC::A_pure_method() [CXXMethod]"
-      (f, 33, 14) `defShouldBe` "ABC::A_pure_method() [CXXMethod]"
-      (f, 34, 12) `defShouldBe` "ABC::AB_method(int) [CXXMethod]"
-      (f, 35, 14) `defShouldBe` "ABC::AB_method(int) [CXXMethod]"
-      (f, 36, 12) `defShouldBe` "AB [ClassDecl]"
-      (f, 36, 16) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 37, 14) `defShouldBe` "AB [ClassDecl]"
-      (f, 37, 18) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 38, 17) `defShouldBe` "ABC::AB_method(int) [CXXMethod]"
-      (f, 39, 19) `defShouldBe` "ABC::AB_method(int) [CXXMethod]"
-      (f, 42, 18) `defsShouldBe`
-        ["AB::A_pure_method() [CXXMethod]",
-         "ABC::A_pure_method() [CXXMethod]",
-         "ABDE::A_pure_method() [CXXMethod]",
-         "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 43, 20) `defsShouldBe`
-        ["AB::A_pure_method() [CXXMethod]",
-         "ABC::A_pure_method() [CXXMethod]",
-         "ABDE::A_pure_method() [CXXMethod]",
-         "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 44, 18) `defsShouldBe`
-        ["AB::AB_method(int) [CXXMethod]",
-         "ABDE::AB_method(int) [CXXMethod]",
-         "ABC::AB_method(int) [CXXMethod]",
-         "ABDEF::AB_method(int) [CXXMethod]"]
-      (f, 45, 20) `defsShouldBe`
-        ["AB::AB_method(int) [CXXMethod]",
-         "ABDE::AB_method(int) [CXXMethod]",
-         "ABC::AB_method(int) [CXXMethod]",
-         "ABDEF::AB_method(int) [CXXMethod]"]
-      (f, 46, 22) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 47, 24) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-
-      -- References to instances.
-      (f, 50, 3) `defShouldBe` "A [ClassDecl]"
-      (f, 51, 18) `defsShouldBe`
-        ["A::A_pure_method() [CXXMethod]",
-         "AB::A_pure_method() [CXXMethod]",
-         "ABC::A_pure_method() [CXXMethod]",
-         "ABDE::A_pure_method() [CXXMethod]",
-         "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 52, 18) `defShouldBe` "A [ClassDecl]"
-      (f, 52, 21) `defShouldBe` "A::A_pure_method() [CXXMethod]"
-      (f, 54, 3) `defShouldBe` "AB [ClassDecl]"
-      (f, 55, 19) `defsShouldBe`
-        ["AB::A_pure_method() [CXXMethod]",
-         "ABC::A_pure_method() [CXXMethod]",
-         "ABDE::A_pure_method() [CXXMethod]",
-         "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 56, 19) `defsShouldBe`
-        ["AB::AB_method(int) [CXXMethod]",
-         "ABDE::AB_method(int) [CXXMethod]",
-         "ABC::AB_method(int) [CXXMethod]",
-         "ABDEF::AB_method(int) [CXXMethod]"]
-      (f, 57, 23) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 59, 3) `defShouldBe` "ABC [ClassDecl]"
-      (f, 60, 20) `defShouldBe` "ABC::A_pure_method() [CXXMethod]"
-      (f, 61, 20) `defShouldBe` "ABC::AB_method(int) [CXXMethod]"
-      (f, 62, 20) `defShouldBe` "AB [ClassDecl]"
-      (f, 62, 24) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 63, 20) `defShouldBe` "ABC [ClassDecl]"
-      (f, 63, 25) `defShouldBe` "ABC::AB_method(int) [CXXMethod]"
-      (f, 66, 17) `defsShouldBe`
-        ["AB::A_pure_method() [CXXMethod]",
-         "ABC::A_pure_method() [CXXMethod]",
-         "ABDE::A_pure_method() [CXXMethod]",
-         "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 67, 17) `defsShouldBe`
-        ["AB::AB_method(int) [CXXMethod]",
-         "ABDE::AB_method(int) [CXXMethod]",
-         "ABC::AB_method(int) [CXXMethod]",
-         "ABDEF::AB_method(int) [CXXMethod]"]
-      (f, 68, 21) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-
-    it "finds virtual methods in struct members" $ let f = "virtual-in-structs.cpp" in do
-      index f
-
-      -- Structs containing instance values.
-      (f, 14, 28) `defShouldBe` "ABDE::A_pure_method() [CXXMethod]"
-      (f, 15, 28) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      (f, 16, 32) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 17, 34) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      (f, 20, 24) `defShouldBe` "ABDE::A_pure_method() [CXXMethod]"
-      (f, 21, 24) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      (f, 22, 28) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 23, 30) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      (f, 26, 23) `defShouldBe` "ABDE::A_pure_method() [CXXMethod]"
-      (f, 27, 23) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      (f, 28, 27) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 29, 29) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-
-      -- Structs containing pointers to instances.
-      (f, 33, 33) `defsShouldBe`
-        ["ABDE::A_pure_method() [CXXMethod]",
-         "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 34, 33) `defsShouldBe`
-        ["ABDE::AB_method(int) [CXXMethod]",
-         "ABDEF::AB_method(int) [CXXMethod]"]
-      (f, 35, 37) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 36, 39) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      (f, 39, 29) `defsShouldBe`
-        ["ABDE::A_pure_method() [CXXMethod]",
-         "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 40, 29) `defsShouldBe`
-        ["ABDE::AB_method(int) [CXXMethod]",
-         "ABDEF::AB_method(int) [CXXMethod]"]
-      (f, 41, 33) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 42, 35) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      (f, 45, 28) `defsShouldBe`
-        ["ABDE::A_pure_method() [CXXMethod]",
-         "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 46, 28) `defsShouldBe`
-        ["ABDE::AB_method(int) [CXXMethod]",
-         "ABDEF::AB_method(int) [CXXMethod]"]
-      (f, 47, 32) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 48, 34) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-
-      -- Structs containing references to instances.
-      (f, 52, 32) `defsShouldBe`
-        ["ABDE::A_pure_method() [CXXMethod]",
-         "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 53, 32) `defsShouldBe`
-        ["ABDE::AB_method(int) [CXXMethod]",
-         "ABDEF::AB_method(int) [CXXMethod]"]
-      (f, 54, 36) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 55, 38) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      (f, 58, 28) `defsShouldBe`
-        ["ABDE::A_pure_method() [CXXMethod]",
-         "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 59, 28) `defsShouldBe`
-        ["ABDE::AB_method(int) [CXXMethod]",
-         "ABDEF::AB_method(int) [CXXMethod]"]
-      (f, 60, 32) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 61, 34) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      (f, 64, 27) `defsShouldBe`
-        ["ABDE::A_pure_method() [CXXMethod]",
-         "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 65, 27) `defsShouldBe`
-        ["ABDE::AB_method(int) [CXXMethod]",
-         "ABDEF::AB_method(int) [CXXMethod]"]
-      (f, 66, 31) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 67, 33) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+    it "finds virtual methods in struct members" $ runPygmalionTest "virtual-in-structs.cpp" $ do
+      line "#include \"virtual.h\""
+      line ""
+      line "struct ABDE_struct { ABDE var; };"
+      line "struct ABDE_ptr_struct { ABDE* ptr; };"
+      line "struct ABDE_ref_struct { ABDE& ref; };"
+      line ""
+      line "int main(int argc, char** argv)"
+      line "{"
+      line "  ABDE ABDE_instance;"
+      line "  ABDE* ABDE_ptr = &ABDE_instance;"
+      line ""
+      line "  // Structs containing instance values."
+      line "  ABDE_struct ABDE_struct_instance;"
+      test "  ABDE_struct_instance.var.@A_pure_method();" [Def "ABDE::A_pure_method() [CXXMethod]"]
+      test "  ABDE_struct_instance.var.@AB_method(0);" [Def "ABDE::AB_method(int) [CXXMethod]"]
+      test "  ABDE_struct_instance.var.AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABDE_struct_instance.var.ABDE::@AB_method(0);" [Def "ABDE::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  ABDE_struct* ABDE_struct_ptr = &ABDE_struct_instance;"
+      test "  ABDE_struct_ptr->var.@A_pure_method();" [Def "ABDE::A_pure_method() [CXXMethod]"]
+      test "  ABDE_struct_ptr->var.@AB_method(0);" [Def "ABDE::AB_method(int) [CXXMethod]"]
+      test "  ABDE_struct_ptr->var.AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABDE_struct_ptr->var.ABDE::@AB_method(0);" [Def "ABDE::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  ABDE_struct& ABDE_struct_ref = ABDE_struct_instance;"
+      test "  ABDE_struct_ref.var.@A_pure_method();" [Def "ABDE::A_pure_method() [CXXMethod]"]
+      test "  ABDE_struct_ref.var.@AB_method(0);" [Def "ABDE::AB_method(int) [CXXMethod]"]
+      test "  ABDE_struct_ref.var.AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABDE_struct_ref.var.ABDE::@AB_method(0);" [Def "ABDE::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  // Structs containing pointers to instances."
+      line "  ABDE_ptr_struct ABDE_ptr_struct_instance { ABDE_ptr };"
+      test "  ABDE_ptr_struct_instance.ptr->@A_pure_method();"
+           [Defs ["ABDE::A_pure_method() [CXXMethod]",
+                  "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  ABDE_ptr_struct_instance.ptr->@AB_method(0);"
+           [Defs ["ABDE::AB_method(int) [CXXMethod]",
+                  "ABDEF::AB_method(int) [CXXMethod]"]]
+      test "  ABDE_ptr_struct_instance.ptr->AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABDE_ptr_struct_instance.ptr->ABDE::@AB_method(0);" [Def "ABDE::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  ABDE_ptr_struct* ABDE_ptr_struct_ptr = &ABDE_ptr_struct_instance;"
+      test "  ABDE_ptr_struct_ptr->ptr->@A_pure_method();"
+           [Defs ["ABDE::A_pure_method() [CXXMethod]",
+                  "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  ABDE_ptr_struct_ptr->ptr->@AB_method(0);"
+           [Defs ["ABDE::AB_method(int) [CXXMethod]",
+                  "ABDEF::AB_method(int) [CXXMethod]"]]
+      test "  ABDE_ptr_struct_ptr->ptr->AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABDE_ptr_struct_ptr->ptr->ABDE::@AB_method(0);" [Def "ABDE::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  ABDE_ptr_struct& ABDE_ptr_struct_ref = ABDE_ptr_struct_instance;"
+      test "  ABDE_ptr_struct_ref.ptr->@A_pure_method();"
+           [Defs ["ABDE::A_pure_method() [CXXMethod]",
+                  "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  ABDE_ptr_struct_ref.ptr->@AB_method(0);"
+           [Defs ["ABDE::AB_method(int) [CXXMethod]",
+                  "ABDEF::AB_method(int) [CXXMethod]"]]
+      test "  ABDE_ptr_struct_ref.ptr->AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABDE_ptr_struct_ref.ptr->ABDE::@AB_method(0);" [Def "ABDE::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  // Structs containing references to instances."
+      line "  ABDE_ref_struct ABDE_ref_struct_instance { ABDE_instance };"
+      test "  ABDE_ref_struct_instance.ref.@A_pure_method();"
+           [Defs ["ABDE::A_pure_method() [CXXMethod]",
+                  "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  ABDE_ref_struct_instance.ref.@AB_method(0);"
+           [Defs ["ABDE::AB_method(int) [CXXMethod]",
+                  "ABDEF::AB_method(int) [CXXMethod]"]]
+      test "  ABDE_ref_struct_instance.ref.AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABDE_ref_struct_instance.ref.ABDE::@AB_method(0);" [Def "ABDE::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  ABDE_ref_struct* ABDE_ref_struct_ptr = &ABDE_ref_struct_instance;"
+      test "  ABDE_ref_struct_ptr->ref.@A_pure_method();"
+           [Defs ["ABDE::A_pure_method() [CXXMethod]",
+                  "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  ABDE_ref_struct_ptr->ref.@AB_method(0);"
+           [Defs ["ABDE::AB_method(int) [CXXMethod]",
+                  "ABDEF::AB_method(int) [CXXMethod]"]]
+      test "  ABDE_ref_struct_ptr->ref.AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABDE_ref_struct_ptr->ref.ABDE::@AB_method(0);" [Def "ABDE::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  ABDE_ref_struct& ABDE_ref_struct_ref = ABDE_ref_struct_instance;"
+      test "  ABDE_ref_struct_ref.ref.@A_pure_method();"
+           [Defs ["ABDE::A_pure_method() [CXXMethod]",
+                  "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  ABDE_ref_struct_ref.ref.@AB_method(0);"
+           [Defs ["ABDE::AB_method(int) [CXXMethod]",
+                  "ABDEF::AB_method(int) [CXXMethod]"]]
+      test "  ABDE_ref_struct_ref.ref.AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABDE_ref_struct_ref.ref.ABDE::@AB_method(0);" [Def "ABDE::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  return 0;"
+      line "}"
 
     it "finds virtual methods in return values" $ let f = "virtual-in-return-value.cpp" in do
       index f
@@ -567,47 +595,63 @@ runTests = hspec $ around withPygd $
       (f, 153, 59) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 154, 61) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
-    it "finds virtual methods which some classes don't override" $ let f = "virtual-no-override.cpp" in do
-      index f
+    it "finds virtual methods which some classes don't override" $ runPygmalionTest "virtual-no-override.cpp" $ do
 
-      -- Classes which don't override a virtual method defined in an ancestor class.
-      (f, 7, 16) `defShouldBe` "AB::A_pure_method() [CXXMethod]"
-      (f, 8, 16) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 9, 20) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 10, 21) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      --(f, 13, 12) `defShouldBe` "XXX" -- Wrongly includes ABC.
-      --(f, 14, 12) `defShouldBe` "XXX"
-      (f, 15, 16) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 16, 17) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      --(f, 19, 11) `defShouldBe` "XXX"
-      --(f, 20, 11) `defShouldBe` "XXX"
-      (f, 21, 15) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 22, 16) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-
-      -- Classes which have an ancestor which didn't override a method.
-      (f, 26, 17) `defShouldBe` "ABDE::A_pure_method() [CXXMethod]"
-      (f, 27, 17) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      (f, 28, 21) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 29, 22) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 30, 23) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      (f, 33, 13) `defsShouldBe`
-        ["ABDE::A_pure_method() [CXXMethod]",
-         "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 34, 13) `defsShouldBe`
-        ["ABDE::AB_method(int) [CXXMethod]",
-         "ABDEF::AB_method(int) [CXXMethod]"]
-      (f, 35, 17) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 36, 18) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 37, 19) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      (f, 40, 12) `defsShouldBe`
-        ["ABDE::A_pure_method() [CXXMethod]",
-         "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 41, 12) `defsShouldBe`
-        ["ABDE::AB_method(int) [CXXMethod]",
-         "ABDEF::AB_method(int) [CXXMethod]"]
-      (f, 42, 16) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 43, 17) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 44, 18) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      line "#include \"virtual.h\""
+      line ""
+      line "int main(int argc, char** argv)"
+      line "{"
+      line "  // Classes which don't override a virtual method defined in an ancestor class."
+      line "  ABD ABD_instance;"
+      test "  ABD_instance.@A_pure_method();" [Def "AB::A_pure_method() [CXXMethod]"]
+      test "  ABD_instance.@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABD_instance.AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABD_instance.ABD::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  ABD* ABD_ptr;"
+      test "  ABD_ptr->@A_pure_method();" [Fails "#12 - Wrongly includes ABC"]
+      test "  ABD_ptr->@AB_method(0);" [Fails "#12 - Wrongly includes ABC"]
+      test "  ABD_ptr->AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABD_ptr->ABD::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  ABD& ABD_ref = ABD_instance;"
+      test "  ABD_ref.@A_pure_method();" [Fails "#12 - Wrongly includes ABC"]
+      test "  ABD_ref.@AB_method(0);" [Fails "#12 - Wrongly includes ABC"]
+      test "  ABD_ref.AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABD_ref.ABD::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  // Classes which have an ancestor which didn't override a method."
+      line "  ABDE ABDE_instance;"
+      test "  ABDE_instance.@A_pure_method();" [Def "ABDE::A_pure_method() [CXXMethod]"]
+      test "  ABDE_instance.@AB_method(0);" [Def "ABDE::AB_method(int) [CXXMethod]"]
+      test "  ABDE_instance.AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABDE_instance.ABD::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABDE_instance.ABDE::@AB_method(0);" [Def "ABDE::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  ABDE* ABDE_ptr;"
+      test "  ABDE_ptr->@A_pure_method();"
+           [Defs ["ABDE::A_pure_method() [CXXMethod]",
+                  "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  ABDE_ptr->@AB_method(0);"
+           [Defs ["ABDE::AB_method(int) [CXXMethod]",
+                  "ABDEF::AB_method(int) [CXXMethod]"]]
+      test "  ABDE_ptr->AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABDE_ptr->ABD::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABDE_ptr->ABDE::@AB_method(0);" [Def "ABDE::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  ABDE& ABDE_ref = ABDE_instance;"
+      test "  ABDE_ref.@A_pure_method();"
+           [Defs ["ABDE::A_pure_method() [CXXMethod]",
+                  "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  ABDE_ref.@AB_method(0);"
+           [Defs ["ABDE::AB_method(int) [CXXMethod]",
+                  "ABDEF::AB_method(int) [CXXMethod]"]]
+      test "  ABDE_ref.AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABDE_ref.ABD::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
+      test "  ABDE_ref.ABDE::@AB_method(0);" [Def "ABDE::AB_method(int) [CXXMethod]"]
+      line ""
+      line "  return 0;"
+      line "}"
 
     it "finds method pointers" $ let f = "method-pointers.cpp" in do
       index f

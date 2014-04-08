@@ -37,7 +37,7 @@ data Test = Def String
             deriving (Eq, Show)
 
 data AnnotatedTest = DefTest Line Col [String]
-                   | FailingTest String
+                   | FailingTest Line Col String
                      deriving (Eq, Show)
 
 data TestDesc = TestDesc
@@ -70,7 +70,7 @@ annotateTests :: Line -> Col -> String -> [Test] -> (String, [AnnotatedTest])
 annotateTests _ _ [] [] = ([], [])
 annotateTests _ _ [] (x:_) = error $ "Test " ++ (show x) ++ " doesn't have a location"
 annotateTests l c ('@':_) [] = error $ "Location " ++ (show (l,c)) ++ " doesn't have a test"
-annotateTests l c ('@':xs) (t:ts) = let (xs', ts') = annotateTests l (c + 1) xs ts in
+annotateTests l c ('@':xs) (t:ts) = let (xs', ts') = annotateTests l c xs ts in
                                     (xs', (annotateTest l c t) : ts')
 annotateTests l c (x:xs) ts = let (xs', ts') = annotateTests l (c + 1) xs ts in
                               ((x:xs'), ts')
@@ -78,7 +78,7 @@ annotateTests l c (x:xs) ts = let (xs', ts') = annotateTests l (c + 1) xs ts in
 annotateTest :: Line -> Col -> Test -> AnnotatedTest
 annotateTest l c (Def s)   = DefTest l c [s]
 annotateTest l c (Defs ss) = DefTest l c ss
-annotateTest l c (Fails s) = FailingTest $ (show (l,c)) ++ ": " ++ s
+annotateTest l c (Fails s) = FailingTest l c s
 
 runPygmalionTest :: FilePath -> PygmalionTest () -> Expectation
 runPygmalionTest path t = finally go cleanup
@@ -96,8 +96,11 @@ runPygmalionTest path t = finally go cleanup
 
       -- Run the tests.
       forM_ (tsTests desc) $ \case
-        DefTest ln col ss -> (path, ln, col) `defsShouldBe` ss
-        FailingTest s     -> pendingWith s
+        DefTest ln col ss    -> defsShouldBe' (path, ln, col) (tsLines desc !! (ln - 1)) ss
+        FailingTest ln col s -> pendingWith $ show (path, ln, col) ++ " \"" ++
+                                              (annotateLine (tsLines desc !! (ln - 1)) col) ++
+                                              "\": " ++ s
+        
              
 defShouldBe :: (FilePath, Line, Col) -> String -> Expectation
 defShouldBe loc s = do
@@ -116,17 +119,33 @@ defsShouldBe loc ss = do
   where
     errorMsg ds = "Definition for " ++ show loc ++ " was " ++ show ds ++ "; expected " ++ show ss
 
+defsShouldBe' :: (FilePath, Line, Col) -> String -> [String] -> Expectation
+defsShouldBe' loc@(_, _, col) sourceLine ss = do
+    ds <- uncurryN defsAt loc
+    assertBool (errorMsg ds) $ length ds == length ss
+    forM_ ss $ \s ->
+      assertBool (errorMsg ds) $ any (s `isInfixOf`) ds
+  where
+    errorMsg ds = "Definition for " ++ show loc
+               ++ " \"" ++ (annotateLine sourceLine col) ++ "\" was "
+               ++ show ds ++ "; expected " ++ show ss
+
+annotateLine :: String -> Int -> String
+annotateLine s col = dropWhile (== ' ') annotated
+  where annotated = take col' s ++ ('@' : drop col' s)
+        col' = col - 1
+
 withPygd :: IO () -> IO ()
 withPygd action = bracket startPygd stopPygd (const action)
   where
     startPygd = do bg "../dist/build/pygd/pygd"
-                   threadDelay 100000
+                   threadDelay 1000000
     stopPygd _ = do void $ pygmalion ["stop-server"]
                     sh $ "rm -f " ++ dbFile
   
 pygmalion :: [String] -> IO [String]
 pygmalion args = do
-  let cmd = proc "../dist/build/pygmalion/pygmalion" args
+  let cmd = proc "../dist/build/pyg/pyg" args
   (_, Just out, _, h) <- createProcess $ cmd { std_out = CreatePipe }
   output <- hGetContents out
   _ <- waitForProcess h
