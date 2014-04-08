@@ -47,7 +47,6 @@ import Data.Typeable
 import qualified Data.Vector as V
 import Network.Socket
 import System.IO.Error
-import System.Posix.Process (getProcessID)
 import System.Timeout
 
 import Pygmalion.Config
