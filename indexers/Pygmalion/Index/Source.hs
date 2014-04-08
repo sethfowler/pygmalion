@@ -333,16 +333,22 @@ visitDefinitions loc scope cKind cursor = do
   -- TODO: Support labels.
   usrHash <- getUSRHash cursor
   name <- cursorName cursor
-  let !fqn = csScopeName scope <::> name
-  let !kind = toSourceKind cKind
+  semanticParent <- C.getSemanticParent cursor
+  lexicalParent <- C.getLexicalParent cursor
 
-  let !def = DefUpdate fqn
+  !fqn <- if semanticParent /= lexicalParent
+            then getSemanticScope semanticParent name
+            else return $ csScopeName scope <::> name
+
+  let !kind = toSourceKind cKind
+      !def = DefUpdate fqn
                        usrHash
                        (tlFileHash loc)
                        (tlLine loc)
                        (tlCol loc)
                        kind
                        (csScopeUSRHash scope)
+
   sendUpdate (DBUpdateDef def)
 
 visitClassOverrides :: C.Cursor s' -> Analysis s ()
@@ -412,22 +418,52 @@ analyzeCall c = do
   isDynamicCall <- C.isDynamicCall c
 
   if isDynamicCall then do
-    baseExpr <- C.getBaseExpression c
-    let !baseExprKind = C.getKind baseExpr
-    isVirtual <- isVirtualCall baseExprKind baseExpr
-    return $ if isVirtual then DynamicCallExpr else CallExpr
+    mayBase <- findCallBase c
+    case mayBase of
+      Just base -> do let !baseKind = C.getKind base
+                      isVirtual <- isVirtualCall baseKind base
+                      return $ if isVirtual then DynamicCallExpr else CallExpr
+      Nothing   -> return CallExpr
   else 
     return CallExpr
 
+-- This is a bit of a hack, for now. We pop off the first
+-- MemberRefExpr (which refers to the called method itself - not
+-- exactly useful) and then pop off as many UnexposedExpr's as we
+-- can. The UnexposedExpr's represent things like pointer
+-- dereferences. I'd be much happier if they were exposed so we
+-- weren't fumbling in the dark, but this seems to do the job for now.
+findCallBase :: ClangBase m => C.Cursor s' -> ClangT s m (Maybe (C.Cursor s))
+findCallBase c = do
+  mayChild <- firstChild c
+  case mayChild of
+    Just child
+      | C.getKind child == C.Cursor_MemberRefExpr -> skipAllUnexposed child
+      | C.getKind child == C.Cursor_UnexposedExpr -> skipAllUnexposed child
+    _                                             -> return mayChild
+
+skipAllUnexposed :: ClangBase m => C.Cursor s' -> ClangT s m (Maybe (C.Cursor s))
+skipAllUnexposed c = do
+  mayChild <- firstChild c
+  case mayChild of
+    Just child
+      | C.getKind child == C.Cursor_UnexposedExpr -> skipAllUnexposed child
+    _                                             -> return mayChild
+
+firstChild :: ClangBase m => C.Cursor s' -> ClangT s m (Maybe (C.Cursor s))
+firstChild c = do
+  children <- TV.getChildren c
+  return $ if DVS.null children
+             then Nothing
+             else Just $ DVS.head children
+
 callBaseUSRHash :: C.Cursor s' -> Analysis s USRHash
-callBaseUSRHash = go
-  where
-    go = return . hash
-         -- <=< (\x -> (liftIO . putStrLn $ "Got base USR: " ++ (show x)) >> return x)
-         <=< getUSRHash
-         <=< C.getTypeDeclaration
-         <=< underlyingType
-         <=< C.getBaseExpression
+callBaseUSRHash c = do
+  mayBase <- findCallBase c
+  decl <- case mayBase of
+            Just base -> C.getTypeDeclaration =<< underlyingType base
+            Nothing   -> C.getTypeDeclaration =<< underlyingType c
+  hash <$> getUSRHash decl
 
 refHash :: Int -> TULocation -> Analysis s USRHash
 refHash usrHash loc = return refHash'
@@ -448,18 +484,10 @@ updatedCPPScope parent cursor = do
 
   -- Push new scope.
   let !cKind = C.getKind cursor
-  (scopeHash, scopeName) <- case cKind of
-    C.Cursor_FunctionDecl -> newScopeName parentScope cursor
-    C.Cursor_CXXMethod    -> newScopeName parentScope cursor
-    C.Cursor_Constructor  -> newScopeName parentScope cursor
-    C.Cursor_Destructor   -> newScopeName parentScope cursor
-    C.Cursor_ClassDecl    -> newScopeName parentScope cursor
-    C.Cursor_StructDecl   -> newScopeName parentScope cursor
-    C.Cursor_EnumDecl     -> newScopeName parentScope cursor
-    C.Cursor_UnionDecl    -> newScopeName parentScope cursor
-    C.Cursor_Namespace    -> newScopeName parentScope cursor
-    _                     -> return (csScopeUSRHash parentScope,
-                                     csScopeName parentScope)
+  (scopeHash, scopeName) <-
+    if isScopeCursorKind cKind
+       then newScopeName parentScope cursor
+       else return (csScopeUSRHash parentScope, csScopeName parentScope)
 
   let !newStack = (CPPScope cursorHash scopeHash scopeName) : poppedStack
   lift $ put $! ctx { asCPPScopeStack = newStack }
@@ -481,6 +509,29 @@ cursorName :: C.Cursor s' -> Analysis s BU.ByteString
 cursorName c = C.getDisplayName c >>= CS.unsafeUnpackByteString >>= anonymize
   where anonymize s | B.null s  = return "<anonymous>"
                     | otherwise = return s
+
+isScopeCursorKind :: C.CursorKind -> Bool
+isScopeCursorKind C.Cursor_FunctionDecl = True
+isScopeCursorKind C.Cursor_CXXMethod    = True
+isScopeCursorKind C.Cursor_Constructor  = True
+isScopeCursorKind C.Cursor_Destructor   = True
+isScopeCursorKind C.Cursor_ClassDecl    = True
+isScopeCursorKind C.Cursor_StructDecl   = True
+isScopeCursorKind C.Cursor_EnumDecl     = True
+isScopeCursorKind C.Cursor_UnionDecl    = True
+isScopeCursorKind C.Cursor_Namespace    = True
+isScopeCursorKind _                     = False
+
+getSemanticScope :: C.Cursor s' -> BU.ByteString -> Analysis s BU.ByteString
+getSemanticScope c name
+  | C.isInvalid (C.getKind c) = return name
+  | isScopeCursorKind (C.getKind c) = do
+      semanticParent <- C.getSemanticParent c
+      scopeName <- cursorName c
+      getSemanticScope semanticParent $ scopeName <::> name
+  | otherwise = do
+      semanticParent <- C.getSemanticParent c
+      getSemanticScope semanticParent name
 
 logDiagnostics :: TranslationUnit s' -> Analysis s ()
 logDiagnostics tu = do
@@ -542,7 +593,10 @@ dumpSubtree cursor = do
 
       -- Special stuff for CallExpr
       when (cKind == C.Cursor_CallExpr) $ do
-        baseExpr <- C.getBaseExpression c
+        mayBase <- findCallBase c
+        baseExpr <- case mayBase of
+                      Just b  -> return b
+                      Nothing -> C.nullCursor
         baseName <- C.getDisplayName baseExpr >>= CS.unpack
         let baseExprKind = C.getKind baseExpr
         baseType <- C.getType baseExpr
