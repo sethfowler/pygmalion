@@ -848,21 +848,25 @@ getReferencedSQL = T.concat
 
 
 narrowReferenced :: [SourceReferenced] -> IO (Maybe SourceReferenced)
-narrowReferenced = return . filterNarrowest . filterCall . filterExpansion
+narrowReferenced = return . filterCall . filterExpansion
   where
     filterExpansion rs = let exps = filter ((== MacroExpansion) . sdKind) rs in
                          if null exps then rs else exps
+
     -- filterCall is a hack until #109 gets fixed.
-    filterCall rs      = case filterNarrowest rs of
-                           Nothing -> []
-                           Just n  -> if sdKind n /= DynamicCallExpr &&
-                                         any ((== DynamicCallExpr) . sdKind) rs
-                                      then filter (/= n) rs
-                                      else rs
+    filterCall rs =
+      case (filterNarrowest rs, take 1 . filter isDynamicCall $ rs) of
+        (Just n, [c])
+          | sdDeclHash n == sdDeclHash c -> Just c
+          | otherwise                    -> Just n
+        (mn, _) -> mn
+
     filterNarrowest [] = Nothing
     filterNarrowest rs = Just $ minimumBy (comparing $ rangeSize . sdRange) rs
 
     rangeSize (SourceRange _ l c el ec) = (el - l, ec - c)
+
+    isDynamicCall = (== DynamicCallExpr) . sdKind
 
 getReferences :: DBHandle -> SourceLocation -> IO [SourceReference]
 getReferences h sl = do
