@@ -584,8 +584,10 @@ getDef h sl = go =<< getReferenced h sl
       mayDef <- execSingleRowQuery h getDefStmt (Only . diUSR . sdDef $ sr)
       case (mayDef, sdKind sr) of
         (Nothing, _) -> return []
-        (Just def, DynamicCallExpr) -> do os <- getTransitiveOverriders def
-                                          return (def : os)
+        (Just def, DynamicCallExpr) ->
+          do os <- getTransitiveOverriders def
+             os' <- filterM (inheritsFrom (sdViaHash sr) . diContext) os
+             return (def : os')
         (Just def, _) -> return [def]
 
     getTransitiveOverriders :: DefInfo -> IO [DefInfo]
@@ -594,6 +596,27 @@ getDef h sl = go =<< getReferenced h sl
       os <- (getOverriders' h (diUSR di)) :: IO [DefInfo]
       os' <- (mapM getTransitiveOverriders os) :: IO [[DefInfo]]
       return $ os ++ (concat os')
+
+    inheritsFrom :: USRHash -> USRHash -> IO Bool
+    inheritsFrom via oHash = do
+      -- In C++, a superclass pointer 'S* Sp' can point to a subclass
+      -- instance, but a subclass pointer cannot point to a superclass
+      -- instance. That means that 'Sp->foo()' can only invoke
+      -- the implementation of 'foo' on the class pointed to or some
+      -- subclass of it. However, this is complicated by the fact that
+      -- the class 'S' may not implement 'foo' - it may not override
+      -- its superclass's implementation! That means to get the true
+      -- set of possible methods, we must filter the subclass
+      -- 'foo' implementations to make sure the class they're defined
+      -- on inherits from 'S'.
+      supers <- getOverrided' h oHash
+      --putStrLn $ "Looking for " ++ show via ++ ": " ++ show oHash
+      --        ++ " inherits from " ++ show supers
+      case map diUSR supers of
+        []         -> return False
+        supHashes  -> if via `elem` supHashes
+                        then return True
+                        else or <$> mapM (inheritsFrom via) supHashes
 
 getDefSQL :: T.Text
 getDefSQL = T.concat

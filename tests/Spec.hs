@@ -609,14 +609,26 @@ runTests = hspec $ around withPygd $
       test "  ABD_instance.ABD::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
       line ""
       line "  ABD* ABD_ptr;"
-      test "  ABD_ptr->@A_pure_method();" [Fails "#12 - Wrongly includes ABC"]
-      test "  ABD_ptr->@AB_method(0);" [Fails "#12 - Wrongly includes ABC"]
+      test "  ABD_ptr->@A_pure_method();"
+           [Defs ["AB::A_pure_method() [CXXMethod]",
+                  "ABDE::A_pure_method() [CXXMethod]",
+                  "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  ABD_ptr->@AB_method(0);"
+           [Defs ["AB::AB_method(int) [CXXMethod]",
+                  "ABDE::AB_method(int) [CXXMethod]",
+                  "ABDEF::AB_method(int) [CXXMethod]"]]
       test "  ABD_ptr->AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
       test "  ABD_ptr->ABD::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
       line ""
       line "  ABD& ABD_ref = ABD_instance;"
-      test "  ABD_ref.@A_pure_method();" [Fails "#12 - Wrongly includes ABC"]
-      test "  ABD_ref.@AB_method(0);" [Fails "#12 - Wrongly includes ABC"]
+      test "  ABD_ref.@A_pure_method();"
+           [Defs ["AB::A_pure_method() [CXXMethod]",
+                  "ABDE::A_pure_method() [CXXMethod]",
+                  "ABDEF::A_pure_method() [CXXMethod]"]]
+      test "  ABD_ref.@AB_method(0);"
+           [Defs ["AB::AB_method(int) [CXXMethod]",
+                  "ABDE::AB_method(int) [CXXMethod]",
+                  "ABDEF::AB_method(int) [CXXMethod]"]]
       test "  ABD_ref.AB::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
       test "  ABD_ref.ABD::@AB_method(0);" [Def "AB::AB_method(int) [CXXMethod]"]
       line ""

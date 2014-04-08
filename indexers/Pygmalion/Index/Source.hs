@@ -336,9 +336,10 @@ visitDefinitions loc scope cKind cursor = do
   semanticParent <- C.getSemanticParent cursor
   lexicalParent <- C.getLexicalParent cursor
 
-  !fqn <- if semanticParent /= lexicalParent
-            then getSemanticScope semanticParent name
-            else return $ csScopeName scope <::> name
+  (!fqn, !context) <-
+    if semanticParent /= lexicalParent
+      then (,) <$> getSemanticScope semanticParent name <*> getUSRHash semanticParent
+      else return (csScopeName scope <::> name, csScopeUSRHash scope)
 
   let !kind = toSourceKind cKind
       !def = DefUpdate fqn
@@ -347,7 +348,7 @@ visitDefinitions loc scope cKind cursor = do
                        (tlLine loc)
                        (tlCol loc)
                        kind
-                       (csScopeUSRHash scope)
+                       context
 
   sendUpdate (DBUpdateDef def)
 
