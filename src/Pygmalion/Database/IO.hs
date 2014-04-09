@@ -43,8 +43,9 @@ import Control.Applicative
 import Control.Exception (bracket, bracket_)
 import Control.Monad
 import qualified Data.ByteString as B
+import Data.Function (on)
 import Data.Hashable
-import Data.List (minimumBy)
+import Data.List (groupBy, sortBy)
 import Data.Ord (comparing)
 import Data.String
 import qualified Data.Text as T
@@ -885,8 +886,21 @@ narrowReferenced = return . filterCall . filterExpansion
         (mn, _) -> mn
 
     filterNarrowest [] = Nothing
-    filterNarrowest rs = Just $ minimumBy (comparing $ rangeSize . sdRange) rs
+    filterNarrowest rs = decideTies
+                       . head
+                       . groupBy ((==) `on` sdRangeSize)
+                       . sortBy (comparing sdRangeSize)
+                       $ rs
 
+    decideTies :: [SourceReferenced] -> Maybe SourceReferenced
+    decideTies []                   = Nothing
+    decideTies [r]                  = Just r
+    decideTies (r:rs)
+      | sdKind r == CallExpr        = Just r
+      | sdKind r == DynamicCallExpr = Just r
+      | otherwise                   = decideTies rs
+
+    sdRangeSize = rangeSize . sdRange
     rangeSize (SourceRange _ l c el ec) = (el - l, ec - c)
 
     isDynamicCall = (== DynamicCallExpr) . sdKind

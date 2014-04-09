@@ -81,7 +81,7 @@ runTests = hspec $ around withPygd $
       (f, 6, 30) `defShouldBe` "ns::ns_typedef [TypedefDecl]"
       (f, 6, 44) `defShouldBe` "global_typedef [TypedefDecl]"
       (f, 12, 26) `defShouldBe` "clazz::clazz_typedef [TypedefDecl]"
-      --(f, 12, 42) `defShouldBe` "templat<clazz::clazz_typedef>::templat_typedef [TypedefDecl]"
+      --(f, 12, 42) `defShouldBe` "templat<clazz::clazz_typedef>::templat_typedef [TypedefDecl]" -- libclang bug
       (f, 14, 3) `defShouldBe` "func_typedef [TypedefDecl]"
       (f, 15, 10) `defShouldBe` "main(int, char **)::local_typedef [TypedefDecl]"
 
@@ -117,14 +117,14 @@ runTests = hspec $ around withPygd $
     it "finds namespaces" $ let f = "namespaces.cpp" in do
       index f
       (f, 9, 9) `defShouldBe` "ns_b::ns_c [Namespace]"
-      --(f, 9, 15) `defShouldBe` "XXX" -- wrong def
+      --(f, 9, 15) `defShouldBe` "XXX" -- wrong def -- libclang bug
       (f, 12, 7) `defShouldBe` "ns_b [Namespace]"
-      --(f, 12, 13) `defShouldBe` "XXX" -- no def
+      --(f, 12, 13) `defShouldBe` "XXX" -- no def  -- libclang bug
       (f, 20, 18) `defShouldBe` "ns_b [Namespace]"
       (f, 24, 17) `defShouldBe` "ns_f [Namespace]"
       (f, 29, 9) `defShouldBe` "ns_b [Namespace]"
       (f, 29, 15) `defShouldBe` "ns_b::ns_c [Namespace]"
-      --(f, 29, 21) `defShouldBe` "XXX" -- wrong def
+      --(f, 29, 21) `defShouldBe` "XXX" -- wrong def  -- libclang bug
       (f, 32, 10) `defShouldBe` "ns_a [Namespace]"
       (f, 32, 16) `defShouldBe` "ns_a::var_a [VarDecl]"
       (f, 33, 10) `defShouldBe` "ns_b [Namespace]"
@@ -213,14 +213,14 @@ runTests = hspec $ around withPygd $
     it "finds classes" $ let f = "classes.cpp" in do
       index f
       (f, 51, 3) `defShouldBe` "global_class [ClassDecl]"
-      --(f, 51, 16) `defShouldBe` "XXX constructors don't work"
+      (f, 51, 16) `defShouldBe` "global_class::global_class() [Constructor]"
       (f, 52, 3) `defShouldBe` "global_class [ClassDecl]"
-      --(f, 52, 16) `defShouldBe` "XXX constructors don't work"
+      (f, 52, 16) `defShouldBe` "global_class::global_class(int) [Constructor]"
       (f, 53, 3) `defShouldBe` "main(int, char **)::local_class [ClassDecl]"
-      --(f, 53, 15) `defShouldBe` "XXX constructors don't work"
+      (f, 53, 15) `defShouldBe` "main(int, char **)::local_class_instance [VarDecl]"
       (f, 54, 3) `defShouldBe` "global_class [ClassDecl]"
       (f, 54, 17) `defShouldBe` "global_class::nested_class [ClassDecl]"
-      --(f, 54, 30) `defShouldBe` "XXX constructors don't work"
+      (f, 54, 30) `defShouldBe` "main(int, char **)::nested_instance [VarDecl]"
       (f, 55, 17) `defShouldBe` "global_class::nested_union [UnionDecl]"
       (f, 56, 17) `defShouldBe` "global_class::nested_enum [EnumDecl]"
       (f, 58, 13) `defShouldBe` "global_class [ClassDecl]"
