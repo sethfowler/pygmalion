@@ -7,6 +7,7 @@ module Pygmalion.Index.Stream
 , mkIndexStream
 , shutdownIndexStream
 , getFileMetadata
+, getCommandInfoMetadata
 , addSourceFileMetadata
 , updateSourceFileMetadata
 , addInclusionMetadata
@@ -59,6 +60,12 @@ getFileMetadata is sf = do
   where
     sfHash = hash sf
     
+getCommandInfoMetadata :: IndexStream -> SourceFile -> STM (Maybe CommandInfo)
+getCommandInfoMetadata is sf = do
+    curMetadata <- readTMVar (isMetadata is)
+    return $ getCommandInfoForFile curMetadata sfHash
+  where
+    sfHash = hash sf
 
 addSourceFileMetadata :: IndexStream -> CommandInfo -> Time -> STM ()
 addSourceFileMetadata is ci mt = do

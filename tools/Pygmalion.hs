@@ -4,7 +4,7 @@ import Control.Exception (catch, SomeException)
 import Control.Monad
 import Control.Monad.Trans (liftIO)
 import qualified Data.ByteString.UTF8 as B
-import Data.List (intercalate, isPrefixOf, sortBy)
+import Data.List (isPrefixOf, sortBy)
 import Data.Maybe
 import Safe (readMay)
 import System.Directory
@@ -114,7 +114,7 @@ parseArgs c wd ["hierarchy", f, line, col] = printHierarchy c (asSourceFile wd f
 parseArgs _ _ _           = usage
 
 asSourceFile :: FilePath -> FilePath -> SourceFile
-asSourceFile wd p = mkSourceFile $ maybe p id (absNormPath wd p)
+asSourceFile wd p = mkSourceFile $ fromMaybe p (absNormPath wd p)
 
 startServer :: IO ()
 startServer = void $ waitForProcess =<< runCommand "pygd"
@@ -141,7 +141,7 @@ makeCommand cf args = do
         args' = if null args then [] else tail args
         
     -- Make sure pygd is running.
-    (withRPC cf $ runRPC rpcPing) `catch` handleRPCFailure
+    withRPC cf (runRPC rpcPing) `catch` handleRPCFailure
 
     -- Observe the build process.
     code <- observeMake cf cmd args'
@@ -154,7 +154,7 @@ makeCommand cf args = do
                                  ++ "Build information will not be recorded."
 
 waitForServer :: Config -> IO ()
-waitForServer cf = withRPC cf $ runRPC (rpcWait)
+waitForServer cf = withRPC cf $ runRPC rpcWait
 
 -- FIXME: Reimplement with RPC.
 printCDB :: Config -> IO ()
@@ -166,7 +166,7 @@ printCDB = undefined
 printFlags :: Config -> SourceFile -> IO ()
 printFlags cf f = getCommandInfoOr bail f cf >>= putFlags
   where
-    putFlags (ciArgs -> args) = putStrLn . intercalate " " . map B.toString $ args
+    putFlags (ciArgs -> args) = putStrLn . unwords . map B.toString $ args
 
 printDir :: Config -> SourceFile -> IO ()
 printDir cf f = getCommandInfoOr bail f cf >>= putDir
@@ -183,16 +183,16 @@ printInclusions cf file = do
     is <- withRPC cf $ runRPC (rpcGetInclusions file)
     mapM_ putInclusion (sortBy (locationOrder cf) is)
   where
-    putInclusion sf = putStrLn $ (unSourceFile sf) ++ ":1:1: Inclusion of "
-                                                   ++ (unSourceFile file)
+    putInclusion sf = putStrLn $ unSourceFile sf ++ ":1:1: Inclusion of "
+                                                 ++ unSourceFile file
 
 printIncluders :: Config -> SourceFile -> IO ()
 printIncluders cf file = do
     is <- withRPC cf $ runRPC (rpcGetIncluders file)
     mapM_ putIncluder (sortBy (locationOrder cf) is)
   where 
-    putIncluder sf = putStrLn $ (unSourceFile sf) ++ ":1:1: Includer of "
-                                                  ++ (unSourceFile file)
+    putIncluder sf = putStrLn $ unSourceFile sf ++ ":1:1: Includer of "
+                                                ++ unSourceFile file
 
 locationOrder :: Config -> SourceFile -> SourceFile -> Ordering
 locationOrder cf a b
@@ -201,7 +201,7 @@ locationOrder cf a b
     | inProject b                = GT
     | otherwise                  = compare a b
   where
-    inProject f = (projectDir cf) `isPrefixOf` (unSourceFile f)
+    inProject f = projectDir cf `isPrefixOf` unSourceFile f
 
 printInclusionHierarchy :: Config -> SourceFile -> IO ()
 printInclusionHierarchy cf file = do
@@ -214,57 +214,57 @@ printDef :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printDef = queryCmd "definition" rpcGetDefinition putDef
   where 
     putDef (DefInfo n _ (SourceLocation idF idLine idCol) k _) =
-      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Definition: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
+      putStrLn $ unSourceFile idF ++ ":" ++ show idLine ++ ":" ++ show idCol ++
+                 ": Definition: " ++ B.toString n ++ " [" ++ show k ++ "]"
 
 printDecl :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printDecl = queryCmd "declaration" rpcGetDeclReferenced putDecl
   where 
     putDecl (DefInfo n _ (SourceLocation idF idLine idCol) k _) =
-      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Declaration: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
+      putStrLn $ unSourceFile idF ++ ":" ++ show idLine ++ ":" ++ show idCol ++
+                 ": Declaration: " ++ B.toString n ++ " [" ++ show k ++ "]"
 
 printCallers :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printCallers = queryCmd "caller" rpcGetCallers putCaller
   where 
     putCaller (Invocation (DefInfo n _ _ _ _) (SourceLocation idF idLine idCol)) =
-      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Caller: " ++ (B.toString n)
+      putStrLn $ unSourceFile idF ++ ":" ++ show idLine ++ ":" ++ show idCol ++
+                 ": Caller: " ++ B.toString n
 
 printCallees :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printCallees = queryCmd "callee" rpcGetCallees putCallee
   where 
     putCallee (DefInfo n _ (SourceLocation idF idLine idCol) k _) =
-      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Callee: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
+      putStrLn $ unSourceFile idF ++ ":" ++ show idLine ++ ":" ++ show idCol ++
+                 ": Callee: " ++ B.toString n ++ " [" ++ show k ++ "]"
 
 printBases :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printBases = queryCmd "base" rpcGetBases putBase
   where 
     putBase (DefInfo n _ (SourceLocation idF idLine idCol) k _) =
-      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Base: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
+      putStrLn $ unSourceFile idF ++ ":" ++ show idLine ++ ":" ++ show idCol ++
+                 ": Base: " ++ B.toString n ++ " [" ++ show k ++ "]"
 
 printOverrides :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printOverrides = queryCmd "override" rpcGetOverrides putOverride
   where 
     putOverride (DefInfo n _ (SourceLocation idF idLine idCol) k _) =
-      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Override: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
+      putStrLn $ unSourceFile idF ++ ":" ++ show idLine ++ ":" ++ show idCol ++
+                 ": Override: " ++ B.toString n ++ " [" ++ show k ++ "]"
 
 printMembers :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printMembers = queryCmd "member" rpcGetMembers putMember
   where 
     putMember (DefInfo n _ (SourceLocation idF idLine idCol) k _) =
-      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Member: " ++ (B.toString n) ++ " [" ++ (show k) ++ "]"
+      putStrLn $ unSourceFile idF ++ ":" ++ show idLine ++ ":" ++ show idCol ++
+                 ": Member: " ++ B.toString n ++ " [" ++ show k ++ "]"
 
 printRefs :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printRefs = queryCmd "reference" rpcGetRefs putRef
   where 
     putRef (SourceReference (SourceLocation idF idLine idCol) k ctx) =
-      putStrLn $ (unSourceFile idF) ++ ":" ++ (show idLine) ++ ":" ++ (show idCol) ++
-                 ": Reference: " ++ (B.toString ctx) ++ " [" ++ (show k) ++ "]"
+      putStrLn $ unSourceFile idF ++ ":" ++ show idLine ++ ":" ++ show idCol ++
+                 ": Reference: " ++ B.toString ctx ++ " [" ++ show k ++ "]"
 
 printHierarchy :: Config -> SourceFile -> Maybe Int -> Maybe Int -> IO ()
 printHierarchy cf file (Just line) (Just col) = do
@@ -288,13 +288,13 @@ errMsg item f line col = errPrefix ++ "No " ++ item ++ " available for an identi
                                    ++ "location. Make sure the file compiles with no errors "
                                    ++ "and the index is up-to-date."
   where
-    errPrefix = (unSourceFile f) ++ ":" ++ (show line) ++ ":" ++ (show col) ++ ": "
+    errPrefix = unSourceFile f ++ ":" ++ show line ++ ":" ++ show col ++ ": "
 
 bail :: IO ()
 bail = exitWith (ExitFailure (-1))
 
 bail' :: ExitCode -> IO ()
-bail' code = exitWith code
+bail' = exitWith
 
 bailWith :: String -> IO ()
 bailWith s = putStrLn s >> bail

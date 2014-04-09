@@ -29,7 +29,6 @@ import Pygmalion.Index.Manager
 import Pygmalion.Index.Request
 import Pygmalion.Index.Stream
 import Pygmalion.Log
-import Pygmalion.Metadata
 import Pygmalion.RPC.Request
 
 runRPCServer :: Config -> IndexStream -> DBUpdateChan -> DBQueryChan -> IdleChan -> IO ()
@@ -146,14 +145,15 @@ sendQuery !req = do
   result <- callLenChan (rsDBQueryChan ctx) req
   return . Just $! encode (RPCOK result)
 
+-- TODO: This code doesn't really belong in this file.
 doGetCommandInfo :: SourceFile -> RPCServer (Maybe ByteString)
 doGetCommandInfo !sf = do
   logDebug $ "Looking up command info for " ++ show sf
   ctx <- ask
-  mayMetadata <- lift $ atomically $ getFileMetadata (rsIndexStream ctx) sf
-  case mayMetadata of
-    Just m  -> do logDebug $ "Lookup successful: " ++ show m
-                  return . Just $! encode (RPCOK $ fmCommandInfo m)
+  mayCI <- lift $ atomically $ getCommandInfoMetadata (rsIndexStream ctx) sf
+  case mayCI of
+    Just ci -> do logDebug $ "Lookup successful: " ++ show ci
+                  return . Just $! encode (RPCOK $ Just ci)
     Nothing -> do logDebug "Lookup failed"
                   return . Just $! encode (RPCOK (Nothing :: Maybe CommandInfo))
 
@@ -161,10 +161,10 @@ doGetSimilarCommandInfo :: SourceFile -> RPCServer (Maybe ByteString)
 doGetSimilarCommandInfo !sf = do
   logDebug $ "Looking up similar command info for " ++ show sf
   ctx <- ask
-  mayMetadata <- lift $ atomically $ getFileMetadata (rsIndexStream ctx) sf
-  case mayMetadata of
-    Just m  -> do logDebug $ "Lookup successful: " ++ show m
-                  return . Just $! encode (RPCOK $ fmCommandInfo m)
+  mayCI <- lift $ atomically $ getCommandInfoMetadata (rsIndexStream ctx) sf
+  case mayCI of
+    Just ci -> do logDebug $ "Lookup successful: " ++ show ci
+                  return . Just $! encode (RPCOK $ Just ci)
     Nothing -> do logDebug "Lookup failed; will try database..."
                   sendQuery $ DBGetSimilarCommandInfo sf
   

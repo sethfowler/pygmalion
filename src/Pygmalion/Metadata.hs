@@ -10,8 +10,10 @@ module Pygmalion.Metadata
 , hasBuildCommand
 , newSourceEntry
 , newInclusionEntry
+, getCommandInfoForFile
 ) where
 
+import Control.Applicative
 import Control.Monad
 import Control.Monad.Writer
 import Data.Hashable (hash, hashWithSalt)
@@ -63,6 +65,19 @@ newSourceEntry !ci !mt = FileMetadata (ciSourceFile ci) mt 0 Set.empty Set.empty
 newInclusionEntry :: SourceFile -> Time -> FileMetadata
 newInclusionEntry !sf !mt = FileMetadata sf mt 0 Set.empty Set.empty False Nothing
     
+getCommandInfoForFile :: FileMetadataMap -> SourceFileHash -> Maybe CommandInfo
+getCommandInfoForFile = go Set.empty
+  where
+    go visited files sfHash
+      | sfHash `Set.member` visited = Nothing
+      | otherwise =
+          case Map.lookup sfHash files of
+            Just m  -> fmCommandInfo m
+                   <|> getIncluderCI (sfHash `Set.insert` visited) files (fmIncluders m)
+            Nothing -> Nothing
+
+    getIncluderCI visited fs is = foldr (<|>) Nothing $ map (go visited fs) (Set.toList is)
+
 -- Reads file metadata from the database and creates the data structure
 -- we query at runtime. Note that it is not safe to run this at the
 -- same time as the database manager since it accesses the database directly.
