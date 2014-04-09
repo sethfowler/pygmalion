@@ -268,14 +268,18 @@ visitInclusions loc scope cKind cursor = do
 visitReferences :: TULocation -> CPPScope -> C.CursorKind -> C.Cursor s' -> Analysis s ()
 visitReferences loc scope cKind cursor = do
   -- Record references.
-  -- TODO: Ignore CallExpr children that start at the same
-  -- position as the CallExpr. This always refers to the same
-  -- thing as the CallExpr itself. We don't want to just ignore
-  -- the CallExpr though, because e.g. constructor calls are
-  -- represented as CallExprs with no children.
   -- TODO: Support LabelRefs.
-  defC <- C.getDefinition cursor
-  refC <- C.getReferenced cursor
+
+  -- We always generalize references to template instantiations or
+  -- specializations, because there isn't necessarily a good source
+  -- location to show otherwise. HOWEVER, there may be in the case of
+  -- explicit specializations, and it'd be good to distinguish those cases.
+  generalizedC <- C.getSpecializedTemplate cursor
+  (!defC, !refC) <-
+    if C.isNullCursor generalizedC
+      then (,) <$> C.getDefinition cursor <*> C.getReferenced cursor
+      else (,) <$> C.getDefinition generalizedC <*> C.getReferenced generalizedC
+  
   let !defIsNull = C.isInvalid (C.getKind defC)
       !refIsNull = C.isInvalid (C.getKind refC)
 
@@ -577,10 +581,28 @@ dumpSubtree cursor = do
       kind <- C.getCursorKindSpelling cKind >>= CS.unpack
 
       -- Get definition metadata.
-      defCursor <- C.getDefinition c
+      defCursor' <- C.getDefinition c
+      genDefCursor <- C.getSpecializedTemplate defCursor'
+      refCursor' <- C.getReferenced c
+      genRefCursor <- C.getSpecializedTemplate refCursor'
+
+      let (defCursor, didGenDef) =
+            if C.isNullCursor genDefCursor
+              then (defCursor', False)
+              else (genDefCursor, True)
+
+      let (refCursor, didGenRef) =
+            if C.isNullCursor genRefCursor
+              then (refCursor', False)
+              else (genRefCursor, True)
+
       defName <- C.getDisplayName defCursor >>= CS.unpack
       defUSR <- XRef.getUSR defCursor >>= CS.unpack
-      refCursor <- C.getReferenced c
+      defType <- C.getType defCursor
+      defTypeKind <- T.getKind defType
+      defTypeSpelling <- T.getTypeSpelling defType >>= CS.unpack
+      defKindSpelling <- T.getTypeKindSpelling defTypeKind >>= CS.unpack
+
       refName <- C.getDisplayName refCursor >>= CS.unpack
       refUSR <- XRef.getUSR refCursor >>= CS.unpack
       refLoc <- getCursorLocation' refCursor
@@ -620,7 +642,10 @@ dumpSubtree cursor = do
                           "<" ++ show ln ++ "," ++ show col ++ "> " ++
                           show startLn ++ "," ++ show startCol ++ " -> " ++
                           show endLn ++ "," ++ show endCol ++ " " ++
+                          (if didGenDef then "(G) " else "(NG) ") ++
                           "definition [" ++ defName ++ "/" ++ defUSR ++ "] " ++
+                          "{" ++ defTypeSpelling ++ "/" ++ defKindSpelling ++ "} " ++
+                          (if didGenRef then "(G) " else "(NG) ") ++
                           "reference [" ++ refName ++ "/" ++ refFile ++ "%" ++ refUSR ++ "]"
 
 underlyingType :: ClangBase m => C.Cursor s' -> ClangT s m (T.Type s)

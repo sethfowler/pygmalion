@@ -81,7 +81,7 @@ runTests = hspec $ around withPygd $
       (f, 6, 30) `defShouldBe` "ns::ns_typedef [TypedefDecl]"
       (f, 6, 44) `defShouldBe` "global_typedef [TypedefDecl]"
       (f, 12, 26) `defShouldBe` "clazz::clazz_typedef [TypedefDecl]"
-      --(f, 12, 42) `defShouldBe` "templat<clazz::clazz_typedef>::templat_typedef [TypedefDecl]"
+      (f, 12, 42) `defShouldBe` "templat<clazz::clazz_typedef>::templat_typedef [TypedefDecl]"
       (f, 14, 3) `defShouldBe` "func_typedef [TypedefDecl]"
       (f, 15, 10) `defShouldBe` "main(int, char **)::local_typedef [TypedefDecl]"
 
