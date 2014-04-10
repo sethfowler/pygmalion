@@ -600,6 +600,7 @@ dumpSubtree cursor = do
                       Nothing -> C.nullCursor
         baseName <- C.getDisplayName baseExpr >>= CS.unpack
         let baseExprKind = C.getKind baseExpr
+            baseCKindSpelling = show $ toSourceKind baseExprKind
         baseType <- C.getType baseExpr
         baseTypeKind <- T.getKind baseType 
         uType <- underlyingType baseExpr
@@ -609,7 +610,7 @@ dumpSubtree cursor = do
         baseKindSpelling <- T.getTypeKindSpelling baseTypeKind >>= CS.unpack
         uTypeSpelling <- T.getTypeSpelling uType >>= CS.unpack
         uKindSpelling <- T.getTypeKindSpelling uTypeKind >>= CS.unpack
-        liftIO $ putStrLn $ replicate i ' ' ++ "[==] CallExpr base: " ++ baseName
+        liftIO $ putStrLn $ replicate i ' ' ++ "[==] CallExpr base: " ++ baseName ++ "/" ++ baseCKindSpelling
                                             ++ " type: " ++ baseTypeSpelling ++ "/" ++ baseKindSpelling
                                             ++ " utype: " ++ uTypeSpelling ++ "/" ++ uKindSpelling
                                             ++ " virtual? " ++ show isVirtual
@@ -633,12 +634,12 @@ underlyingType c = do
     return t
     
 isVirtualCall :: ClangBase m => C.CursorKind -> C.Cursor s' -> ClangT s m Bool
-isVirtualCall k | k `elem` vcKinds =
-    doesRefKindRequireVirtualDispatch <=< baseRefKind
-  where
-    vcKinds = [C.Cursor_CallExpr,
-               C.Cursor_MemberRefExpr,
-               C.Cursor_DeclRefExpr]
+isVirtualCall C.Cursor_CallExpr = doesRefKindRequireVirtualDispatch
+                              <=< callBaseResultKind
+isVirtualCall C.Cursor_MemberRefExpr = doesRefKindRequireVirtualDispatch
+                                   <=< callBaseKind
+isVirtualCall C.Cursor_DeclRefExpr = doesRefKindRequireVirtualDispatch
+                                 <=< callBaseKind
 isVirtualCall _ = const $ return True
 
 doesRefKindRequireVirtualDispatch :: ClangBase m => T.TypeKind -> ClangT s m Bool
@@ -650,8 +651,17 @@ doesRefKindRequireVirtualDispatch = return . (`elem` vdKinds)
                T.Type_Unexposed,
                T.Type_Invalid]
 
-baseRefKind :: ClangBase m => C.Cursor s' -> ClangT s m T.TypeKind
-baseRefKind = T.getKind <=< C.getType <=< C.getReferenced
+callBaseKind :: ClangBase m => C.Cursor s' -> ClangT s m T.TypeKind
+callBaseKind = T.getKind <=< C.getType <=< C.getReferenced
+
+callBaseResultKind :: ClangBase m => C.Cursor s' -> ClangT s m T.TypeKind
+callBaseResultKind c = do
+  refT <- C.getType =<< C.getReferenced c
+  refTKind <- T.getKind refT
+  refT' <- if refTKind == T.Type_Pointer
+              then T.getPointeeType refT
+              else return refT
+  T.getKind =<< T.getResultType refT'
 
 withTranslationUnit :: ClangBase m => CommandInfo
                     -> (forall s. TranslationUnit s -> ClangT s m a) -> m a

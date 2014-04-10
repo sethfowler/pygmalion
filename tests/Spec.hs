@@ -484,48 +484,64 @@ runTests = hspec $ around withPygd $
       (f, 34, 22) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
       (f, 35, 26) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 36, 28) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      --(f, 38, 23) `defShouldBe` "XXX" -- Doesn't return all possibilities.
-      --(f, 39, 23) `defShouldBe` "XXX"
+      (f, 38, 23) `defsShouldBe`
+        ["ABDE::A_pure_method() [CXXMethod]",
+         "ABDEF::A_pure_method() [CXXMethod]"]
+      (f, 39, 23) `defsShouldBe`
+        ["ABDE::AB_method(int) [CXXMethod]",
+         "ABDEF::AB_method(int) [CXXMethod]"]
       (f, 40, 27) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 41, 29) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      --(f, 43, 22) `defShouldBe` "XXX"
-      --(f, 44, 22) `defShouldBe` "XXX"
+      (f, 43, 22) `defsShouldBe`
+        ["ABDE::A_pure_method() [CXXMethod]",
+         "ABDEF::A_pure_method() [CXXMethod]"]
+      (f, 44, 22) `defsShouldBe`
+        ["ABDE::AB_method(int) [CXXMethod]",
+         "ABDEF::AB_method(int) [CXXMethod]"]
       (f, 45, 26) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 46, 28) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
       -- Function pointers to functions returning values or pointers.
-      --(f, 50, 29) `defShouldBe` "XXX" -- Returning by value but we show multiple defs!
-      --(f, 51, 29) `defShouldBe` "XXX"
-      (f, 52, 33) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 53, 35) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      (f, 56, 30) `defsShouldBe`
+      (f, 50, 26) `defShouldBe` "ABDE::A_pure_method() [CXXMethod]"
+      (f, 51, 26) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      (f, 52, 30) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      (f, 53, 32) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      (f, 56, 27) `defsShouldBe`
         ["ABDE::A_pure_method() [CXXMethod]",
          "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 57, 30) `defsShouldBe`
+      (f, 57, 27) `defsShouldBe`
         ["ABDE::AB_method(int) [CXXMethod]",
          "ABDEF::AB_method(int) [CXXMethod]"]
-      (f, 58, 34) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 59, 36) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      (f, 62, 29) `defsShouldBe`
+      (f, 58, 31) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      (f, 59, 33) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      (f, 62, 26) `defsShouldBe`
         ["ABDE::A_pure_method() [CXXMethod]",
          "ABDEF::A_pure_method() [CXXMethod]"]
-      (f, 63, 29) `defsShouldBe`
+      (f, 63, 26) `defsShouldBe`
         ["ABDE::AB_method(int) [CXXMethod]",
          "ABDEF::AB_method(int) [CXXMethod]"]
-      (f, 64, 33) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
-      (f, 65, 35) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      (f, 64, 30) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
+      (f, 65, 32) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
       -- Function references to functions returning values or pointers.
       (f, 69, 22) `defShouldBe` "ABDE::A_pure_method() [CXXMethod]"
       (f, 70, 22) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
       (f, 71, 26) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 72, 28) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      --(f, 75, 23) `defShouldBe` "XXX" -- Should see multiple defs.
-      --(f, 76, 23) `defShouldBe` "XXX"
+      (f, 75, 23) `defsShouldBe`
+        ["ABDE::A_pure_method() [CXXMethod]",
+         "ABDEF::A_pure_method() [CXXMethod]"]
+      (f, 76, 23) `defsShouldBe`
+        ["ABDE::AB_method(int) [CXXMethod]",
+         "ABDEF::AB_method(int) [CXXMethod]"]
       (f, 77, 27) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 78, 29) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      --(f, 81, 22) `defShouldBe` "XXX" -- --Should see multiple defs.
-      --(f, 82, 22) `defShouldBe` "XXX"
+      (f, 81, 22) `defsShouldBe`
+        ["ABDE::A_pure_method() [CXXMethod]",
+         "ABDEF::A_pure_method() [CXXMethod]"]
+      (f, 82, 22) `defsShouldBe`
+        ["ABDE::AB_method(int) [CXXMethod]",
+         "ABDEF::AB_method(int) [CXXMethod]"]
       (f, 83, 26) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 84, 28) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
@@ -534,12 +550,20 @@ runTests = hspec $ around withPygd $
       (f, 89, 48) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
       (f, 90, 52) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 91, 54) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      --(f, 93, 49) `defShouldBe` "XXX"
-      --(f, 94, 49) `defShouldBe` "XXX"
+      (f, 93, 49) `defsShouldBe`
+        ["ABDE::A_pure_method() [CXXMethod]",
+         "ABDEF::A_pure_method() [CXXMethod]"]
+      (f, 94, 49) `defsShouldBe`
+        ["ABDE::AB_method(int) [CXXMethod]",
+         "ABDEF::AB_method(int) [CXXMethod]"]
       (f, 95, 53) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 96, 55) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      --(f, 98, 48) `defShouldBe` "XXX"
-      --(f, 99, 48) `defShouldBe` "XXX"
+      (f, 98, 48) `defsShouldBe`
+        ["ABDE::A_pure_method() [CXXMethod]",
+         "ABDEF::A_pure_method() [CXXMethod]"]
+      (f, 99, 48) `defsShouldBe`
+        ["ABDE::AB_method(int) [CXXMethod]",
+         "ABDEF::AB_method(int) [CXXMethod]"]
       (f, 100, 52) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 101, 54) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
@@ -548,12 +572,20 @@ runTests = hspec $ around withPygd $
       (f, 106, 44) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
       (f, 107, 48) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 108, 50) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      --(f, 110, 45) `defShouldBe` "XXX"
-      --(f, 111, 45) `defShouldBe` "XXX"
+      (f, 110, 45) `defsShouldBe`
+        ["ABDE::A_pure_method() [CXXMethod]",
+         "ABDEF::A_pure_method() [CXXMethod]"]
+      (f, 111, 45) `defsShouldBe`
+        ["ABDE::AB_method(int) [CXXMethod]",
+         "ABDEF::AB_method(int) [CXXMethod]"]
       (f, 112, 49) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 113, 51) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      --(f, 115, 44) `defShouldBe` "XXX"
-      --(f, 116, 44) `defShouldBe` "XXX"
+      (f, 115, 44) `defsShouldBe`
+        ["ABDE::A_pure_method() [CXXMethod]",
+         "ABDEF::A_pure_method() [CXXMethod]"]
+      (f, 116, 44) `defsShouldBe`
+        ["ABDE::AB_method(int) [CXXMethod]",
+         "ABDEF::AB_method(int) [CXXMethod]"]
       (f, 117, 48) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 118, 50) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
@@ -562,20 +594,32 @@ runTests = hspec $ around withPygd $
       (f, 123, 43) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
       (f, 124, 47) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 125, 49) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      --(f, 127, 44) `defShouldBe` "XXX"
-      --(f, 128, 44) `defShouldBe` "XXX"
+      (f, 127, 44) `defsShouldBe`
+        ["ABDE::A_pure_method() [CXXMethod]",
+         "ABDEF::A_pure_method() [CXXMethod]"]
+      (f, 128, 44) `defsShouldBe`
+        ["ABDE::AB_method(int) [CXXMethod]",
+         "ABDEF::AB_method(int) [CXXMethod]"]
       (f, 129, 48) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 130, 50) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
-      --(f, 132, 43) `defShouldBe` "XXX"
-      --(f, 133, 43) `defShouldBe` "XXX"
+      (f, 132, 43) `defsShouldBe`
+        ["ABDE::A_pure_method() [CXXMethod]",
+         "ABDEF::A_pure_method() [CXXMethod]"]
+      (f, 133, 43) `defsShouldBe`
+        ["ABDE::AB_method(int) [CXXMethod]",
+         "ABDEF::AB_method(int) [CXXMethod]"]
       (f, 134, 47) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 135, 49) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
 
       -- Invocations of method pointers returning values or pointers.
       (f, 138, 71) `defShouldBe` "ABDE_container::method_ABDE_by_val() [CXXMethod]"
-      --(f, 139, 29) `defShouldBe` "XXX" -- wrong def totally
-      --(f, 139, 55) `defShouldBe` --"ABDE::A_pure_method() [CXXMethod]" -- too many defs
-      --(f, 140, 55) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
+      (f, 139, 29) `defShouldBe` "main(int, char **)::method_ptr_ABDE_by_val [VarDecl]"
+      (f, 139, 55) `defsShouldBe`
+        ["ABDE::A_pure_method() [CXXMethod]",
+         "ABDEF::A_pure_method() [CXXMethod]"]
+      (f, 140, 55) `defsShouldBe`
+        ["ABDE::AB_method(int) [CXXMethod]",
+         "ABDEF::AB_method(int) [CXXMethod]"]
       (f, 141, 59) `defShouldBe` "AB::AB_method(int) [CXXMethod]"
       (f, 142, 61) `defShouldBe` "ABDE::AB_method(int) [CXXMethod]"
       (f, 145, 56) `defsShouldBe`
@@ -672,7 +716,7 @@ runTests = hspec $ around withPygd $
       (f, 23, 35) `defShouldBe` "clazz [ClassDecl]"
       (f, 23, 42) `defShouldBe` "clazz::static_method(int) [CXXMethod]"
       (f, 24, 3) `defShouldBe` "main(int, char **)::static_method_ptr [VarDecl]"
-      --(f, 26, 8) `defShouldBe` "clazz [ClassDecl]" -- no def
+      --(f, 26, 8) `defShouldBe` "clazz [ClassDecl]" -- libclang bug
       (f, 26, 36) `defShouldBe` "clazz [ClassDecl]"
       (f, 26, 43) `defShouldBe` "clazz::method(int) [CXXMethod]"
       (f, 27, 4) `defShouldBe` "main(int, char **)::clazz_instance [VarDecl]"
@@ -681,7 +725,7 @@ runTests = hspec $ around withPygd $
       (f, 28, 16) `defShouldBe` "main(int, char **)::method_ptr [VarDecl]"
       (f, 29, 4) `defShouldBe` "main(int, char **)::clazz_ref [VarDecl]"
       (f, 29, 15) `defShouldBe` "main(int, char **)::method_ptr [VarDecl]"
-      -- (f, 31, 8) `defShouldBe` "clazz [ClassDecl]" -- no def
+      -- (f, 31, 8) `defShouldBe` "clazz [ClassDecl]" -- libclang bug
       (f, 31, 44) `defShouldBe` "clazz [ClassDecl]"
       (f, 31, 51) `defShouldBe` "clazz::virtual_method(int) [CXXMethod]"
       (f, 32, 20) `defShouldBe` "main(int, char **)::virtual_method_ptr [VarDecl]"
@@ -691,8 +735,8 @@ runTests = hspec $ around withPygd $
       (f, 41, 49) `defShouldBe` "clazz::nested_clazz [ClassDecl]"
       (f, 41, 63) `defShouldBe` "clazz::nested_clazz::static_nested_method(int) [CXXMethod]"
       (f, 42, 3) `defShouldBe` "main(int, char **)::static_nested_method_ptr [VarDecl]"
-      -- (f, 44, 8) `defShouldBe` "clazz [ClassDecl]" -- no def
-      -- (f, 44, 15) `defShouldBe` "clazz::nested_clazz [ClassDecl]" -- no def
+      -- (f, 44, 8) `defShouldBe` "clazz [ClassDecl]" -- libclang bug
+      -- (f, 44, 15) `defShouldBe` "clazz::nested_clazz [ClassDecl]" -- libclang bug
       (f, 44, 57) `defShouldBe` "clazz [ClassDecl]"
       (f, 44, 67) `defShouldBe` "clazz::nested_clazz [ClassDecl]"
       (f, 44, 78) `defShouldBe` "clazz::nested_clazz::nested_method(int) [CXXMethod]"
