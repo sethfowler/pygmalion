@@ -43,6 +43,7 @@ import Data.Conduit
 import Data.Conduit.Cereal
 import Data.Conduit.Network.Unix
 import Data.Serialize
+import Data.Streaming.Network
 import Data.Typeable
 import qualified Data.Vector as V
 import Network.Socket
@@ -58,10 +59,10 @@ type RPC a = Reader.ReaderT RPCConnection IO a
 type RPCConnection = Socket
 
 openRPC :: Config -> IO RPCConnection
-openRPC config = getSocket (socketPath config)
+openRPC config = getSocketUnix (socketPath config)
 
 openRPCRaw :: FilePath -> IO RPCConnection
-openRPCRaw path = getSocket path
+openRPCRaw path = getSocketUnix path
 
 closeRPC :: RPCConnection -> IO ()
 closeRPC conn = do

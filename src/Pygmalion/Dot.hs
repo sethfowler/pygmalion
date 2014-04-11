@@ -17,9 +17,10 @@ module Pygmalion.Dot
 ) where
 
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as BC
 import qualified Data.Graph.Inductive as G
 import Data.GraphViz
-import Data.GraphViz.Attributes.Complete
+import Data.GraphViz.Attributes
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Encoding as E
 
@@ -67,24 +68,22 @@ addEdge e@(a, b, _) g = if b `elem` G.suc g a then g
 nodeElem :: Int -> Graph -> Bool
 nodeElem = G.gelem
 
-bsToText :: B.ByteString -> TL.Text
-bsToText = TL.fromStrict . E.decodeUtf8
+bsToText :: B.ByteString -> String
+bsToText = BC.unpack
 
 dotAttribsForNode :: Node -> Attributes
 dotAttribsForNode (_, NodeLabel {..}) = highlight nodeHighlight $ label nodeName nodeItems
   where
-    label n is = [toLabel $ FieldLabel (bsToText n) : map label' is]
-    label' is  = FieldLabel $ TL.concat $ map ((`TL.append` "\\l") . bsToText) is
+    label n is = Label (StrLabel (bsToText n)) : map label' is
+    label' is  = Label (StrLabel $ concat $ map ((++ "\\l") . bsToText) is)
 
     highlight True as  = PenWidth 4.0 : as
     highlight False as = as
 
 asDot :: Graph -> String
-asDot = TL.unpack . printDotGraph . graphToDot params
+asDot g = printDotGraph $ graphToDot True g params dotAttribsForNode (const [])
   where
-    params = nonClusteredParams { globalAttributes = [ GraphAttrs [RankDir FromLeft]
-                                                     , NodeAttrs [Shape MRecord]
-                                                     , EdgeAttrs [Color [toWC $ X11Color Gray]]]
-                                , isDirected       = True
-                                , fmtNode          = dotAttribsForNode
-                                }
+    params = [ GraphAttrs [RankDir FromLeft]
+             , NodeAttrs [Shape BoxShape]
+             , EdgeAttrs [Color [ColorName "gray"]]
+             ]

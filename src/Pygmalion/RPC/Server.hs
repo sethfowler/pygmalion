@@ -16,6 +16,7 @@ import Data.Conduit
 import Data.Conduit.Cereal
 import Data.Conduit.Network.Unix
 import Data.Serialize
+import Data.Streaming.Network
 import Data.Typeable
 import qualified Data.Vector as VV
 
@@ -42,10 +43,10 @@ runRPCServer cf iStream dbUpdateChan dbQueryChan idleChan = do
                                                          idleChan
                                                          conns)
   where
-    settings = serverSettings path :: ServerSettings IO
+    settings = serverSettings path :: ServerSettingsUnix
     path = socketPath cf
 
-serverApp :: RPCServerContext -> Application IO
+serverApp :: RPCServerContext -> AppDataUnix -> IO ()
 serverApp ctx ad = do
     open
     conduit `onException` closeException
