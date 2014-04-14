@@ -9,7 +9,6 @@ module Pygmalion.Database.Manager
 import Control.Applicative
 import Control.Concurrent.STM
 import Control.Monad.Reader
-import Data.Hashable (hash)
 import qualified Data.Vector as V
 import qualified System.Remote.Monitoring as EKG
 import qualified System.Remote.Gauge as Gauge
@@ -105,7 +104,7 @@ query item f x r = do
 getCommandInfoQuery :: SourceFile -> Response (Maybe CommandInfo, Maybe Time) -> DB ()
 getCommandInfoQuery f r = do
   h <- dbHandle <$> ask
-  let sfHash = hash f
+  let sfHash = stableHash f
   logDebug $ "Getting CommandInfo for " ++ show f
   info <- lift $ getCommandInfo h sfHash
   mtime <- lift $ getLastMTime h sfHash
@@ -114,7 +113,7 @@ getCommandInfoQuery f r = do
 getSimilarCommandInfoQuery :: SourceFile -> Response (Maybe CommandInfo) -> DB ()
 getSimilarCommandInfoQuery f v = do
   h <- dbHandle <$> ask
-  let sfHash = hash f
+  let sfHash = stableHash f
   logDebug $ "Getting similar CommandInfo for " ++ show f
   info <- lift $ getCommandInfo h sfHash
   case info of

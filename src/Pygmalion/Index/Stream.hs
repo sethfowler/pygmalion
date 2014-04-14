@@ -24,7 +24,6 @@ module Pygmalion.Index.Stream
 
 import Control.Applicative
 import Control.Concurrent.STM
-import Data.Hashable
 import Data.Maybe
 import qualified Data.IntMap.Strict as Map
 import qualified Data.IntSet as Set
@@ -58,21 +57,21 @@ getFileMetadata is sf = do
     curMetadata <- readTMVar (isMetadata is)
     return $ Map.lookup sfHash curMetadata
   where
-    sfHash = hash sf
+    sfHash = stableHash sf
     
 getCommandInfoMetadata :: IndexStream -> SourceFile -> STM (Maybe CommandInfo)
 getCommandInfoMetadata is sf = do
     curMetadata <- readTMVar (isMetadata is)
     return $ getCommandInfoForFile curMetadata sfHash
   where
-    sfHash = hash sf
+    sfHash = stableHash sf
 
 addSourceFileMetadata :: IndexStream -> CommandInfo -> Time -> STM ()
 addSourceFileMetadata is ci mt = do
     curMetadata <- takeTMVar (isMetadata is)
     putTMVar (isMetadata is) (Map.insert sfHash entry curMetadata)
   where
-    sfHash = hash (ciSourceFile ci)
+    sfHash = stableHash (ciSourceFile ci)
     entry = newSourceEntry ci mt
 
 updateSourceFileMetadata :: IndexStream -> SourceFile -> Time -> Maybe CommandInfo
@@ -83,7 +82,7 @@ updateSourceFileMetadata is sf !mt mayCI = do
     putTMVar (isMetadata is) newMetadata
     return $ sfHash `Map.lookup` newMetadata
   where
-    sfHash = hash sf
+    sfHash = stableHash sf
     updater files entry = let !vh = rehashVersion files mt entry
                           in case mayCI of
                                 Just !ci -> entry { fmMTime = mt
@@ -97,7 +96,7 @@ addInclusionMetadata is sf mt = do
     curMetadata <- takeTMVar (isMetadata is)
     putTMVar (isMetadata is) (Map.insert sfHash entry curMetadata)
   where
-    sfHash = hash sf
+    sfHash = stableHash sf
     entry = newInclusionEntry sf mt
 
 updateInclusionMetadata :: IndexStream -> SourceFile -> Time -> Bool -> STM (Maybe FileMetadata)
@@ -107,7 +106,7 @@ updateInclusionMetadata is sf !mt !isDirty = do
     putTMVar (isMetadata is) newMetadata
     return $ sfHash `Map.lookup` newMetadata
   where
-    sfHash = hash sf
+    sfHash = stableHash sf
     updater files entry = let !vh = rehashVersion files mt entry
                           in entry { fmMTime = mt
                                    , fmVersionHash = vh
@@ -120,7 +119,7 @@ addPendingIndex is req = do
     let newPending = Map.insertWith combineReqs sfHash req curPending
     putTMVar (isPending is) newPending
   where
-    sfHash = hash (irFile req)
+    sfHash = stableHash (irFile req)
 
 addPendingIncluderIndex :: IndexStream -> SourceFileHash -> STM (Maybe FileMetadata)
 addPendingIncluderIndex is sfHash = do
@@ -236,7 +235,7 @@ finishIndexingFile is sf = do
     let newIncs = sfHash `Map.delete` curIncs
     putTMVar (isCurrent is) $ Pair newCurrent newIncs
   where
-    sfHash = hash sf
+    sfHash = stableHash sf
 
 cleanedInclusions :: IndexStream -> SourceFileHash -> STM [FileMetadata]
 cleanedInclusions is sfHash = do

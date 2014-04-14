@@ -16,7 +16,6 @@ module Pygmalion.Metadata
 import Control.Applicative
 import Control.Monad
 import Control.Monad.Writer
-import Data.Hashable (hash, hashWithSalt)
 import Data.List (foldl')
 import Data.Maybe (mapMaybe)
 import qualified Data.IntMap.Strict as Map
@@ -90,7 +89,7 @@ readMetadata = withDB $ \h -> do
 addEntryFromDB :: DBHandle -> FileMetadataMap -> (SourceFile, Time, TimeHash)
                -> IO FileMetadataMap
 addEntryFromDB h files (sf, mtime, versionHash) = do
-    let sfHash = hash sf
+    let sfHash = stableHash sf
 
     -- Gather information about inclusions.
     includers <- getDirectIncluderHashes h sfHash
@@ -110,9 +109,9 @@ addEntryFromDB h files (sf, mtime, versionHash) = do
     return $ Map.insert sfHash newEntry files
 
 rehashVersion :: FileMetadataMap -> Time -> FileMetadata -> TimeHash
-rehashVersion !files !mtime !entry = foldl' hashWithSalt (hash mtime) (mtimes entry)
+rehashVersion !files !mtime !entry = foldl' stableHashWithSalt (stableHash mtime) (mtimes entry)
   where
-    mTimeHash = hash . fmMTime
+    mTimeHash = stableHash . fmMTime
     lookupFile = (`Map.lookup` files)
     mtimes = map mTimeHash . mapMaybe lookupFile . Set.toList . fmInclusions
 
@@ -123,7 +122,7 @@ checkMetadata files = execWriter $ go (Map.elems files)
   where
     go []           = return ()
     go (entry : es) = do
-      let sfHash = hash (fmFile entry)
+      let sfHash = stableHash (fmFile entry)
           
       -- Verify includer consistency.
       forM_ (Set.elems $ fmIncluders entry) $ \i ->
@@ -152,9 +151,9 @@ checkMetadata files = execWriter $ go (Map.elems files)
     -- information is useful for debugging.
     {-
     checkLoops !path !visited !entry =
-      if hash (fmSourceFile entry) `Set.member` visited 
+      if stableHash (fmSourceFile entry) `Set.member` visited 
         then inclusionLoopErr (entry : path) entry
-        else let newVisited = hash (fmSourceFile entry) `Set.insert` visited
+        else let newVisited = stableHash (fmSourceFile entry) `Set.insert` visited
              in forM_ (Set.elems $ fmIncluders entry) $ \i ->
                   maybe (return ()) (checkLoops (entry : path) newVisited)
                         (Map.lookup i files)

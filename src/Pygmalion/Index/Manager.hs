@@ -8,7 +8,6 @@ module Pygmalion.Index.Manager
 import Control.Applicative
 import Control.Concurrent.STM
 import Control.Monad.Reader
-import Data.Hashable
 import qualified Data.IntSet as Set
 import Data.List (foldl')
 import Data.Maybe (catMaybes)
@@ -48,7 +47,7 @@ finishIndexing :: SourceFile -> Indexer ()
 finishIndexing sf = do
   ctx <- ask
 
-  incs <- lift $ atomically $ cleanedInclusions (icIndexStream ctx) (hash sf)
+  incs <- lift $ atomically $ cleanedInclusions (icIndexStream ctx) (stableHash sf)
   forM_ incs $ \i -> do
     lift $ pushUpdate (icDBUpdateChan ctx) $
       V.singleton $ DBUpdateFile (fmFile i) (fmMTime i) (fmVersionHash i)
@@ -190,7 +189,7 @@ updateInclusions iStream dbUpdateChan sfHash is = do
     -- inclusions are already locked, another thread will take care of
     -- them, so we'll only worry about the remaining ones.
     rawCurrentIncs <- forM is $ \inc -> do
-      let incHash = hash $ icInclusion inc
+      let incHash = stableHash $ icInclusion inc
       res <- atomically $ acquireInclusion iStream sfHash incHash
       return $ (inc,) <$> res
 

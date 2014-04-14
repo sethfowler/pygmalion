@@ -26,7 +26,6 @@ import Control.Applicative
 import Control.Exception
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as BU
-import Data.Hashable
 import qualified Data.IntMap.Strict as Map
 import qualified Data.IntSet as Set
 import Data.Typeable
@@ -82,7 +81,7 @@ runSourceAnalyses ci conn = do
   let !initialState = AnalysisState conn Set.empty Map.empty Map.empty [] initialVec 0
   result <- try $ runAnalysis initialState $ withTranslationUnit ci $ \tu -> do
                     clangScope $ logDiagnostics tu
-                    clangScope $ inclusionsAnalysis (hash $ ciSourceFile ci) tu
+                    clangScope $ inclusionsAnalysis (stableHash $ ciSourceFile ci) tu
                     analysisScope $ defsAnalysis tu
   case result of
     Right _ -> return ()
@@ -117,7 +116,7 @@ inclusionsAnalysis sfHash tu = do
       filename <- case f of Just f' -> File.getName f' >>= CS.unsafeUnpackByteString
                             Nothing -> return ""
       --liftIO $ putStrLn $ "Got inclusion " ++ show inc ++ " included by " ++ show filename
-      return $ Inclusion inc (hash filename)
+      return $ Inclusion inc (stableHash filename)
 
 analysisScope :: (forall s. Analysis s ()) -> Analysis s' ()
 analysisScope f = clangScope $ do
@@ -372,12 +371,12 @@ visitClassOverrides thisClassC = do
 getUSRHash :: C.Cursor s' -> Analysis s Int
 getUSRHash cursor = do
   !ctx <- lift get
-  let !cursorHash = hash cursor
+  let !cursorHash = stableHash cursor
       hashCache = asUSRHashCache ctx
 
   case Map.lookup cursorHash hashCache of
     Just usrHash -> return usrHash
-    Nothing      -> do !usrHash <- hash <$> (XRef.getUSR cursor >>= CS.unsafeUnpackByteString)
+    Nothing      -> do !usrHash <- stableHash <$> (XRef.getUSR cursor >>= CS.unsafeUnpackByteString)
                        let !newCache = Map.insert cursorHash usrHash hashCache
                        lift $ put $! ctx { asUSRHashCache = newCache }
                        return usrHash
@@ -408,7 +407,7 @@ lookupFile file = do
     Just (shouldIndex, filenameHash) ->
       return (shouldIndex, filenameHash)
     Nothing -> do
-      !filenameHash <- hash <$> (CS.unsafeUnpackByteString =<< File.getName file)
+      !filenameHash <- stableHash <$> (CS.unsafeUnpackByteString =<< File.getName file)
       let !shouldIndex = filenameHash `Set.member` (asDirtyFiles ctx)
       let !newCache = Map.insert fileObjHash (shouldIndex, filenameHash) fileCache
       lift $ put $! ctx { asFileCache = newCache }
@@ -464,20 +463,20 @@ callBaseUSRHash c = do
   decl <- case mayBase of
             Just base -> C.getTypeDeclaration =<< underlyingType base
             Nothing   -> C.getTypeDeclaration =<< underlyingType c
-  hash <$> getUSRHash decl
+  stableHash <$> getUSRHash decl
 
 refHash :: Int -> TULocation -> Analysis s USRHash
 refHash usrHash loc = return refHash'
   where
-    refHash' = usrHash `hashWithSalt` tlFileHash loc
-                       `hashWithSalt` tlLine loc
-                       `hashWithSalt` tlCol loc
+    refHash' = usrHash `stableHashWithSalt` tlFileHash loc
+                       `stableHashWithSalt` tlLine loc
+                       `stableHashWithSalt` tlCol loc
                       
 updatedCPPScope :: C.Cursor s' -> C.Cursor s'' -> Analysis s CPPScope
 updatedCPPScope parent cursor = do
   ctx <- lift get
-  let !cursorHash = hash cursor
-  let !parentHash = hash parent
+  let !cursorHash = stableHash cursor
+  let !parentHash = stableHash parent
 
   -- Pop to parent scope.
   let !poppedStack = dropWhile ((parentHash /=) . csNodeHash) (asCPPScopeStack ctx)

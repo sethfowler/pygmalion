@@ -41,11 +41,14 @@ module Pygmalion.Core
 , socketFile
 , compileCommandsFile
 , tagsFile
+, stableHash
+, stableHashWithSalt
 ) where
 
 import Control.Applicative
 import qualified Data.ByteString.UTF8 as B
 import Data.Int
+import Data.Hashable
 import Data.Serialize
 import Database.SQLite.Simple (FromRow(..), field)
 import GHC.Generics
@@ -268,3 +271,16 @@ configFile          = pygmalionDir </> "pygmalion.yaml"
 socketFile          = pygmalionDir </> "socket"
 compileCommandsFile = "compile_commands.json"
 tagsFile            = "TAGS"
+
+-- | The value returned by hashable's 'hash' is different for every process
+-- because it uses a number derived from the process's start time as a salt.
+-- We need a stable hash, so we use 0 as a salt no matter what.
+stableHash :: Hashable a => a -> Int
+stableHash = hashWithSalt 0
+
+-- | Like 'stableHash', but for 'hashWithSalt'. This is identical to
+-- 'hashWithSalt', but having this means that we can avoid importing
+-- "Data.Hashable" at all and be sure that we don't accidentally use
+-- 'hash' without realizing it.
+stableHashWithSalt :: Hashable a => Int -> a -> Int
+stableHashWithSalt = hashWithSalt

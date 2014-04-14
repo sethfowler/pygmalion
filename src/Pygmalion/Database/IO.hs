@@ -44,7 +44,6 @@ import Control.Exception (bracket, bracket_)
 import Control.Monad
 import qualified Data.ByteString as B
 import Data.Function (on)
-import Data.Hashable
 import Data.List (groupBy, sortBy)
 import Data.Ord (comparing)
 import Data.String
@@ -299,7 +298,7 @@ defineFilesTable c = do
     indexSQL = "create index if not exists FilesNameIndex on Files(Name collate nocase)"
 
 updateFile :: DBHandle -> SourceFile -> Time -> TimeHash -> IO ()
-updateFile h sf mt vh = execStatement h updateFileStmt (sf, hash sf, mt, vh)
+updateFile h sf mt vh = execStatement h updateFileStmt (sf, stableHash sf, mt, vh)
 
 updateFileSQL :: T.Text
 updateFileSQL =
@@ -334,7 +333,7 @@ defineInclusionsTable c = do
 
 updateInclusion :: DBHandle -> Inclusion -> IO ()
 updateInclusion h (Inclusion inclusion includerHash) = do
-  let incHash = hash inclusion
+  let incHash = stableHash inclusion
   execStatement h updateInclusionStmt (incHash, includerHash)
 
 updateInclusionSQL :: T.Text
@@ -344,7 +343,7 @@ updateInclusionSQL = T.concat
 
 resetInclusions :: DBHandle -> SourceFile -> IO ()
 resetInclusions h sf = do
-  let sfHash = hash sf
+  let sfHash = stableHash sf
   execStatement h resetInclusionsStmt (Only sfHash)
 
 resetInclusionsSQL :: T.Text
@@ -355,7 +354,7 @@ getInclusions = getDirectInclusions  -- TODO FIXME
 
 getDirectInclusions :: DBHandle -> SourceFile -> IO [SourceFile]
 getDirectInclusions h sf = do
-  is <- execQuery h getDirectInclusionsStmt (Only $ hash sf)
+  is <- execQuery h getDirectInclusionsStmt (Only $ stableHash sf)
   return $ map unwrapSourceFile is
 
 getDirectInclusionsSQL :: T.Text
@@ -378,7 +377,7 @@ getIncluders = getDirectIncluders  -- TODO FIXME
 
 getDirectIncluders :: DBHandle -> SourceFile -> IO [SourceFile]
 getDirectIncluders h sf = do
-  is <- execQuery h getDirectIncludersStmt (Only $ hash sf)
+  is <- execQuery h getDirectIncludersStmt (Only $ stableHash sf)
   return $ map unwrapSourceFile is
 
 getDirectIncludersSQL :: T.Text
@@ -400,7 +399,7 @@ getInclusionHierarchy :: DBHandle -> SourceFile -> IO String
 getInclusionHierarchy h sf = asDot <$> generateHierarchy
   where
     generateHierarchy = do
-      let nid = hash sf
+      let nid = stableHash sf
       let node = mkHighlightedNode nid sf []
       let g = addUniqueNode node mkGraph
 
@@ -419,7 +418,7 @@ getInclusionHierarchy h sf = asDot <$> generateHierarchy
             g' ics
       
     expandHierarchy newEdgeF refsF nextLevelF superNodeId g sf' = do
-      let nid = hash sf'
+      let nid = stableHash sf'
 
       -- If this inclusion already exists in the graph, bail.
       if nid `nodeElem` g
@@ -485,13 +484,13 @@ updateSourceFileSQL = T.concat
 
 updateSourceFile :: DBHandle -> CommandInfo -> IO ()
 updateSourceFile h CommandInfo {..} = do
-  let sfHash = hash ciSourceFile
-  let wdHash = hash ciWorkingPath
+  let sfHash = stableHash ciSourceFile
+  let wdHash = stableHash ciWorkingPath
   execStatement h insertPathStmt (ciWorkingPath, wdHash)
-  let cmdHash = hash ciCommand
+  let cmdHash = stableHash ciCommand
   execStatement h insertCommandStmt (ciCommand, cmdHash)
   let argsJoined = B.intercalate "\n" ciArgs
-  let argsHash = hash argsJoined
+  let argsHash = stableHash argsJoined
   execStatement h insertArgsStmt (argsJoined, argsHash)
   execStatement h updateSourceFileStmt (sfHash, wdHash, cmdHash, argsHash,
                                         fromEnum ciLanguage)
@@ -571,7 +570,7 @@ updateDefSQL = T.concat
 
 resetDefs :: DBHandle -> SourceFile -> IO ()
 resetDefs h sf = do
-  let sfHash = hash sf
+  let sfHash = stableHash sf
   execStatement h resetDefsStmt (Only sfHash)
 
 resetDefsSQL :: T.Text
@@ -650,7 +649,7 @@ updateOverrideSQL = T.concat
 
 resetOverrides :: DBHandle -> SourceFile -> IO ()
 resetOverrides h sf = do
-  let sfHash = hash sf
+  let sfHash = stableHash sf
   execStatement h resetOverridesStmt (Only sfHash)
 
 resetOverridesSQL :: T.Text
@@ -798,7 +797,7 @@ updateReferenceSQL = T.concat
 
 resetReferences :: DBHandle -> SourceFile -> IO ()
 resetReferences h sf = do
-  let sfHash = hash sf
+  let sfHash = stableHash sf
   execStatement h resetReferencesStmt (Only sfHash)
 
 resetReferencesSQL :: T.Text
@@ -825,7 +824,7 @@ getDeclReferencedSQL = T.concat
 -- Search for declarations referenced by the first file which are
 -- located in the second file. Used by getInclusionHierarchy.
 getDeclsReferencedInFile :: DBHandle -> SourceFile -> SourceFile -> IO [DefInfo]
-getDeclsReferencedInFile h sf hf = execQuery h getDeclsReferencedInFileStmt (hash sf, hash hf)
+getDeclsReferencedInFile h sf hf = execQuery h getDeclsReferencedInFileStmt (stableHash sf, stableHash hf)
 
 getDeclsReferencedInFileSQL :: T.Text
 getDeclsReferencedInFileSQL = T.concat
@@ -840,7 +839,7 @@ getDeclsReferencedInFileSQL = T.concat
 
 getReferenced :: DBHandle -> SourceLocation -> IO (Maybe SourceReferenced)
 getReferenced h (SourceLocation sf l c) = do
-    rs <- execQuery h getReferencedStmt (hash sf, l, l, c, l, c)
+    rs <- execQuery h getReferencedStmt (stableHash sf, l, l, c, l, c)
 
     when (multipleItems rs) $ do
       logDebug "Multiple referenced entities:"
