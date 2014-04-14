@@ -400,8 +400,8 @@ getCursorLocation' cursor = do
 lookupFile :: File.File s' -> Analysis s (Bool, SourceFileHash)
 lookupFile file = do
   !ctx <- lift get
-  fileObjHash <- File.hashFile file  -- This is a hash of the file _object_, not the name.
-  let fileCache = asFileCache ctx
+  let fileObjHash = stableHash file  -- This is a hash of the file _object_, not the name.
+      fileCache = asFileCache ctx
 
   case Map.lookup fileObjHash fileCache of
     Just (shouldIndex, filenameHash) ->

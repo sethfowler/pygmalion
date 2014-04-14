@@ -19,8 +19,8 @@ module Pygmalion.Dot
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.Graph.Inductive as G
-import Data.GraphViz
-import Data.GraphViz.Attributes
+--import Data.GraphViz
+--import Data.GraphViz.Attributes
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Encoding as E
 
@@ -71,6 +71,7 @@ nodeElem = G.gelem
 bsToText :: B.ByteString -> String
 bsToText = BC.unpack
 
+{-
 dotAttribsForNode :: Node -> Attributes
 dotAttribsForNode (_, NodeLabel {..}) = highlight nodeHighlight $ label nodeName nodeItems
   where
@@ -87,3 +88,6 @@ asDot g = printDotGraph $ graphToDot True g params dotAttribsForNode (const [])
              , NodeAttrs [Shape BoxShape]
              , EdgeAttrs [Color [ColorName "gray"]]
              ]
+-}
+asDot :: Graph -> String
+asDot = undefined
