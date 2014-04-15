@@ -328,28 +328,35 @@ visitOverrides cursor = do
 
 visitDefinitions :: TULocation -> CPPScope -> C.CursorKind -> C.Cursor s' -> Analysis s ()
 visitDefinitions loc scope cKind cursor = do
-  -- Record definitions.
-  -- TODO: Support labels.
-  usrHash <- getUSRHash cursor
-  name <- cursorName cursor
-  semanticParent <- C.getSemanticParent cursor
-  lexicalParent <- C.getLexicalParent cursor
+  -- Make sure we actually have a definition. Why C.isDefinition isn't
+  -- reliable, I really don't know. Typical libclang.
+  isDef <- C.isDefinition cursor
+  let isDefLike = cKind == C.Cursor_MacroDefinition
+               || cKind == C.Cursor_VarDecl
 
-  (!fqn, !context) <-
-    if semanticParent /= lexicalParent
-      then (,) <$> getSemanticScope semanticParent name <*> getUSRHash semanticParent
-      else return (csScopeName scope <::> name, csScopeUSRHash scope)
+  when (isDef || isDefLike) $ do
+    -- Record definitions.
+    -- TODO: Support labels.
+    usrHash <- getUSRHash cursor
+    name <- cursorName cursor
+    semanticParent <- C.getSemanticParent cursor
+    lexicalParent <- C.getLexicalParent cursor
 
-  let !kind = toSourceKind cKind
-      !def = DefUpdate fqn
-                       usrHash
-                       (tlFileHash loc)
-                       (tlLine loc)
-                       (tlCol loc)
-                       kind
-                       context
+    (!fqn, !context) <-
+      if semanticParent /= lexicalParent
+        then (,) <$> getSemanticScope semanticParent name <*> getUSRHash semanticParent
+        else return (csScopeName scope <::> name, csScopeUSRHash scope)
 
-  sendUpdate (DBUpdateDef def)
+    let !kind = toSourceKind cKind
+        !def = DefUpdate fqn
+                         usrHash
+                         (tlFileHash loc)
+                         (tlLine loc)
+                         (tlCol loc)
+                         kind
+                         context
+
+    sendUpdate (DBUpdateDef def)
 
 visitClassOverrides :: C.Cursor s' -> Analysis s ()
 visitClassOverrides thisClassC = do

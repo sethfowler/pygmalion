@@ -7,6 +7,7 @@ module Pygmalion.Test
 , line
 , PygmalionTest (..)
 , runPygmalionTest
+, runPygmalionTestWithFiles
 , Test (..)
 , test
 , withPygd
@@ -15,7 +16,7 @@ module Pygmalion.Test
 import Control.Applicative ((<$>))
 import Control.Concurrent (threadDelay)
 import Control.Exception (bracket, finally)
-import Control.Monad (forM_, void)
+import Control.Monad (forM, forM_, mapM_, void)
 import Control.Monad.State (execState, get, modify, State)
 import Control.Monad.State.Class (MonadState)
 import Data.List (isInfixOf)
@@ -81,25 +82,32 @@ annotateTest l c (Defs ss) = DefTest l c ss
 annotateTest l c (Fails s) = FailingTest l c s
 
 runPygmalionTest :: FilePath -> PygmalionTest () -> Expectation
-runPygmalionTest path t = finally go cleanup
+runPygmalionTest p t = runPygmalionTestWithFiles [(p, t)]
+
+runPygmalionTestWithFiles :: [(FilePath, PygmalionTest ())] -> Expectation
+runPygmalionTestWithFiles tests = finally go cleanup
   where
-    cleanup = removeFile path  -- Remove the temporary file no matter what.
+    cleanup = mapM_ (removeFile . fst) tests  -- Remove the temporary files no matter what.
     go = do
-      let desc = execState (unPygmalionTest t) (TestDesc [] [])
+      descs <- forM tests $ \(path, test) -> do
+        let desc = execState (unPygmalionTest test) (TestDesc [] [])
 
-      -- Write test to a temporary file.
-      withFile path WriteMode $ \h ->
-        hPutStr h (unlines . tsLines $ desc)
+        -- Write test to a temporary file.
+        withFile path WriteMode $ \h ->
+          hPutStr h (unlines . tsLines $ desc)
 
-      -- Run the indexer.
-      index path
+        -- Run the indexer.
+        index path
+
+        return (path, desc)
 
       -- Run the tests.
-      forM_ (tsTests desc) $ \case
-        DefTest ln col ss    -> defsShouldBe' (path, ln, col) (tsLines desc !! (ln - 1)) ss
-        FailingTest ln col s -> pendingWith $ show (path, ln, col) ++ " \"" ++
-                                              (annotateLine (tsLines desc !! (ln - 1)) col) ++
-                                              "\": " ++ s
+      forM_ descs $ \(path, desc) ->
+        forM_ (tsTests desc) $ \case
+          DefTest ln col ss    -> defsShouldBe' (path, ln, col) (tsLines desc !! (ln - 1)) ss
+          FailingTest ln col s -> pendingWith $ show (path, ln, col) ++ " \"" ++
+                                                (annotateLine (tsLines desc !! (ln - 1)) col) ++
+                                                "\": " ++ s
         
              
 defShouldBe :: (FilePath, Line, Col) -> String -> Expectation

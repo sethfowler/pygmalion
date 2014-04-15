@@ -2,7 +2,6 @@ module VirtualMethodsWithNoOverride (testVirtualMethodsWithNoOverride) where
 
 import Pygmalion.Test
 
-
 testVirtualMethodsWithNoOverride = runPygmalionTest "virtual-no-override.cpp" $ do
   line "#include \"virtual.h\""
   line ""

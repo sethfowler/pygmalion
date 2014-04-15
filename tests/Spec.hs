@@ -5,6 +5,7 @@ import Test.Hspec
 import Pygmalion.Test (defShouldBe, defsShouldBe, index, line,
                        runPygmalionTest, Test(..), test, withPygd)
 
+import ForwardDeclarations
 import Macros
 import VirtualMethods
 import VirtualMethodsInStructs
@@ -245,7 +246,7 @@ runTests = hspec $ around withPygd $
 
     it "finds virtual methods" testVirtualMethods
 
-    it "finds virtual methods in struct members" $ testVirtualMethodsInStructs
+    it "finds virtual methods in struct members" testVirtualMethodsInStructs
 
     it "finds virtual methods in return values" $ let f = "virtual-in-return-value.cpp" in do
       index f
@@ -449,6 +450,7 @@ runTests = hspec $ around withPygd $
       (f, 47, 22) `defShouldBe` "main(int, char **)::nested_method_ptr [VarDecl]"
       
 
+    it "doesn't confuse forward declarations with definitions" testForwardDeclarations
         
     -- easy: labels
     -- medium: multiple inheritance, operator overloads, inherited fields and static members
