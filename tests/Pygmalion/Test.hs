@@ -13,7 +13,7 @@ module Pygmalion.Test
 , withPygd
 ) where
 
-import Control.Applicative ((<$>))
+import Control.Applicative (Applicative, (<$>))
 import Control.Concurrent (threadDelay)
 import Control.Exception (bracket, finally)
 import Control.Monad (forM, forM_, mapM_, void)
@@ -54,7 +54,7 @@ addDescTest t d = d { tsTests = (tsTests d) ++ [t] }
 
 newtype PygmalionTest a = PygmalionTest
   { unPygmalionTest :: State TestDesc a
-  } deriving (Functor, Monad, MonadState TestDesc)
+  } deriving (Applicative, Functor, Monad, MonadState TestDesc)
 
 line :: String -> PygmalionTest ()
 line s = modify (addDescLine s)

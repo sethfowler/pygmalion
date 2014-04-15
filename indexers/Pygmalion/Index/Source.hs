@@ -280,7 +280,10 @@ visitReferences loc scope cKind cursor = do
 
   unless (defIsNull && refIsNull) $ do
     -- Prefer definitions to references when available.
-    let referToC = if defIsNull then refC else defC
+    referToC <- if defIsNull
+                   then maybeLiftToTemplate refC
+                   else maybeLiftToTemplate defC
+
     referToUSRHash <- getUSRHash referToC
 
     -- Determine the end of the extent of this cursor.
@@ -313,7 +316,14 @@ visitReferences loc scope cKind cursor = do
                                      (csScopeUSRHash scope)
                                      referToUSRHash
     sendUpdate (DBUpdateRef reference)
-    
+
+maybeLiftToTemplate :: C.Cursor s -> Analysis s (C.Cursor s)
+maybeLiftToTemplate cursor = do
+  templateCursor <- C.getTemplateForSpecialization cursor
+  return $ if C.isInvalid (C.getKind templateCursor)
+             then cursor
+             else templateCursor
+                                     
 visitOverrides :: C.Cursor s' -> Analysis s ()
 visitOverrides cursor = do
   -- Record method overrides.

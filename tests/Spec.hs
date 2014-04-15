@@ -7,6 +7,7 @@ import Pygmalion.Test (defShouldBe, defsShouldBe, index, line,
 
 import ForwardDeclarations
 import Macros
+import TemplateFunctions
 import VirtualMethods
 import VirtualMethodsInStructs
 import VirtualMethodsWithNoOverride
@@ -449,6 +450,8 @@ runTests = hspec $ around withPygd $
       (f, 46, 23) `defShouldBe` "main(int, char **)::nested_method_ptr [VarDecl]"
       (f, 47, 22) `defShouldBe` "main(int, char **)::nested_method_ptr [VarDecl]"
       
+
+    it "finds template functions" testTemplateFunctions
 
     it "doesn't confuse forward declarations with definitions" testForwardDeclarations
         
