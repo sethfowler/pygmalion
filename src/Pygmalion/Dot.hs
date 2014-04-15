@@ -14,15 +14,19 @@ module Pygmalion.Dot
 , addEdge
 , nodeElem
 , asDot
+
+-- These shouldn't really be exported, but it eliminates warnings
+-- until this module can be rewritten.
+, NodeLabel(..)
 ) where
 
 import qualified Data.ByteString as B
-import qualified Data.ByteString.Char8 as BC
+--import qualified Data.ByteString.Char8 as BC
 import qualified Data.Graph.Inductive as G
 --import Data.GraphViz
 --import Data.GraphViz.Attributes
-import qualified Data.Text.Lazy as TL
-import qualified Data.Text.Encoding as E
+--import qualified Data.Text.Lazy as TL
+--import qualified Data.Text.Encoding as E
 
 data NodeLabel = NodeLabel
   { nodeName      :: B.ByteString
@@ -68,10 +72,10 @@ addEdge e@(a, b, _) g = if b `elem` G.suc g a then g
 nodeElem :: Int -> Graph -> Bool
 nodeElem = G.gelem
 
+{-
 bsToText :: B.ByteString -> String
 bsToText = BC.unpack
 
-{-
 dotAttribsForNode :: Node -> Attributes
 dotAttribsForNode (_, NodeLabel {..}) = highlight nodeHighlight $ label nodeName nodeItems
   where
