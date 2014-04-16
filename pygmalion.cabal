@@ -149,10 +149,12 @@ test-suite pygmalion-hspec
   main-is:        Spec.hs
   build-depends:  base >= 4,
                   directory,
+                  haskell-src-meta >=0.6 && <0.7,
                   hspec >= 1.7.2,
                   mtl,
                   process,
                   pygmalion,
+                  template-haskell,
                   tuple,
                   HUnit,
                   QuickCheck
