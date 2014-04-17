@@ -1,5 +1,6 @@
 default:
-	cabal build --disable-documentation -fbuild-pygindex-clang
+	cabal configure -fbuild-pygindex-clang
+	cabal build
 
 install:
 	cabal install --disable-documentation -fbuild-pygindex-clang
@@ -9,7 +10,7 @@ install-full:
 
 test:
 	cabal configure --enable-tests -fbuild-pygindex-clang
-	cabal build --disable-documentation
+	cabal build
 	cabal test --show-details=always
 
 clean:
