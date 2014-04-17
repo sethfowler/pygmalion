@@ -37,6 +37,7 @@ import qualified Safe
 import Data.Bool.Predicate
 import Pygmalion.Core
 import Pygmalion.Database.Request
+import Pygmalion.File
 import Pygmalion.Log
 import Pygmalion.RPC.Client
 
@@ -112,11 +113,13 @@ inclusionsAnalysis sfHash tu = do
 
     toInclusion (TV.Inclusion file loc _) = do
       inc <- CS.unsafeUnpackByteString =<< File.getName file
+      canonicalInc <- liftIO $ canonicalPath inc
       (f, _, _, _) <- Source.getSpellingLocation loc
       filename <- case f of Just f' -> File.getName f' >>= CS.unsafeUnpackByteString
                             Nothing -> return ""
-      --liftIO $ putStrLn $ "Got inclusion " ++ show inc ++ " included by " ++ show filename
-      return $ Inclusion inc (stableHash filename)
+      canonicalFile <- liftIO $ canonicalPath filename
+      -- liftIO $ putStrLn $ "Got inclusion " ++ show canonicalInc ++ " included by " ++ show canonicalFile
+      return $ Inclusion canonicalInc (stableHash canonicalFile)
 
 analysisScope :: (forall s. Analysis s ()) -> Analysis s' ()
 analysisScope f = clangScope $ do
@@ -317,7 +320,7 @@ visitReferences loc scope cKind cursor = do
                                      referToUSRHash
     sendUpdate (DBUpdateRef reference)
 
-maybeLiftToTemplate :: C.Cursor s -> Analysis s (C.Cursor s)
+maybeLiftToTemplate :: ClangBase m => C.Cursor s -> ClangT s m (C.Cursor s)
 maybeLiftToTemplate cursor = do
   templateCursor <- C.getTemplateForSpecialization cursor
   return $ if C.isInvalid (C.getKind templateCursor)
@@ -406,13 +409,14 @@ getCursorLocation cursor = do
                   return $ TULocation shouldIndex filenameHash ln col
     Nothing -> return $ TULocation False 0 ln col
 
-getCursorLocation' :: C.Cursor s' -> Clang s SourceLocation
+getCursorLocation' :: ClangBase m => C.Cursor s' -> ClangT s m SourceLocation
 getCursorLocation' cursor = do
   (mayF, ln, col, _) <- C.getSpellingLocation cursor
   file <- case mayF of
     Just f -> File.getName f >>= CS.unsafeUnpackByteString
     Nothing -> return ""
-  return $ SourceLocation file ln col
+  canonicalFile <- liftIO $ canonicalPath file
+  return $ SourceLocation canonicalFile ln col
   
 lookupFile :: File.File s' -> Analysis s (Bool, SourceFileHash)
 lookupFile file = do
@@ -424,9 +428,11 @@ lookupFile file = do
     Just (shouldIndex, filenameHash) ->
       return (shouldIndex, filenameHash)
     Nothing -> do
-      !filenameHash <- stableHash <$> (CS.unsafeUnpackByteString =<< File.getName file)
-      let !shouldIndex = filenameHash `Set.member` (asDirtyFiles ctx)
-      let !newCache = Map.insert fileObjHash (shouldIndex, filenameHash) fileCache
+      path <- CS.unsafeUnpackByteString =<< File.getName file
+      canonicalFile <- liftIO $ canonicalPath path
+      let !filenameHash = stableHash canonicalFile
+          !shouldIndex = filenameHash `Set.member` (asDirtyFiles ctx)
+          !newCache = Map.insert fileObjHash (shouldIndex, filenameHash) fileCache
       lift $ put $! ctx { asFileCache = newCache }
       return (shouldIndex, filenameHash)
   
@@ -593,10 +599,10 @@ dumpSubtree cursor = do
       kind <- C.getCursorKindSpelling cKind >>= CS.unpack
 
       -- Get definition metadata.
-      defCursor <- C.getDefinition c
+      defCursor <- maybeLiftToTemplate =<< C.getDefinition c
       defName <- C.getDisplayName defCursor >>= CS.unpack
       defUSR <- XRef.getUSR defCursor >>= CS.unpack
-      refCursor <- C.getReferenced c
+      refCursor <- maybeLiftToTemplate =<< C.getReferenced c
       refName <- C.getDisplayName refCursor >>= CS.unpack
       refUSR <- XRef.getUSR refCursor >>= CS.unpack
       refLoc <- getCursorLocation' refCursor

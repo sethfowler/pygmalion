@@ -11,7 +11,6 @@ import System.Directory
 import System.Environment
 import System.Exit
 import System.IO (withFile, IOMode(ReadWriteMode))
-import System.Path
 import System.Process
 
 import Pygmalion.Config
@@ -83,38 +82,35 @@ parseConfiglessArgs _          c = c
 parseArgs :: Config -> FilePath -> [String] -> IO ()
 parseArgs _ _  ["start-server"] = startServer
 parseArgs c _  ["stop-server"] = stopServer c
-parseArgs c wd ("index" : file : []) = indexFile c (asSourceFile wd file)
+parseArgs c wd ("index" : file : []) = asSourceFile wd file >>= indexFile c
 parseArgs c _  ("index" : cmd : args) = indexUserCommand c cmd args
 parseArgs c _  ("make" : args) = makeCommand c args
 parseArgs c _  ("wait" : []) = waitForServer c
 parseArgs c _  ["generate-compile-commands"] = printCDB c
-parseArgs c wd ["compile-flags", f] = printFlags c (asSourceFile wd f)
-parseArgs c wd ["working-directory", f] = printDir c (asSourceFile wd f)
-parseArgs c wd ["inclusions", f] = printInclusions c (asSourceFile wd f)
-parseArgs c wd ["includers", f] = printIncluders c (asSourceFile wd f)
-parseArgs c wd ["inclusion-hierarchy", f] = printInclusionHierarchy c (asSourceFile wd f)
-parseArgs c wd ["definition", f, line, col] = printDef c (asSourceFile wd f)
-                                                         (readMay line) (readMay col)
-parseArgs c wd ["declaration", f, line, col] = printDecl c (asSourceFile wd f)
-                                                           (readMay line) (readMay col)
-parseArgs c wd ["callers", f, line, col] = printCallers c (asSourceFile wd f)
-                                                          (readMay line) (readMay col)
-parseArgs c wd ["callees", f, line, col] = printCallees c (asSourceFile wd f)
-                                                          (readMay line) (readMay col)
-parseArgs c wd ["bases", f, line, col] = printBases c (asSourceFile wd f)
-                                                      (readMay line) (readMay col)
-parseArgs c wd ["overrides", f, line, col] = printOverrides c (asSourceFile wd f)
-                                                              (readMay line) (readMay col)
-parseArgs c wd ["members", f, line, col] = printMembers c (asSourceFile wd f)
-                                                          (readMay line) (readMay col)
-parseArgs c wd ["references", f, line, col] = printRefs c (asSourceFile wd f)
-                                                          (readMay line) (readMay col)
-parseArgs c wd ["hierarchy", f, line, col] = printHierarchy c (asSourceFile wd f)
-                                                              (readMay line) (readMay col)
+parseArgs c wd ["compile-flags", f] = asSourceFile wd f >>= printFlags c
+parseArgs c wd ["working-directory", f] = asSourceFile wd f >>= printDir c
+parseArgs c wd ["inclusions", f] = asSourceFile wd f >>= printInclusions c
+parseArgs c wd ["includers", f] = asSourceFile wd f >>= printIncluders c
+parseArgs c wd ["inclusion-hierarchy", f] = asSourceFile wd f >>= printInclusionHierarchy c
+parseArgs c wd ["definition", f, line, col] = do sf <- asSourceFile wd f
+                                                 printDef c sf (readMay line) (readMay col)
+parseArgs c wd ["declaration", f, line, col] = do sf <- asSourceFile wd f
+                                                  printDecl c sf (readMay line) (readMay col)
+parseArgs c wd ["callers", f, line, col] = do sf <- asSourceFile wd f
+                                              printCallers c sf (readMay line) (readMay col)
+parseArgs c wd ["callees", f, line, col] = do sf <- asSourceFile wd f
+                                              printCallees c sf (readMay line) (readMay col)
+parseArgs c wd ["bases", f, line, col] = do sf <- asSourceFile wd f
+                                            printBases c sf (readMay line) (readMay col)
+parseArgs c wd ["overrides", f, line, col] = do sf <- asSourceFile wd f
+                                                printOverrides c sf (readMay line) (readMay col)
+parseArgs c wd ["members", f, line, col] = do sf <- asSourceFile wd f
+                                              printMembers c sf (readMay line) (readMay col)
+parseArgs c wd ["references", f, line, col] = do sf <- asSourceFile wd f
+                                                 printRefs c sf (readMay line) (readMay col)
+parseArgs c wd ["hierarchy", f, line, col] = do sf <- asSourceFile wd f
+                                                printHierarchy c sf (readMay line) (readMay col)
 parseArgs _ _ _           = usage
-
-asSourceFile :: FilePath -> FilePath -> SourceFile
-asSourceFile wd p = mkSourceFile $ fromMaybe p (absNormPath wd p)
 
 startServer :: IO ()
 startServer = void $ waitForProcess =<< runCommand "pygd"

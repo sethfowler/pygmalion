@@ -1,14 +1,13 @@
-import Control.Applicative
 import Control.Exception
 import Control.Monad
 import Data.Maybe
 import System.Directory
 import System.Environment
-import System.Path
 import System.Posix.Process
 
 import Pygmalion.Config
 import Pygmalion.Core
+import Pygmalion.File
 import Pygmalion.Index.Source
 import Pygmalion.Log
 import Pygmalion.RPC.Client
@@ -23,9 +22,9 @@ main = do
   case result of
     Left e   -> do pid <- getProcessID
                    logError $ show pid ++ ": While indexing with arguments "
-                           ++ (show args)
+                           ++ show args
                            ++ " process threw exception "
-                           ++ (show (e :: SomeException))
+                           ++ show (e :: SomeException)
     Right () -> return ()
 
 parseArgs :: [String] -> IO ()
@@ -40,13 +39,10 @@ printAST :: FilePath -> IO ()
 printAST f = do
     cf <- getConfiguration
     wd <- getCurrentDirectory
-    let sf = asSourceFile wd f
+    sf <- asSourceFile wd f
     getCommandInfoOr (error err) sf cf >>= displayAST
   where err = "No compilation information for this file."
   
-asSourceFile :: FilePath -> FilePath -> SourceFile
-asSourceFile wd p = mkSourceFile $ maybe p id (absNormPath wd p)
-                    
 getCommandInfoOr :: IO () -> SourceFile -> Config -> IO CommandInfo
 getCommandInfoOr a f cf = do
   cmd <- withRPC cf $ runRPC (rpcGetSimilarCommandInfo f)

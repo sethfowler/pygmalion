@@ -38,6 +38,7 @@ library
                    mtl,
                    network,
                    network-conduit >= 1.0.2.1,
+                   posix-paths,
                    process,
                    safe,
                    sqlite-simple,
@@ -111,6 +112,7 @@ executable pygd
                ,  stm
                ,  system-filepath
                ,  time
+               ,  utf8-string
                ,  void
                ,  MissingH
   hs-source-dirs: tools

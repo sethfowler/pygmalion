@@ -5,6 +5,7 @@ import Control.Concurrent.Async
 import Control.Concurrent.STM
 import Control.Exception (Exception, fromException, toException)
 import Control.Monad
+import qualified Data.ByteString.UTF8 as B
 import Data.List
 import qualified Filesystem.Path.CurrentOS as FP
 import GHC.Conc
@@ -20,7 +21,6 @@ import Pygmalion.Index.Manager
 import Pygmalion.Index.Request
 import Pygmalion.Index.Stream
 import Pygmalion.Config
-import Pygmalion.Core
 import Pygmalion.Database.Manager
 import Pygmalion.Database.Request
 import Pygmalion.File
@@ -127,7 +127,7 @@ handleSource idxStream f = do
   let file = FP.encodeString f
   fileExists <- doesFileExist file
   when (isSource file && fileExists) $ do
-    let sf = mkSourceFile file
+    sf <- canonicalPath . B.fromString $ file
     mayMTime <- getMTime sf
     case mayMTime of
       Just mtime -> atomically $ addPendingIndex idxStream

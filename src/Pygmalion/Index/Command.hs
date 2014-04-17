@@ -8,21 +8,24 @@ import Control.Applicative
 import qualified Data.ByteString.UTF8 as B
 import Data.List
 import Data.Maybe
+import Data.Traversable
 import System.Path
 
 import Pygmalion.Core
+import Pygmalion.File
 import Pygmalion.Index.Extension
 
 getCommandInfo :: String -> [String] -> String -> IO (Maybe CommandInfo)
 getCommandInfo cmd args wd = do
     let sourceFile = findSourceFile args >>= absNormPath wd
+    realSF <- traverse (canonicalPath . B.fromString) sourceFile
     let finalArgs = map B.fromString . addStdlibArg . absArgs wd . filterArgs $ args
-    return $ flip fmap sourceFile $ \sf ->
-      CommandInfo (mkSourceFile sf)
+    return $ flip fmap realSF $ \sf ->
+      CommandInfo sf
                   (B.fromString wd)
                   (B.fromString cmd)
                   finalArgs
-                  (inferLang args sf)
+                  (inferLang args $ B.toString sf)
 
 inferLang :: [String] -> String -> Language
 inferLang as f = fromMaybe UnknownLanguage $ inferLangFromArgs as <|>
