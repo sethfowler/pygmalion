@@ -45,6 +45,7 @@ import Control.Monad
 import qualified Data.ByteString as B
 import Data.Function (on)
 import Data.List (groupBy, sortBy)
+import Data.Maybe (listToMaybe)
 import Data.Ord (comparing)
 import Data.String
 import qualified Data.Text as T
@@ -889,17 +890,18 @@ narrowReferenced = return . filterCall
                        $ rs
 
     decideTies :: [SourceReferenced] -> Maybe SourceReferenced
-    decideTies []                   = Nothing
-    decideTies [r]                  = Just r
-    decideTies (r:rs)
-      | sdKind r == CallExpr        = Just r
-      | sdKind r == DynamicCallExpr = Just r
-      | otherwise                   = decideTies rs
+    decideTies rs = listToMaybe (filter isRealCall rs)
+                <|> listToMaybe (filter isNotCall rs)
+                <|> listToMaybe rs
 
     sdRangeSize = rangeSize . sdRange
     rangeSize (SourceRange _ l c el ec) = (el - l, ec - c)
 
+    isRealCall r = isCall r && isNotConversion r
+    isNotCall = not . isCall
+    isCall = (`elem` [CallExpr, DynamicCallExpr]) . sdKind
     isDynamicCall = (== DynamicCallExpr) . sdKind
+    isNotConversion = not . (== ConversionFunction) . diDefKind . sdDef
 
 getReferences :: DBHandle -> SourceLocation -> IO [SourceReference]
 getReferences h sl = do

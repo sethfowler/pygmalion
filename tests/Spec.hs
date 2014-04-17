@@ -459,5 +459,8 @@ runTests = hspec $ around withPygd $
     -- medium: multiple inheritance, operator overloads, inherited fields and static members
     -- worst case scenario: templates
 
+    -- TODO: add a test that we avoid returning conversion operators
+    -- for get definition when possible.
+
     -- need to add tests for 'find references', 'bases', 'overrides', etc.
     -- remember to ensure that find references works with macro expansions!
