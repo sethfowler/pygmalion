@@ -14,6 +14,6 @@ testMacros = runPygmalionTest "macros.cpp" $ [pygTest|
       char local_var = 0;
 
       return @VAR                ~[Def "VAR [MacroDefinition]"]~
-           + @VARF(@local_var);  ~[Def "VARF [MacroDefinition]", Fails "#105"]~
+           + @VARF(@local_var);  ~[Def "VARF [MacroDefinition]", Def "main(int, char **)::local_var [VarDecl]"]~
     }
   |]

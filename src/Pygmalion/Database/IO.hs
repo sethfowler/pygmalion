@@ -871,11 +871,8 @@ getReferencedSQL = T.concat
 
 
 narrowReferenced :: [SourceReferenced] -> IO (Maybe SourceReferenced)
-narrowReferenced = return . filterCall . filterExpansion
+narrowReferenced = return . filterCall
   where
-    filterExpansion rs = let exps = filter ((== MacroExpansion) . sdKind) rs in
-                         if null exps then rs else exps
-
     -- filterCall is a hack until #109 gets fixed.
     filterCall rs =
       case (filterNarrowest rs, take 1 . filter isDynamicCall $ rs) of
