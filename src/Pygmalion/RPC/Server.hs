@@ -16,7 +16,6 @@ import Data.Conduit
 import Data.Conduit.Cereal
 import Data.Conduit.Network.Unix
 import Data.Serialize
-import Data.Streaming.Network
 import Data.Typeable
 import qualified Data.Vector as VV
 
