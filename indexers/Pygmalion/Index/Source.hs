@@ -13,7 +13,6 @@ module Pygmalion.Index.Source
 
 import qualified Clang (Inclusion(..))
 import Clang hiding (Inclusion(..), SourceLocation)
-import qualified Clang.CrossReference as XRef
 import qualified Clang.Cursor as C
 import qualified Clang.Diagnostic as Diag
 import qualified Clang.File as File
@@ -396,7 +395,7 @@ getUSRHash cursor = do
 
   case Map.lookup cursorHash hashCache of
     Just usrHash -> return usrHash
-    Nothing      -> do !usrHash <- stableHash <$> (XRef.getUSR cursor >>= CS.unsafeUnpackByteString)
+    Nothing      -> do !usrHash <- stableHash <$> (C.getUSR cursor >>= CS.unsafeUnpackByteString)
                        let !newCache = Map.insert cursorHash usrHash hashCache
                        lift $ put $! ctx { asUSRHashCache = newCache }
                        return usrHash
@@ -594,17 +593,17 @@ dumpSubtree cursor = do
 
       -- Get metadata.
       name <- C.getDisplayName c >>= CS.unpack
-      usr <- XRef.getUSR c >>= CS.unpack
+      usr <- C.getUSR c >>= CS.unpack
       let cKind = C.getKind c
       kind <- C.getCursorKindSpelling cKind >>= CS.unpack
 
       -- Get definition metadata.
       defCursor <- maybeLiftToTemplate =<< C.getDefinition c
       defName <- C.getDisplayName defCursor >>= CS.unpack
-      defUSR <- XRef.getUSR defCursor >>= CS.unpack
+      defUSR <- C.getUSR defCursor >>= CS.unpack
       refCursor <- maybeLiftToTemplate =<< C.getReferenced c
       refName <- C.getDisplayName refCursor >>= CS.unpack
-      refUSR <- XRef.getUSR refCursor >>= CS.unpack
+      refUSR <- C.getUSR refCursor >>= CS.unpack
       refLoc <- getCursorLocation' refCursor
       let refFile = BU.toString $ slFile refLoc
 
