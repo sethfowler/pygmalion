@@ -11,16 +11,16 @@ module Pygmalion.Index.Source
 , displayAST
 ) where
 
+import qualified Clang (Inclusion(..))
+import Clang hiding (Inclusion(..), SourceLocation)
 import qualified Clang.CrossReference as XRef
 import qualified Clang.Cursor as C
 import qualified Clang.Diagnostic as Diag
 import qualified Clang.File as File
-import Clang.Monad
 import Control.Monad.State.Strict
 import qualified Clang.Source as Source
 import qualified Clang.String as CS
 import Clang.TranslationUnit
-import qualified Clang.Traversal as TV
 import qualified Clang.Type as T
 import Control.Applicative
 import Control.Exception
@@ -98,7 +98,7 @@ displayAST ci = do
 inclusionsAnalysis :: SourceFileHash -> TranslationUnit s' -> Analysis s ()
 inclusionsAnalysis sfHash tu = do
     !ctx <- lift get
-    incs <- TV.getInclusions tu
+    incs <- getInclusions tu
     incs' <- mapM toInclusion $ DVS.toList incs
     dirtyIncs <- queryRPC $ rpcUpdateAndFindDirtyInclusions sfHash incs'
     -- We include the source file itself in the list of dirty files.
@@ -111,7 +111,7 @@ inclusionsAnalysis sfHash tu = do
 
   where
 
-    toInclusion (TV.Inclusion file loc _) = do
+    toInclusion (Clang.Inclusion file loc _) = do
       inc <- CS.unsafeUnpackByteString =<< File.getName file
       canonicalInc <- liftIO $ canonicalPath inc
       (f, _, _, _) <- Source.getSpellingLocation loc
@@ -147,10 +147,10 @@ sendUpdate up = do
 defsAnalysis :: TranslationUnit s' -> Analysis s ()
 defsAnalysis tu = do
   cursor <- getCursor tu
-  kids <- TV.getChildren cursor
+  kids <- getChildren cursor
   DVS.mapM_ (defsVisitor cursor) kids
 
-defsVisitor :: C.Cursor s' -> C.Cursor s'' -> Analysis s ()
+defsVisitor :: Cursor s' -> Cursor s'' -> Analysis s ()
 defsVisitor parent cursor = do
   loc <- getCursorLocation cursor
   -- TODO: What to do about inclusions that aren't normal inclusions?
@@ -161,74 +161,74 @@ defsVisitor parent cursor = do
     route loc scope cursor cKind
     
     -- Recurse (most of the time).
-    let recurse     = DVS.mapM_ (defsVisitor cursor) =<< TV.getChildren cursor
-        fastRecurse = DVS.mapM_ fastVisitor =<< TV.getParentedDescendants cursor
+    let recurse     = DVS.mapM_ (defsVisitor cursor) =<< getChildren cursor
+        fastRecurse = DVS.mapM_ fastVisitor =<< getParentedDescendants cursor
     case cKind of
-      C.Cursor_MacroDefinition  -> return ()
-      C.Cursor_Namespace        -> analysisScope recurse
-      _                         -> analysisScope fastRecurse
+      Cursor_MacroDefinition  -> return ()
+      Cursor_Namespace        -> analysisScope recurse
+      _                       -> analysisScope fastRecurse
 
-fastVisitor :: C.ParentedCursor s' -> Analysis s ()
-fastVisitor (C.ParentedCursor parent cursor) = do
+fastVisitor :: ParentedCursor s' -> Analysis s ()
+fastVisitor (ParentedCursor parent cursor) = do
   loc <- getCursorLocation cursor
   when (tlShouldIndex loc) $ do
     let !cKind = C.getKind cursor
     scope <- updatedCPPScope parent cursor
     route loc scope cursor cKind
 
-route :: TULocation -> CPPScope -> C.Cursor s' -> C.CursorKind -> Analysis s ()
-route loc s c k@C.Cursor_StructDecl                         = visitReferences loc s k c >> visitClassOverrides c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_UnionDecl                          = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_ClassDecl                          = visitReferences loc s k c >> visitClassOverrides c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_EnumDecl                           = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_FieldDecl                          = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_EnumConstantDecl                   = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_FunctionDecl                       = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_VarDecl                            = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_ParmDecl                           = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_ObjCInterfaceDecl                  = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_ObjCCategoryDecl                   = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_ObjCProtocolDecl                   = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_ObjCPropertyDecl                   = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_ObjCIvarDecl                       = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_ObjCInstanceMethodDecl             = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_ObjCClassMethodDecl                = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_ObjCImplementationDecl             = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_ObjCCategoryImplDecl               = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_TypedefDecl                        = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_CXXMethod                          = visitReferences loc s k c >> visitOverrides c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_Namespace                          = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_Constructor                        = visitReferences loc s k c >> visitOverrides c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_Destructor                         = visitReferences loc s k c >> visitOverrides c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_ConversionFunction                 = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_TemplateTypeParameter              = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_NonTypeTemplateParameter           = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_TemplateTemplateParameter          = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_FunctionTemplate                   = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_ClassTemplate                      = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_ClassTemplatePartialSpecialization = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_NamespaceAlias                     = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_UsingDirective                     = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_UsingDeclaration                   = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_TypeAliasDecl                      = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_ObjCSynthesizeDecl                 = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_ObjCDynamicDecl                    = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_ObjCSuperClassRef                  = visitReferences loc s k c
-route loc s c k@C.Cursor_ObjCProtocolRef                    = visitReferences loc s k c
-route loc s c k@C.Cursor_ObjCClassRef                       = visitReferences loc s k c
-route loc s c k@C.Cursor_TypeRef                            = visitReferences loc s k c
-route loc s c k@C.Cursor_TemplateRef                        = visitReferences loc s k c
-route loc s c k@C.Cursor_NamespaceRef                       = visitReferences loc s k c
-route loc s c k@C.Cursor_MemberRef                          = visitReferences loc s k c
-route loc s c k@C.Cursor_LabelRef                           = visitReferences loc s k c
-route loc s c k@C.Cursor_OverloadedDeclRef                  = visitReferences loc s k c
-route loc s c k@C.Cursor_DeclRefExpr                        = visitReferences loc s k c
-route loc s c k@C.Cursor_MemberRefExpr                      = visitReferences loc s k c
-route loc s c k@C.Cursor_CallExpr                           = visitReferences loc s k c
-route loc s c k@C.Cursor_ObjCMessageExpr                    = visitReferences loc s k c
-route loc s c k@C.Cursor_MacroDefinition                    = visitReferences loc s k c >> visitDefinitions loc s k c
-route loc s c k@C.Cursor_MacroExpansion                     = visitReferences loc s k c
-route loc s c k@C.Cursor_InclusionDirective                 = visitInclusions loc s k c
+route :: TULocation -> CPPScope -> Cursor s' -> CursorKind -> Analysis s ()
+route loc s c k@Cursor_StructDecl                         = visitReferences loc s k c >> visitClassOverrides c >> visitDefinitions loc s k c
+route loc s c k@Cursor_UnionDecl                          = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_ClassDecl                          = visitReferences loc s k c >> visitClassOverrides c >> visitDefinitions loc s k c
+route loc s c k@Cursor_EnumDecl                           = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_FieldDecl                          = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_EnumConstantDecl                   = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_FunctionDecl                       = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_VarDecl                            = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_ParmDecl                           = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_ObjCInterfaceDecl                  = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_ObjCCategoryDecl                   = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_ObjCProtocolDecl                   = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_ObjCPropertyDecl                   = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_ObjCIvarDecl                       = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_ObjCInstanceMethodDecl             = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_ObjCClassMethodDecl                = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_ObjCImplementationDecl             = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_ObjCCategoryImplDecl               = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_TypedefDecl                        = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_CXXMethod                          = visitReferences loc s k c >> visitOverrides c >> visitDefinitions loc s k c
+route loc s c k@Cursor_Namespace                          = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_Constructor                        = visitReferences loc s k c >> visitOverrides c >> visitDefinitions loc s k c
+route loc s c k@Cursor_Destructor                         = visitReferences loc s k c >> visitOverrides c >> visitDefinitions loc s k c
+route loc s c k@Cursor_ConversionFunction                 = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_TemplateTypeParameter              = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_NonTypeTemplateParameter           = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_TemplateTemplateParameter          = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_FunctionTemplate                   = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_ClassTemplate                      = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_ClassTemplatePartialSpecialization = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_NamespaceAlias                     = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_UsingDirective                     = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_UsingDeclaration                   = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_TypeAliasDecl                      = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_ObjCSynthesizeDecl                 = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_ObjCDynamicDecl                    = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_ObjCSuperClassRef                  = visitReferences loc s k c
+route loc s c k@Cursor_ObjCProtocolRef                    = visitReferences loc s k c
+route loc s c k@Cursor_ObjCClassRef                       = visitReferences loc s k c
+route loc s c k@Cursor_TypeRef                            = visitReferences loc s k c
+route loc s c k@Cursor_TemplateRef                        = visitReferences loc s k c
+route loc s c k@Cursor_NamespaceRef                       = visitReferences loc s k c
+route loc s c k@Cursor_MemberRef                          = visitReferences loc s k c
+route loc s c k@Cursor_LabelRef                           = visitReferences loc s k c
+route loc s c k@Cursor_OverloadedDeclRef                  = visitReferences loc s k c
+route loc s c k@Cursor_DeclRefExpr                        = visitReferences loc s k c
+route loc s c k@Cursor_MemberRefExpr                      = visitReferences loc s k c
+route loc s c k@Cursor_CallExpr                           = visitReferences loc s k c
+route loc s c k@Cursor_ObjCMessageExpr                    = visitReferences loc s k c
+route loc s c k@Cursor_MacroDefinition                    = visitReferences loc s k c >> visitDefinitions loc s k c
+route loc s c k@Cursor_MacroExpansion                     = visitReferences loc s k c
+route loc s c k@Cursor_InclusionDirective                 = visitInclusions loc s k c
 route _ _ _ _                                               = return ()
 
 sendRPC :: RPC () -> Analysis s ()
@@ -241,7 +241,7 @@ queryRPC req = do
   ctx <- lift get
   liftIO $ runRPC req (asConn ctx)
 
-visitInclusions :: TULocation -> CPPScope -> C.CursorKind -> C.Cursor s' -> Analysis s ()
+visitInclusions :: TULocation -> CPPScope -> CursorKind -> Cursor s' -> Analysis s ()
 visitInclusions loc scope cKind cursor = do
   -- Record inclusion directives.
   incFile <- C.getIncludedFile cursor
@@ -267,7 +267,7 @@ visitInclusions loc scope cKind cursor = do
                                    incFileHash
   sendUpdate (DBUpdateRef reference)
       
-visitReferences :: TULocation -> CPPScope -> C.CursorKind -> C.Cursor s' -> Analysis s ()
+visitReferences :: TULocation -> CPPScope -> CursorKind -> Cursor s' -> Analysis s ()
 visitReferences loc scope cKind cursor = do
   -- Record references.
   -- TODO: Ignore CallExpr children that start at the same
@@ -295,9 +295,9 @@ visitReferences loc scope cKind cursor = do
     (_, endLn, endCol, _) <- Source.getSpellingLocation endLoc
 
     -- Special analysis for CallExprs.
-    refKind <- if cKind == C.Cursor_CallExpr then analyzeCall cursor
+    refKind <- if cKind == Cursor_CallExpr then analyzeCall cursor
                                              else return $ toSourceKind cKind
-    viaUSRHash <- if cKind == C.Cursor_CallExpr then callBaseUSRHash cursor
+    viaUSRHash <- if cKind == Cursor_CallExpr then callBaseUSRHash cursor
                                                 else return 0
 
     -- Record location of reference for declaration lookups.
@@ -320,14 +320,14 @@ visitReferences loc scope cKind cursor = do
                                      referToUSRHash
     sendUpdate (DBUpdateRef reference)
 
-maybeLiftToTemplate :: ClangBase m => C.Cursor s -> ClangT s m (C.Cursor s)
+maybeLiftToTemplate :: ClangBase m => Cursor s -> ClangT s m (Cursor s)
 maybeLiftToTemplate cursor = do
   templateCursor <- C.getTemplateForSpecialization cursor
   return $ if C.isInvalid (C.getKind templateCursor)
              then cursor
              else templateCursor
                                      
-visitOverrides :: C.Cursor s' -> Analysis s ()
+visitOverrides :: Cursor s' -> Analysis s ()
 visitOverrides cursor = do
   -- Record method overrides.
   -- TODO: I seem to recall that in C++11 you can override
@@ -339,13 +339,13 @@ visitOverrides cursor = do
     let !override = Override usrHash oUSRHash
     sendUpdate (DBUpdateOverride override)
 
-visitDefinitions :: TULocation -> CPPScope -> C.CursorKind -> C.Cursor s' -> Analysis s ()
+visitDefinitions :: TULocation -> CPPScope -> CursorKind -> Cursor s' -> Analysis s ()
 visitDefinitions loc scope cKind cursor = do
   -- Make sure we actually have a definition. Why C.isDefinition isn't
   -- reliable, I really don't know. Typical libclang.
   isDef <- C.isDefinition cursor
-  let isDefLike = cKind == C.Cursor_MacroDefinition
-               || cKind == C.Cursor_VarDecl
+  let isDefLike = cKind == Cursor_MacroDefinition
+               || cKind == Cursor_VarDecl
 
   when (isDef || isDefLike) $ do
     -- Record definitions.
@@ -371,16 +371,16 @@ visitDefinitions loc scope cKind cursor = do
 
     sendUpdate (DBUpdateDef def)
 
-visitClassOverrides :: C.Cursor s' -> Analysis s ()
+visitClassOverrides :: Cursor s' -> Analysis s ()
 visitClassOverrides thisClassC = do
     -- Record class inheritance ("overrides").
-    kids <- TV.getChildren thisClassC
+    kids <- getChildren thisClassC
     DVS.mapM_ go kids
   where
     go cursor = do
       let !cKind = C.getKind cursor
       case cKind of
-        C.Cursor_CXXBaseSpecifier -> do
+        Cursor_CXXBaseSpecifier -> do
           thisClassUSRHash <- getUSRHash thisClassC
           defC <- C.getDefinition cursor
           baseUSRHash <- getUSRHash defC
@@ -388,7 +388,7 @@ visitClassOverrides thisClassC = do
           sendUpdate (DBUpdateOverride override)
         _ -> return ()
 
-getUSRHash :: C.Cursor s' -> Analysis s Int
+getUSRHash :: Cursor s' -> Analysis s Int
 getUSRHash cursor = do
   !ctx <- lift get
   let !cursorHash = stableHash cursor
@@ -401,7 +401,7 @@ getUSRHash cursor = do
                        lift $ put $! ctx { asUSRHashCache = newCache }
                        return usrHash
     
-getCursorLocation :: C.Cursor s' -> Analysis s TULocation
+getCursorLocation :: Cursor s' -> Analysis s TULocation
 getCursorLocation cursor = do
   (mayF, ln, col, _) <- C.getSpellingLocation cursor
   case mayF of
@@ -409,7 +409,7 @@ getCursorLocation cursor = do
                   return $ TULocation shouldIndex filenameHash ln col
     Nothing -> return $ TULocation False 0 ln col
 
-getCursorLocation' :: ClangBase m => C.Cursor s' -> ClangT s m SourceLocation
+getCursorLocation' :: ClangBase m => Cursor s' -> ClangT s m SourceLocation
 getCursorLocation' cursor = do
   (mayF, ln, col, _) <- C.getSpellingLocation cursor
   file <- case mayF of
@@ -418,7 +418,7 @@ getCursorLocation' cursor = do
   canonicalFile <- liftIO $ canonicalPath file
   return $ SourceLocation canonicalFile ln col
   
-lookupFile :: File.File s' -> Analysis s (Bool, SourceFileHash)
+lookupFile :: File s' -> Analysis s (Bool, SourceFileHash)
 lookupFile file = do
   !ctx <- lift get
   let fileObjHash = stableHash file  -- This is a hash of the file _object_, not the name.
@@ -436,7 +436,7 @@ lookupFile file = do
       lift $ put $! ctx { asFileCache = newCache }
       return (shouldIndex, filenameHash)
   
-analyzeCall :: C.Cursor s' -> Analysis s SourceKind
+analyzeCall :: Cursor s' -> Analysis s SourceKind
 analyzeCall c = do
   isDynamicCall <- C.isDynamicCall c
 
@@ -456,31 +456,31 @@ analyzeCall c = do
 -- can. The UnexposedExpr's represent things like pointer
 -- dereferences. I'd be much happier if they were exposed so we
 -- weren't fumbling in the dark, but this seems to do the job for now.
-findCallBase :: ClangBase m => C.Cursor s' -> ClangT s m (Maybe (C.Cursor s))
+findCallBase :: ClangBase m => Cursor s' -> ClangT s m (Maybe (Cursor s))
 findCallBase c = do
   mayChild <- firstChild c
   case mayChild of
     Just child
-      | C.getKind child == C.Cursor_MemberRefExpr -> skipAllUnexposed child
-      | C.getKind child == C.Cursor_UnexposedExpr -> skipAllUnexposed child
+      | C.getKind child == Cursor_MemberRefExpr -> skipAllUnexposed child
+      | C.getKind child == Cursor_UnexposedExpr -> skipAllUnexposed child
     _                                             -> return mayChild
 
-skipAllUnexposed :: ClangBase m => C.Cursor s' -> ClangT s m (Maybe (C.Cursor s))
+skipAllUnexposed :: ClangBase m => Cursor s' -> ClangT s m (Maybe (Cursor s))
 skipAllUnexposed c = do
   mayChild <- firstChild c
   case mayChild of
     Just child
-      | C.getKind child == C.Cursor_UnexposedExpr -> skipAllUnexposed child
+      | C.getKind child == Cursor_UnexposedExpr -> skipAllUnexposed child
     _                                             -> return mayChild
 
-firstChild :: ClangBase m => C.Cursor s' -> ClangT s m (Maybe (C.Cursor s))
+firstChild :: ClangBase m => Cursor s' -> ClangT s m (Maybe (Cursor s))
 firstChild c = do
-  children <- TV.getChildren c
+  children <- getChildren c
   return $ if DVS.null children
              then Nothing
              else Just $ DVS.head children
 
-callBaseUSRHash :: C.Cursor s' -> Analysis s USRHash
+callBaseUSRHash :: Cursor s' -> Analysis s USRHash
 callBaseUSRHash c = do
   mayBase <- findCallBase c
   decl <- case mayBase of
@@ -495,7 +495,7 @@ refHash usrHash loc = return refHash'
                        `stableHashWithSalt` tlLine loc
                        `stableHashWithSalt` tlCol loc
                       
-updatedCPPScope :: C.Cursor s' -> C.Cursor s'' -> Analysis s CPPScope
+updatedCPPScope :: Cursor s' -> Cursor s'' -> Analysis s CPPScope
 updatedCPPScope parent cursor = do
   ctx <- lift get
   let !cursorHash = stableHash cursor
@@ -516,7 +516,7 @@ updatedCPPScope parent cursor = do
   lift $ put $! ctx { asCPPScopeStack = newStack }
   return parentScope
 
-newScopeName :: CPPScope -> C.Cursor s' -> Analysis s (Int, BU.ByteString)
+newScopeName :: CPPScope -> Cursor s' -> Analysis s (Int, BU.ByteString)
 newScopeName parentScope cursor = do
   name <- cursorName cursor
   usrHash <- getUSRHash cursor
@@ -528,24 +528,24 @@ newScopeName parentScope cursor = do
                 then b
                 else B.intercalate "::" [a, b]
 
-cursorName :: C.Cursor s' -> Analysis s BU.ByteString
+cursorName :: Cursor s' -> Analysis s BU.ByteString
 cursorName c = C.getDisplayName c >>= CS.unsafeUnpackByteString >>= anonymize
   where anonymize s | B.null s  = return "<anonymous>"
                     | otherwise = return s
 
-isScopeCursorKind :: C.CursorKind -> Bool
-isScopeCursorKind C.Cursor_FunctionDecl = True
-isScopeCursorKind C.Cursor_CXXMethod    = True
-isScopeCursorKind C.Cursor_Constructor  = True
-isScopeCursorKind C.Cursor_Destructor   = True
-isScopeCursorKind C.Cursor_ClassDecl    = True
-isScopeCursorKind C.Cursor_StructDecl   = True
-isScopeCursorKind C.Cursor_EnumDecl     = True
-isScopeCursorKind C.Cursor_UnionDecl    = True
-isScopeCursorKind C.Cursor_Namespace    = True
+isScopeCursorKind :: CursorKind -> Bool
+isScopeCursorKind Cursor_FunctionDecl = True
+isScopeCursorKind Cursor_CXXMethod    = True
+isScopeCursorKind Cursor_Constructor  = True
+isScopeCursorKind Cursor_Destructor   = True
+isScopeCursorKind Cursor_ClassDecl    = True
+isScopeCursorKind Cursor_StructDecl   = True
+isScopeCursorKind Cursor_EnumDecl     = True
+isScopeCursorKind Cursor_UnionDecl    = True
+isScopeCursorKind Cursor_Namespace    = True
 isScopeCursorKind _                     = False
 
-getSemanticScope :: C.Cursor s' -> BU.ByteString -> Analysis s BU.ByteString
+getSemanticScope :: Cursor s' -> BU.ByteString -> Analysis s BU.ByteString
 getSemanticScope c name
   | C.isInvalid (C.getKind c) = return name
   | isScopeCursorKind (C.getKind c) = do
@@ -566,22 +566,22 @@ logDiagnostics tu = do
         diaStr <- Diag.formatDiagnostic opts dia >>= CS.unpack
         liftIO $ logInfo $ "Diagnostic: " ++ diaStr
   where
-    isError = (== Diag.Diagnostic_Error) .||. (== Diag.Diagnostic_Fatal)
+    isError = (== Diagnostic_Error) .||. (== Diagnostic_Fatal)
 
 doDisplayAST :: TranslationUnit s -> Clang s ()
 doDisplayAST tu = getCursor tu >>= dumpSubtree
 
-dumpSubtree :: C.Cursor s' -> Clang s ()
+dumpSubtree :: Cursor s' -> Clang s ()
 dumpSubtree cursor = do
     dumpVisitor 0 cursor
     liftIO $ putStrLn "Finished recursing!"
   where
-    dumpVisitor :: Int -> C.Cursor s' -> Clang s ()
+    dumpVisitor :: Int -> Cursor s' -> Clang s ()
     dumpVisitor i c = do dump i c
-                         kids <- TV.getChildren c
+                         kids <- getChildren c
                          DVS.mapM_ (dumpVisitor $ i + 1) kids
 
-    dump :: Int -> C.Cursor s' -> Clang s ()
+    dump :: Int -> Cursor s' -> Clang s ()
     dump i c = do
       -- Get location.
       loc <- C.getLocation c
@@ -615,7 +615,7 @@ dumpSubtree cursor = do
       sTypKind <- T.getTypeKindSpelling typKind >>= CS.unpack
 
       -- Special stuff for CallExpr
-      when (cKind == C.Cursor_CallExpr) $ do
+      when (cKind == Cursor_CallExpr) $ do
         mayBase <- findCallBase c
         baseExpr <- case mayBase of
                       Just b  -> return b
@@ -646,41 +646,41 @@ dumpSubtree cursor = do
                           "definition [" ++ defName ++ "/" ++ defUSR ++ "] " ++
                           "reference [" ++ refName ++ "/" ++ refFile ++ "%" ++ refUSR ++ "]"
 
-underlyingType :: ClangBase m => C.Cursor s' -> ClangT s m (T.Type s)
+underlyingType :: ClangBase m => Cursor s' -> ClangT s m (Type s)
 underlyingType c = do
   t <- C.getType c
   tKind <- T.getKind t
-  if tKind `elem` [T.Type_LValueReference, T.Type_RValueReference, T.Type_Pointer, T.Type_Unexposed, T.Type_Invalid] then
+  if tKind `elem` [Type_LValueReference, Type_RValueReference, Type_Pointer, Type_Unexposed, Type_Invalid] then
     T.getPointeeType t
   else
     return t
     
-isVirtualCall :: ClangBase m => C.CursorKind -> C.Cursor s' -> ClangT s m Bool
-isVirtualCall C.Cursor_CallExpr = doesRefKindRequireVirtualDispatch
+isVirtualCall :: ClangBase m => CursorKind -> Cursor s' -> ClangT s m Bool
+isVirtualCall Cursor_CallExpr = doesRefKindRequireVirtualDispatch
                               <=< callBaseResultKind
-isVirtualCall C.Cursor_MemberRefExpr = doesRefKindRequireVirtualDispatch
+isVirtualCall Cursor_MemberRefExpr = doesRefKindRequireVirtualDispatch
                                    <=< callBaseKind
-isVirtualCall C.Cursor_DeclRefExpr = doesRefKindRequireVirtualDispatch
+isVirtualCall Cursor_DeclRefExpr = doesRefKindRequireVirtualDispatch
                                  <=< callBaseKind
 isVirtualCall _ = const $ return True
 
-doesRefKindRequireVirtualDispatch :: ClangBase m => T.TypeKind -> ClangT s m Bool
+doesRefKindRequireVirtualDispatch :: ClangBase m => TypeKind -> ClangT s m Bool
 doesRefKindRequireVirtualDispatch = return . (`elem` vdKinds)
   where
-    vdKinds = [T.Type_LValueReference,
-               T.Type_RValueReference,
-               T.Type_Pointer,
-               T.Type_Unexposed,
-               T.Type_Invalid]
+    vdKinds = [Type_LValueReference,
+               Type_RValueReference,
+               Type_Pointer,
+               Type_Unexposed,
+               Type_Invalid]
 
-callBaseKind :: ClangBase m => C.Cursor s' -> ClangT s m T.TypeKind
+callBaseKind :: ClangBase m => Cursor s' -> ClangT s m TypeKind
 callBaseKind = T.getKind <=< C.getType <=< C.getReferenced
 
-callBaseResultKind :: ClangBase m => C.Cursor s' -> ClangT s m T.TypeKind
+callBaseResultKind :: ClangBase m => Cursor s' -> ClangT s m TypeKind
 callBaseResultKind c = do
   refT <- C.getType =<< C.getReferenced c
   refTKind <- T.getKind refT
-  refT' <- if refTKind == T.Type_Pointer
+  refT' <- if refTKind == Type_Pointer
               then T.getPointeeType refT
               else return refT
   T.getKind =<< T.getResultType refT'
@@ -690,13 +690,13 @@ withTranslationUnit :: ClangBase m => CommandInfo
 withTranslationUnit ci f = 
     withCreateIndex False False $ \index -> do
       setGlobalOptions index globalOpt_ThreadBackgroundPriorityForAll
-      withParse index
-                (Just $ unSourceFile sf)
-                args
-                VV.empty
-                [TranslationUnit_DetailedPreprocessingRecord]
-                f
-                bail
+      result <- withParse index
+                          (Just $ unSourceFile sf)
+                          args
+                          VV.empty
+                          [TranslationUnit_DetailedPreprocessingRecord]
+                          f
+      maybe bail return result
   where
     args = map BU.toString (ciArgs ci)
     sf = ciSourceFile ci
@@ -706,153 +706,153 @@ data ClangException = ClangException String
   deriving (Show, Typeable)
 instance Exception ClangException
 
-toSourceKind :: C.CursorKind -> SourceKind
-toSourceKind C.Cursor_UnexposedDecl                      = UnexposedDecl
-toSourceKind C.Cursor_StructDecl                         = StructDecl
-toSourceKind C.Cursor_UnionDecl                          = UnionDecl
-toSourceKind C.Cursor_ClassDecl                          = ClassDecl
-toSourceKind C.Cursor_EnumDecl                           = EnumDecl
-toSourceKind C.Cursor_FieldDecl                          = FieldDecl
-toSourceKind C.Cursor_EnumConstantDecl                   = EnumConstantDecl
-toSourceKind C.Cursor_FunctionDecl                       = FunctionDecl
-toSourceKind C.Cursor_VarDecl                            = VarDecl
-toSourceKind C.Cursor_ParmDecl                           = ParmDecl
-toSourceKind C.Cursor_ObjCInterfaceDecl                  = ObjCInterfaceDecl
-toSourceKind C.Cursor_ObjCCategoryDecl                   = ObjCCategoryDecl
-toSourceKind C.Cursor_ObjCProtocolDecl                   = ObjCProtocolDecl
-toSourceKind C.Cursor_ObjCPropertyDecl                   = ObjCPropertyDecl
-toSourceKind C.Cursor_ObjCIvarDecl                       = ObjCIvarDecl
-toSourceKind C.Cursor_ObjCInstanceMethodDecl             = ObjCInstanceMethodDecl
-toSourceKind C.Cursor_ObjCClassMethodDecl                = ObjCClassMethodDecl
-toSourceKind C.Cursor_ObjCImplementationDecl             = ObjCImplementationDecl
-toSourceKind C.Cursor_ObjCCategoryImplDecl               = ObjCCategoryImplDecl
-toSourceKind C.Cursor_TypedefDecl                        = TypedefDecl
-toSourceKind C.Cursor_CXXMethod                          = CXXMethod
-toSourceKind C.Cursor_Namespace                          = Namespace
-toSourceKind C.Cursor_LinkageSpec                        = LinkageSpec
-toSourceKind C.Cursor_Constructor                        = Constructor
-toSourceKind C.Cursor_Destructor                         = Destructor
-toSourceKind C.Cursor_ConversionFunction                 = ConversionFunction
-toSourceKind C.Cursor_TemplateTypeParameter              = TemplateTypeParameter
-toSourceKind C.Cursor_NonTypeTemplateParameter           = NonTypeTemplateParameter
-toSourceKind C.Cursor_TemplateTemplateParameter          = TemplateTemplateParameter
-toSourceKind C.Cursor_FunctionTemplate                   = FunctionTemplate
-toSourceKind C.Cursor_ClassTemplate                      = ClassTemplate
-toSourceKind C.Cursor_ClassTemplatePartialSpecialization = ClassTemplatePartialSpecialization
-toSourceKind C.Cursor_NamespaceAlias                     = NamespaceAlias
-toSourceKind C.Cursor_UsingDirective                     = UsingDirective
-toSourceKind C.Cursor_UsingDeclaration                   = UsingDeclaration
-toSourceKind C.Cursor_TypeAliasDecl                      = TypeAliasDecl
-toSourceKind C.Cursor_ObjCSynthesizeDecl                 = ObjCSynthesizeDecl
-toSourceKind C.Cursor_ObjCDynamicDecl                    = ObjCDynamicDecl
-toSourceKind C.Cursor_CXXAccessSpecifier                 = CXXAccessSpecifier
-toSourceKind C.Cursor_ObjCSuperClassRef                  = ObjCSuperClassRef
-toSourceKind C.Cursor_ObjCProtocolRef                    = ObjCProtocolRef
-toSourceKind C.Cursor_ObjCClassRef                       = ObjCClassRef
-toSourceKind C.Cursor_TypeRef                            = TypeRef
-toSourceKind C.Cursor_CXXBaseSpecifier                   = CXXBaseSpecifier
-toSourceKind C.Cursor_TemplateRef                        = TemplateRef
-toSourceKind C.Cursor_NamespaceRef                       = NamespaceRef
-toSourceKind C.Cursor_MemberRef                          = MemberRef
-toSourceKind C.Cursor_LabelRef                           = LabelRef
-toSourceKind C.Cursor_OverloadedDeclRef                  = OverloadedDeclRef
-toSourceKind C.Cursor_VariableRef                        = VariableRef
-toSourceKind C.Cursor_InvalidFile                        = InvalidFile
-toSourceKind C.Cursor_NoDeclFound                        = NoDeclFound
-toSourceKind C.Cursor_NotImplemented                     = NotImplemented
-toSourceKind C.Cursor_InvalidCode                        = InvalidCode
-toSourceKind C.Cursor_UnexposedExpr                      = UnexposedExpr
-toSourceKind C.Cursor_DeclRefExpr                        = DeclRefExpr
-toSourceKind C.Cursor_MemberRefExpr                      = MemberRefExpr
-toSourceKind C.Cursor_CallExpr                           = CallExpr
-toSourceKind C.Cursor_ObjCMessageExpr                    = ObjCMessageExpr
-toSourceKind C.Cursor_BlockExpr                          = BlockExpr
-toSourceKind C.Cursor_IntegerLiteral                     = IntegerLiteral
-toSourceKind C.Cursor_FloatingLiteral                    = FloatingLiteral
-toSourceKind C.Cursor_ImaginaryLiteral                   = ImaginaryLiteral
-toSourceKind C.Cursor_StringLiteral                      = StringLiteral
-toSourceKind C.Cursor_CharacterLiteral                   = CharacterLiteral
-toSourceKind C.Cursor_ParenExpr                          = ParenExpr
-toSourceKind C.Cursor_UnaryOperator                      = UnaryOperator
-toSourceKind C.Cursor_ArraySubscriptExpr                 = ArraySubscriptExpr
-toSourceKind C.Cursor_BinaryOperator                     = BinaryOperator
-toSourceKind C.Cursor_CompoundAssignOperator             = CompoundAssignOperator
-toSourceKind C.Cursor_ConditionalOperator                = ConditionalOperator
-toSourceKind C.Cursor_CStyleCastExpr                     = CStyleCastExpr
-toSourceKind C.Cursor_CompoundLiteralExpr                = CompoundLiteralExpr
-toSourceKind C.Cursor_InitListExpr                       = InitListExpr
-toSourceKind C.Cursor_AddrLabelExpr                      = AddrLabelExpr
-toSourceKind C.Cursor_StmtExpr                           = StmtExpr
-toSourceKind C.Cursor_GenericSelectionExpr               = GenericSelectionExpr
-toSourceKind C.Cursor_GNUNullExpr                        = GNUNullExpr
-toSourceKind C.Cursor_CXXStaticCastExpr                  = CXXStaticCastExpr
-toSourceKind C.Cursor_CXXDynamicCastExpr                 = CXXDynamicCastExpr
-toSourceKind C.Cursor_CXXReinterpretCastExpr             = CXXReinterpretCastExpr
-toSourceKind C.Cursor_CXXConstCastExpr                   = CXXConstCastExpr
-toSourceKind C.Cursor_CXXFunctionalCastExpr              = CXXFunctionalCastExpr
-toSourceKind C.Cursor_CXXTypeidExpr                      = CXXTypeidExpr
-toSourceKind C.Cursor_CXXBoolLiteralExpr                 = CXXBoolLiteralExpr
-toSourceKind C.Cursor_CXXNullPtrLiteralExpr              = CXXNullPtrLiteralExpr
-toSourceKind C.Cursor_CXXThisExpr                        = CXXThisExpr
-toSourceKind C.Cursor_CXXThrowExpr                       = CXXThrowExpr
-toSourceKind C.Cursor_CXXNewExpr                         = CXXNewExpr
-toSourceKind C.Cursor_CXXDeleteExpr                      = CXXDeleteExpr
-toSourceKind C.Cursor_UnaryExpr                          = UnaryExpr
-toSourceKind C.Cursor_ObjCStringLiteral                  = ObjCStringLiteral
-toSourceKind C.Cursor_ObjCEncodeExpr                     = ObjCEncodeExpr
-toSourceKind C.Cursor_ObjCSelectorExpr                   = ObjCSelectorExpr
-toSourceKind C.Cursor_ObjCProtocolExpr                   = ObjCProtocolExpr
-toSourceKind C.Cursor_ObjCBridgedCastExpr                = ObjCBridgedCastExpr
-toSourceKind C.Cursor_PackExpansionExpr                  = PackExpansionExpr
-toSourceKind C.Cursor_SizeOfPackExpr                     = SizeOfPackExpr
-toSourceKind C.Cursor_LambdaExpr                         = LambdaExpr
-toSourceKind C.Cursor_ObjCBoolLiteralExpr                = ObjCBoolLiteralExpr
-toSourceKind C.Cursor_ObjCSelfExpr                       = ObjCSelfExpr
-toSourceKind C.Cursor_UnexposedStmt                      = UnexposedStmt
-toSourceKind C.Cursor_LabelStmt                          = LabelStmt
-toSourceKind C.Cursor_CompoundStmt                       = CompoundStmt
-toSourceKind C.Cursor_CaseStmt                           = CaseStmt
-toSourceKind C.Cursor_DefaultStmt                        = DefaultStmt
-toSourceKind C.Cursor_IfStmt                             = IfStmt
-toSourceKind C.Cursor_SwitchStmt                         = SwitchStmt
-toSourceKind C.Cursor_WhileStmt                          = WhileStmt
-toSourceKind C.Cursor_DoStmt                             = DoStmt
-toSourceKind C.Cursor_ForStmt                            = ForStmt
-toSourceKind C.Cursor_GotoStmt                           = GotoStmt
-toSourceKind C.Cursor_IndirectGotoStmt                   = IndirectGotoStmt
-toSourceKind C.Cursor_ContinueStmt                       = ContinueStmt
-toSourceKind C.Cursor_BreakStmt                          = BreakStmt
-toSourceKind C.Cursor_ReturnStmt                         = ReturnStmt
-toSourceKind C.Cursor_AsmStmt                            = AsmStmt
-toSourceKind C.Cursor_ObjCAtTryStmt                      = ObjCAtTryStmt
-toSourceKind C.Cursor_ObjCAtCatchStmt                    = ObjCAtCatchStmt
-toSourceKind C.Cursor_ObjCAtFinallyStmt                  = ObjCAtFinallyStmt
-toSourceKind C.Cursor_ObjCAtThrowStmt                    = ObjCAtThrowStmt
-toSourceKind C.Cursor_ObjCAtSynchronizedStmt             = ObjCAtSynchronizedStmt
-toSourceKind C.Cursor_ObjCAutoreleasePoolStmt            = ObjCAutoreleasePoolStmt
-toSourceKind C.Cursor_ObjCForCollectionStmt              = ObjCForCollectionStmt
-toSourceKind C.Cursor_CXXCatchStmt                       = CXXCatchStmt
-toSourceKind C.Cursor_CXXTryStmt                         = CXXTryStmt
-toSourceKind C.Cursor_CXXForRangeStmt                    = CXXForRangeStmt
-toSourceKind C.Cursor_SEHTryStmt                         = SEHTryStmt
-toSourceKind C.Cursor_SEHExceptStmt                      = SEHExceptStmt
-toSourceKind C.Cursor_SEHFinallyStmt                     = SEHFinallyStmt
-toSourceKind C.Cursor_MSAsmStmt                          = MSAsmStmt
-toSourceKind C.Cursor_NullStmt                           = NullStmt
-toSourceKind C.Cursor_DeclStmt                           = DeclStmt
-toSourceKind C.Cursor_OMPParallelDirective               = OMPParallelDirective
-toSourceKind C.Cursor_TranslationUnit                    = TranslationUnit
-toSourceKind C.Cursor_UnexposedAttr                      = UnexposedAttr
-toSourceKind C.Cursor_IBActionAttr                       = IBActionAttr
-toSourceKind C.Cursor_IBOutletAttr                       = IBOutletAttr
-toSourceKind C.Cursor_IBOutletCollectionAttr             = IBOutletCollectionAttr
-toSourceKind C.Cursor_CXXFinalAttr                       = CXXFinalAttr
-toSourceKind C.Cursor_CXXOverrideAttr                    = CXXOverrideAttr
-toSourceKind C.Cursor_AnnotateAttr                       = AnnotateAttr
-toSourceKind C.Cursor_AsmLabelAttr                       = AsmLabelAttr
-toSourceKind C.Cursor_PackedAttr                         = PackedAttr
-toSourceKind C.Cursor_PreprocessingDirective             = PreprocessingDirective
-toSourceKind C.Cursor_MacroDefinition                    = MacroDefinition
-toSourceKind C.Cursor_MacroExpansion                     = MacroExpansion
-toSourceKind C.Cursor_InclusionDirective                 = InclusionDirective
-toSourceKind C.Cursor_ModuleImportDecl                   = ModuleImportDecl
+toSourceKind :: CursorKind -> SourceKind
+toSourceKind Cursor_UnexposedDecl                      = UnexposedDecl
+toSourceKind Cursor_StructDecl                         = StructDecl
+toSourceKind Cursor_UnionDecl                          = UnionDecl
+toSourceKind Cursor_ClassDecl                          = ClassDecl
+toSourceKind Cursor_EnumDecl                           = EnumDecl
+toSourceKind Cursor_FieldDecl                          = FieldDecl
+toSourceKind Cursor_EnumConstantDecl                   = EnumConstantDecl
+toSourceKind Cursor_FunctionDecl                       = FunctionDecl
+toSourceKind Cursor_VarDecl                            = VarDecl
+toSourceKind Cursor_ParmDecl                           = ParmDecl
+toSourceKind Cursor_ObjCInterfaceDecl                  = ObjCInterfaceDecl
+toSourceKind Cursor_ObjCCategoryDecl                   = ObjCCategoryDecl
+toSourceKind Cursor_ObjCProtocolDecl                   = ObjCProtocolDecl
+toSourceKind Cursor_ObjCPropertyDecl                   = ObjCPropertyDecl
+toSourceKind Cursor_ObjCIvarDecl                       = ObjCIvarDecl
+toSourceKind Cursor_ObjCInstanceMethodDecl             = ObjCInstanceMethodDecl
+toSourceKind Cursor_ObjCClassMethodDecl                = ObjCClassMethodDecl
+toSourceKind Cursor_ObjCImplementationDecl             = ObjCImplementationDecl
+toSourceKind Cursor_ObjCCategoryImplDecl               = ObjCCategoryImplDecl
+toSourceKind Cursor_TypedefDecl                        = TypedefDecl
+toSourceKind Cursor_CXXMethod                          = CXXMethod
+toSourceKind Cursor_Namespace                          = Namespace
+toSourceKind Cursor_LinkageSpec                        = LinkageSpec
+toSourceKind Cursor_Constructor                        = Constructor
+toSourceKind Cursor_Destructor                         = Destructor
+toSourceKind Cursor_ConversionFunction                 = ConversionFunction
+toSourceKind Cursor_TemplateTypeParameter              = TemplateTypeParameter
+toSourceKind Cursor_NonTypeTemplateParameter           = NonTypeTemplateParameter
+toSourceKind Cursor_TemplateTemplateParameter          = TemplateTemplateParameter
+toSourceKind Cursor_FunctionTemplate                   = FunctionTemplate
+toSourceKind Cursor_ClassTemplate                      = ClassTemplate
+toSourceKind Cursor_ClassTemplatePartialSpecialization = ClassTemplatePartialSpecialization
+toSourceKind Cursor_NamespaceAlias                     = NamespaceAlias
+toSourceKind Cursor_UsingDirective                     = UsingDirective
+toSourceKind Cursor_UsingDeclaration                   = UsingDeclaration
+toSourceKind Cursor_TypeAliasDecl                      = TypeAliasDecl
+toSourceKind Cursor_ObjCSynthesizeDecl                 = ObjCSynthesizeDecl
+toSourceKind Cursor_ObjCDynamicDecl                    = ObjCDynamicDecl
+toSourceKind Cursor_CXXAccessSpecifier                 = CXXAccessSpecifier
+toSourceKind Cursor_ObjCSuperClassRef                  = ObjCSuperClassRef
+toSourceKind Cursor_ObjCProtocolRef                    = ObjCProtocolRef
+toSourceKind Cursor_ObjCClassRef                       = ObjCClassRef
+toSourceKind Cursor_TypeRef                            = TypeRef
+toSourceKind Cursor_CXXBaseSpecifier                   = CXXBaseSpecifier
+toSourceKind Cursor_TemplateRef                        = TemplateRef
+toSourceKind Cursor_NamespaceRef                       = NamespaceRef
+toSourceKind Cursor_MemberRef                          = MemberRef
+toSourceKind Cursor_LabelRef                           = LabelRef
+toSourceKind Cursor_OverloadedDeclRef                  = OverloadedDeclRef
+toSourceKind Cursor_VariableRef                        = VariableRef
+toSourceKind Cursor_InvalidFile                        = InvalidFile
+toSourceKind Cursor_NoDeclFound                        = NoDeclFound
+toSourceKind Cursor_NotImplemented                     = NotImplemented
+toSourceKind Cursor_InvalidCode                        = InvalidCode
+toSourceKind Cursor_UnexposedExpr                      = UnexposedExpr
+toSourceKind Cursor_DeclRefExpr                        = DeclRefExpr
+toSourceKind Cursor_MemberRefExpr                      = MemberRefExpr
+toSourceKind Cursor_CallExpr                           = CallExpr
+toSourceKind Cursor_ObjCMessageExpr                    = ObjCMessageExpr
+toSourceKind Cursor_BlockExpr                          = BlockExpr
+toSourceKind Cursor_IntegerLiteral                     = IntegerLiteral
+toSourceKind Cursor_FloatingLiteral                    = FloatingLiteral
+toSourceKind Cursor_ImaginaryLiteral                   = ImaginaryLiteral
+toSourceKind Cursor_StringLiteral                      = StringLiteral
+toSourceKind Cursor_CharacterLiteral                   = CharacterLiteral
+toSourceKind Cursor_ParenExpr                          = ParenExpr
+toSourceKind Cursor_UnaryOperator                      = UnaryOperator
+toSourceKind Cursor_ArraySubscriptExpr                 = ArraySubscriptExpr
+toSourceKind Cursor_BinaryOperator                     = BinaryOperator
+toSourceKind Cursor_CompoundAssignOperator             = CompoundAssignOperator
+toSourceKind Cursor_ConditionalOperator                = ConditionalOperator
+toSourceKind Cursor_CStyleCastExpr                     = CStyleCastExpr
+toSourceKind Cursor_CompoundLiteralExpr                = CompoundLiteralExpr
+toSourceKind Cursor_InitListExpr                       = InitListExpr
+toSourceKind Cursor_AddrLabelExpr                      = AddrLabelExpr
+toSourceKind Cursor_StmtExpr                           = StmtExpr
+toSourceKind Cursor_GenericSelectionExpr               = GenericSelectionExpr
+toSourceKind Cursor_GNUNullExpr                        = GNUNullExpr
+toSourceKind Cursor_CXXStaticCastExpr                  = CXXStaticCastExpr
+toSourceKind Cursor_CXXDynamicCastExpr                 = CXXDynamicCastExpr
+toSourceKind Cursor_CXXReinterpretCastExpr             = CXXReinterpretCastExpr
+toSourceKind Cursor_CXXConstCastExpr                   = CXXConstCastExpr
+toSourceKind Cursor_CXXFunctionalCastExpr              = CXXFunctionalCastExpr
+toSourceKind Cursor_CXXTypeidExpr                      = CXXTypeidExpr
+toSourceKind Cursor_CXXBoolLiteralExpr                 = CXXBoolLiteralExpr
+toSourceKind Cursor_CXXNullPtrLiteralExpr              = CXXNullPtrLiteralExpr
+toSourceKind Cursor_CXXThisExpr                        = CXXThisExpr
+toSourceKind Cursor_CXXThrowExpr                       = CXXThrowExpr
+toSourceKind Cursor_CXXNewExpr                         = CXXNewExpr
+toSourceKind Cursor_CXXDeleteExpr                      = CXXDeleteExpr
+toSourceKind Cursor_UnaryExpr                          = UnaryExpr
+toSourceKind Cursor_ObjCStringLiteral                  = ObjCStringLiteral
+toSourceKind Cursor_ObjCEncodeExpr                     = ObjCEncodeExpr
+toSourceKind Cursor_ObjCSelectorExpr                   = ObjCSelectorExpr
+toSourceKind Cursor_ObjCProtocolExpr                   = ObjCProtocolExpr
+toSourceKind Cursor_ObjCBridgedCastExpr                = ObjCBridgedCastExpr
+toSourceKind Cursor_PackExpansionExpr                  = PackExpansionExpr
+toSourceKind Cursor_SizeOfPackExpr                     = SizeOfPackExpr
+toSourceKind Cursor_LambdaExpr                         = LambdaExpr
+toSourceKind Cursor_ObjCBoolLiteralExpr                = ObjCBoolLiteralExpr
+toSourceKind Cursor_ObjCSelfExpr                       = ObjCSelfExpr
+toSourceKind Cursor_UnexposedStmt                      = UnexposedStmt
+toSourceKind Cursor_LabelStmt                          = LabelStmt
+toSourceKind Cursor_CompoundStmt                       = CompoundStmt
+toSourceKind Cursor_CaseStmt                           = CaseStmt
+toSourceKind Cursor_DefaultStmt                        = DefaultStmt
+toSourceKind Cursor_IfStmt                             = IfStmt
+toSourceKind Cursor_SwitchStmt                         = SwitchStmt
+toSourceKind Cursor_WhileStmt                          = WhileStmt
+toSourceKind Cursor_DoStmt                             = DoStmt
+toSourceKind Cursor_ForStmt                            = ForStmt
+toSourceKind Cursor_GotoStmt                           = GotoStmt
+toSourceKind Cursor_IndirectGotoStmt                   = IndirectGotoStmt
+toSourceKind Cursor_ContinueStmt                       = ContinueStmt
+toSourceKind Cursor_BreakStmt                          = BreakStmt
+toSourceKind Cursor_ReturnStmt                         = ReturnStmt
+toSourceKind Cursor_AsmStmt                            = AsmStmt
+toSourceKind Cursor_ObjCAtTryStmt                      = ObjCAtTryStmt
+toSourceKind Cursor_ObjCAtCatchStmt                    = ObjCAtCatchStmt
+toSourceKind Cursor_ObjCAtFinallyStmt                  = ObjCAtFinallyStmt
+toSourceKind Cursor_ObjCAtThrowStmt                    = ObjCAtThrowStmt
+toSourceKind Cursor_ObjCAtSynchronizedStmt             = ObjCAtSynchronizedStmt
+toSourceKind Cursor_ObjCAutoreleasePoolStmt            = ObjCAutoreleasePoolStmt
+toSourceKind Cursor_ObjCForCollectionStmt              = ObjCForCollectionStmt
+toSourceKind Cursor_CXXCatchStmt                       = CXXCatchStmt
+toSourceKind Cursor_CXXTryStmt                         = CXXTryStmt
+toSourceKind Cursor_CXXForRangeStmt                    = CXXForRangeStmt
+toSourceKind Cursor_SEHTryStmt                         = SEHTryStmt
+toSourceKind Cursor_SEHExceptStmt                      = SEHExceptStmt
+toSourceKind Cursor_SEHFinallyStmt                     = SEHFinallyStmt
+toSourceKind Cursor_MSAsmStmt                          = MSAsmStmt
+toSourceKind Cursor_NullStmt                           = NullStmt
+toSourceKind Cursor_DeclStmt                           = DeclStmt
+toSourceKind Cursor_OMPParallelDirective               = OMPParallelDirective
+toSourceKind Cursor_TranslationUnit                    = TranslationUnit
+toSourceKind Cursor_UnexposedAttr                      = UnexposedAttr
+toSourceKind Cursor_IBActionAttr                       = IBActionAttr
+toSourceKind Cursor_IBOutletAttr                       = IBOutletAttr
+toSourceKind Cursor_IBOutletCollectionAttr             = IBOutletCollectionAttr
+toSourceKind Cursor_CXXFinalAttr                       = CXXFinalAttr
+toSourceKind Cursor_CXXOverrideAttr                    = CXXOverrideAttr
+toSourceKind Cursor_AnnotateAttr                       = AnnotateAttr
+toSourceKind Cursor_AsmLabelAttr                       = AsmLabelAttr
+toSourceKind Cursor_PackedAttr                         = PackedAttr
+toSourceKind Cursor_PreprocessingDirective             = PreprocessingDirective
+toSourceKind Cursor_MacroDefinition                    = MacroDefinition
+toSourceKind Cursor_MacroExpansion                     = MacroExpansion
+toSourceKind Cursor_InclusionDirective                 = InclusionDirective
+toSourceKind Cursor_ModuleImportDecl                   = ModuleImportDecl
