@@ -17,7 +17,7 @@ import qualified Data.ByteString.UTF8 as BU
 import Data.String.Utils (join, replace)
 import System.Directory (getCurrentDirectory)
 import System.Environment (getEnvironment)
-import System.Exit (ExitCode)
+import System.Exit (ExitCode(..))
 import System.Process (createProcess, CreateProcess(..), shell)
 import System.Process.Voyeur
 
@@ -56,28 +56,27 @@ sendEvents !cf !evtChan = do
 doWatch :: Config -> Chan ObservedEvent -> String -> [String] -> VoyeurContext -> IO ExitCode
 doWatch cf evtChan cmd args ctx = do
   -- Set up our handlers.
-  let execFlags = defaultObserveExecFlags { observeExecCWD = True }
-      exitFlags = defaultObserveExitFlags
+  let execFlags = defaultExecFlags { observeExecCWD = True }
 
   badPids <- newIORef Set.empty
   observeExec ctx execFlags (execHandler evtChan badPids)
-  observeExit ctx exitFlags (exitHandler badPids)
+  observeExit ctx (exitHandler badPids)
 
   -- Set up the environment.
   envp <- prepareEnvironment ctx =<< getEnvironment
 
   -- Start the child process.
-  let shellCmd = expandedCommand cf cmd args
-  (_, _, _, handle) <- createProcess $ (shell shellCmd)
-                                       { env = Just envp
-                                       , close_fds = True
-                                       }
+  case envp of
+    Nothing -> do logError "Can't create process: prepareEnvironment failed."
+                  return $ ExitFailure (-1)
+    Just _  -> do let shellCmd = expandedCommand cf cmd args
+                  (_, _, _, handle) <- createProcess $ (shell shellCmd)
+                                                       { env = envp
+                                                       , close_fds = True
+                                                       }
 
-  -- Observe it!
-  ret <- startObserving ctx handle
-
-  logInfo "startObserving returned"
-  return ret
+                  -- Observe it!
+                  startObserving ctx handle
 
 expandedCommand :: Config -> String -> [String] -> String
 expandedCommand cf cmd args = replace "$(projectroot)" (projectDir cf)
@@ -88,14 +87,14 @@ compilers :: [B.ByteString]
 compilers = ["clang", "clang++", "gcc", "g++"]
 
 execHandler :: Chan ObservedEvent -> IORef Set.IntSet -> ObserveExecHandler
-execHandler evtChan badPids path argv _ wd pid ppid =
+execHandler evtChan badPids file argv _ _ wd pid ppid =
   -- TODO: Should extract just filename instead of using isSuffixOf.
-  when (any (`B.isSuffixOf` path) compilers) $ do
+  when (any (`B.isSuffixOf` file) compilers) $ do
     badPidSet <- readIORef badPids
     unless ((fromIntegral pid `Set.member` badPidSet) ||
             (fromIntegral ppid `Set.member` badPidSet)) $ do
                modifyIORef' badPids (Set.insert $ fromIntegral pid)
-               let cmd  = BU.toString path
+               let cmd  = BU.toString file
                    args = map BU.toString (safeTail argv)
                    wd'  = BU.toString wd
                writeChan evtChan $ ExecEvent cmd args wd'
