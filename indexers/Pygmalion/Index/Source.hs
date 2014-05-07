@@ -557,15 +557,14 @@ getSemanticScope c name
 
 logDiagnostics :: TranslationUnit s' -> Analysis s ()
 logDiagnostics tu = do
-    opts <- Just <$> Diag.defaultDisplayOptions
-    dias <- Diag.getDiagnostics tu
+    dias <- getDiagnosticSet tu >>= Diag.getElements
     forM_ dias $ \dia -> do
       severity <- Diag.getSeverity dia
       when (isError severity) $ do
-        diaStr <- Diag.formatDiagnostic opts dia >>= CS.unpack
+        diaStr <- Diag.format Nothing dia >>= CS.unpack
         liftIO $ logInfo $ "Diagnostic: " ++ diaStr
   where
-    isError = (== Diagnostic_Error) .||. (== Diagnostic_Fatal)
+    isError = (== Diag.SeverityError) .||. (== Diag.SeverityFatal)
 
 doDisplayAST :: TranslationUnit s -> Clang s ()
 doDisplayAST tu = getCursor tu >>= dumpSubtree
